@@ -35,7 +35,7 @@ the *Spring application code* is the human's to write.
 
 | Concern            | Choice                                            |
 |--------------------|---------------------------------------------------|
-| Language           | **Java 25 (LTS)**                                 |
+| Language           | **Java 26 (latest, non-LTS)**                                 |
 | Framework          | **Spring Boot 4.0.x** (Spring Framework 7)        |
 | Build              | **Maven** (wrapper `./mvnw`)                       |
 | Database           | **PostgreSQL** (17/18)                             |

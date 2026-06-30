@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: cavale-api
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/cavale
+    username: cavale
+    password: cavale
+
+  jpa:
+    hibernate:
+      ddl-auto: validate # Hibernate may NEVER alter the schema — Flyway owns it
+    open-in-view: false # disable the OSIV anti-pattern (Boot warns if left on)
+    show-sql: true # log generated SQL (dev convenience)
+    properties:
+      hibernate:
+        format_sql: true # pretty-print that SQL
+
+  flyway:
+    enabled: true # run migrations on startup (none yet — that's Step 6)

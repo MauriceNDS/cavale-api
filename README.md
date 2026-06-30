@@ -25,7 +25,7 @@ the strength work that supports it.
 
 ## Tech
 
-Java 25 · Spring Boot 4 · Maven · PostgreSQL · Spring Security (JWT) ·
+Java 26 · Spring Boot 4 · Maven · PostgreSQL · Spring Security (JWT) ·
 Flyway · Testcontainers. Full details in [CLAUDE.md](CLAUDE.md).
 
 ## Getting started

@@ -13,7 +13,7 @@ Legend: 🎓 = primary cert topics introduced.
 every generated file is for.*
 
 - Generate the project at [start.spring.io](https://start.spring.io): Maven,
-  Java 25, Spring Boot 4, deps: **Web, JPA, PostgreSQL Driver, Validation,
+  Java 26, Spring Boot 4, deps: **Web, JPA, PostgreSQL Driver, Validation,
   Security, Flyway, Actuator, Testcontainers, Lombok (skip), DevTools**.
 - Walk through the generated structure: `pom.xml`, `@SpringBootApplication`,
   the wrapper, `application.yml`.
