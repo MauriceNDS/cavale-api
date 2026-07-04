@@ -95,7 +95,15 @@ docker compose up -d              # start Postgres locally
 - [ ] No entity leaked across the API boundary
 - [ ] OpenAPI annotations where non-obvious
 
+## AI integration (decided, built in Phase 10)
+- Cavale exposes an **MCP server** (Spring AI `spring-ai-starter-mcp-server-webmvc`).
+- The owner's Claude subscription (desktop / Claude Code) connects as the MCP
+  client and creates/adapts training plans conversationally — **no Anthropic
+  API key, no per-token cost**.
+- MCP tools live on the **service layer** (same services as REST controllers);
+  MCP is a second front door, never duplicate logic. Keep services designed so
+  operations are exposable as tools (clear params, DTO in/out, ownership checks).
+
 ## Out of scope for now
-- AI training-plan generation (deferred — will use Spring AI later)
 - Garmin (Strava first; Garmin's dev program needs approval)
 - The web frontend (separate project)

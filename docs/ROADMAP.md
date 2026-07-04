@@ -108,12 +108,24 @@ every generated file is for.*
 - 🎓 *Advanced queries, projections, performance (avoid N+1, `@EntityGraph`),
   caching.*
 
-## Phase 10 — AI plan generation *(deferred)*
-*Goal: generate/adapt running plans from objectives, races, holidays.*
+## Phase 10 — MCP server: AI plan creation via Claude subscription
+*Goal: the owner's Claude (subscription — desktop app / Claude Code) connects to
+Cavale as an MCP client and creates/adapts training plans conversationally.
+No Anthropic API key, no per-token cost.*
 
-- **Spring AI** with an Anthropic/Claude provider; prompt design; structured
-  output mapped to `TrainingPlan` + `PlannedSession`.
-- 🎓 *(Bonus, beyond cert) integrating external AI idiomatically.*
+- **Spring AI MCP server** (`spring-ai-starter-mcp-server-webmvc`): expose
+  service-layer operations as MCP tools, e.g. `create_training_plan`,
+  `add_planned_session`, `list_objectives`, `get_recent_activities`,
+  `get_weekly_load`.
+- Tools call the SAME services as the REST controllers — MCP is a second front
+  door, never a parallel code path.
+- Read tools give Claude context (races, holidays, recent Strava load); write
+  tools persist the plan it proposes. Plan revisions happen in conversation
+  ("make week 3 easier") via update tools.
+- Auth: a personal access token (or long-lived JWT) identifying the owner's
+  user account; scoped, revocable. Builds on Phase 3 security.
+- 🎓 *(Bonus, beyond cert) Spring AI from the serving side; a very
+  portfolio-distinctive integration.*
 
 ## Phase 11 — Production hardening & deploy
 *Goal: portfolio-ready and runnable on your Proxmox box.*
