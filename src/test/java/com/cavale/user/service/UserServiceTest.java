@@ -57,4 +57,35 @@ class UserServiceTest {
         verify(userRepository, never()).save(any());
         verify(passwordEncoder, never()).encode(any());
     }
+
+    @Test
+    void authenticate_returnsUserOnMatchingPassword() {
+        User user = new User("alice@cavale.run", "$2a$hashed", "Alice");
+        when(userRepository.findByEmail("alice@cavale.run")).thenReturn(java.util.Optional.of(user));
+        when(passwordEncoder.matches("s3cret-pass", "$2a$hashed")).thenReturn(true);
+
+        User authenticated = userService().authenticate(" Alice@Cavale.RUN ", "s3cret-pass");
+
+        assertThat(authenticated).isSameAs(user);
+    }
+
+    @Test
+    void authenticate_rejectsWrongPassword() {
+        User user = new User("alice@cavale.run", "$2a$hashed", "Alice");
+        when(userRepository.findByEmail("alice@cavale.run")).thenReturn(java.util.Optional.of(user));
+        when(passwordEncoder.matches("wrong", "$2a$hashed")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService().authenticate("alice@cavale.run", "wrong"))
+                .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    @Test
+    void authenticate_rejectsUnknownEmail() {
+        when(userRepository.findByEmail("ghost@cavale.run")).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> userService().authenticate("ghost@cavale.run", "whatever"))
+                .isInstanceOf(InvalidCredentialsException.class);
+
+        verify(passwordEncoder, never()).matches(any(), any());
+    }
 }

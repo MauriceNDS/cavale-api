@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.cavale.user.service.EmailAlreadyUsedException;
+import com.cavale.user.service.InvalidCredentialsException;
+import com.cavale.user.service.UserNotFoundException;
 
 /**
  * Central exception → HTTP mapping. Returns RFC 9457 problem-details bodies.
@@ -37,6 +39,22 @@ public class GlobalExceptionHandler {
     ProblemDetail handleEmailAlreadyUsed(EmailAlreadyUsedException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
         problem.setTitle("Email already in use");
+        problem.setDetail(ex.getMessage());
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    ProblemDetail handleInvalidCredentials(InvalidCredentialsException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        problem.setTitle("Authentication failed");
+        problem.setDetail(ex.getMessage());
+        return problem;
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    ProblemDetail handleUserNotFound(UserNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+        problem.setTitle("User not found");
         problem.setDetail(ex.getMessage());
         return problem;
     }

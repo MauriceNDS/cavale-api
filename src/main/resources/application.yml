@@ -18,3 +18,10 @@ spring:
 
   flyway:
     enabled: true # run migrations on startup (none yet — that's Step 6)
+
+cavale:
+  security:
+    jwt:
+      # HS256 secret, >= 32 bytes. The default is DEV-ONLY — set CAVALE_JWT_SECRET in any real environment.
+      secret: ${CAVALE_JWT_SECRET:cavale-dev-only-secret-change-me-0123456789abcdef}
+      ttl: ${CAVALE_JWT_TTL:PT24H}

@@ -9,8 +9,9 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Phase 2 security: stateless API, registration open, everything else
- * authenticated. JWT issuing/validation arrives in Phase 3.
+ * Stateless JWT security: register/login open, everything else requires a
+ * valid bearer token (validated by the OAuth2 resource-server support with
+ * our symmetric-key JwtDecoder).
  */
 @Configuration
 @EnableWebSecurity
@@ -27,7 +28,7 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
-                .httpBasic(Customizer.withDefaults());
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
         return http.build();
     }
 }

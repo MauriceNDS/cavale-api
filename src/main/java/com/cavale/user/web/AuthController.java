@@ -10,8 +10,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import com.cavale.user.domain.User;
+import com.cavale.user.dto.AuthResponse;
+import com.cavale.user.dto.LoginRequest;
 import com.cavale.user.dto.RegisterRequest;
 import com.cavale.user.dto.UserResponse;
+import com.cavale.user.service.TokenService;
 import com.cavale.user.service.UserService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -26,9 +29,11 @@ import jakarta.validation.Valid;
 public class AuthController {
 
     private final UserService userService;
+    private final TokenService tokenService;
 
-    public AuthController(UserService userService) {
+    public AuthController(UserService userService, TokenService tokenService) {
         this.userService = userService;
+        this.tokenService = tokenService;
     }
 
     @PostMapping("/register")
@@ -43,5 +48,17 @@ public class AuthController {
         User user = userService.register(request.email(), request.password(), request.displayName());
         URI location = uriBuilder.path("/api/users/{id}").buildAndExpand(user.getId()).toUri();
         return ResponseEntity.created(location).body(UserResponse.from(user));
+    }
+
+    @PostMapping("/login")
+    @Operation(summary = "Authenticate and receive a JWT")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Authenticated"),
+            @ApiResponse(responseCode = "401", description = "Invalid credentials")
+    })
+    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
+        User user = userService.authenticate(request.email(), request.password());
+        String token = tokenService.issueFor(user);
+        return new AuthResponse(token, UserResponse.from(user));
     }
 }

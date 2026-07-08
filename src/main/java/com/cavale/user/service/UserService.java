@@ -1,6 +1,7 @@
 package com.cavale.user.service;
 
 import java.util.Locale;
+import java.util.UUID;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,5 +31,20 @@ public class UserService {
 
         String passwordHash = passwordEncoder.encode(rawPassword);
         return userRepository.save(new User(normalizedEmail, passwordHash, displayName.trim()));
+    }
+
+    @Transactional(readOnly = true)
+    public User authenticate(String email, String rawPassword) {
+        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+
+        return userRepository.findByEmail(normalizedEmail)
+                .filter(user -> passwordEncoder.matches(rawPassword, user.getPasswordHash()))
+                .orElseThrow(InvalidCredentialsException::new);
+    }
+
+    @Transactional(readOnly = true)
+    public User getById(UUID id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException(id));
     }
 }
