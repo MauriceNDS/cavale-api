@@ -98,6 +98,12 @@ public class TrainingPlanService {
         return sessionRepository.findByUserIdAndDateBetweenOrderByDateAscOrderInDayAsc(userId, from, to);
     }
 
+    @Transactional
+    public void deletePlan(UUID userId, UUID planId) {
+        TrainingPlan plan = getOwnedPlan(userId, planId);
+        planRepository.delete(plan); // weeks and sessions cascade at the DB level
+    }
+
     private PlanWeek getOwnedWeek(UUID userId, UUID weekId) {
         return weekRepository.findById(weekId)
                 .filter(week -> week.getPlan().getUserId().equals(userId))

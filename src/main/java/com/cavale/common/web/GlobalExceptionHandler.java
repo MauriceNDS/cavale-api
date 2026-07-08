@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.cavale.common.exception.ResourceNotFoundException;
+import com.cavale.training.service.PlanImportException;
 import com.cavale.user.service.EmailAlreadyUsedException;
 import com.cavale.user.service.InvalidCredentialsException;
 import com.cavale.user.service.UserNotFoundException;
@@ -72,6 +73,14 @@ public class GlobalExceptionHandler {
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setTitle("Invalid request");
+        problem.setDetail(ex.getMessage());
+        return problem;
+    }
+
+    @ExceptionHandler(PlanImportException.class)
+    ProblemDetail handlePlanImport(PlanImportException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problem.setTitle("Import failed");
         problem.setDetail(ex.getMessage());
         return problem;
     }

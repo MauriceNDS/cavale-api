@@ -50,6 +50,22 @@ uses the app, and asks questions.
 - **DTOs at the boundary** — never expose JPA entities directly from controllers.
 - **Flyway owns the schema** — `ddl-auto: validate`, never `update` in any env.
 
+## Core domain concept: the plan IS the season
+
+A `TrainingPlan` is a **season/cycle built around an objective** (e.g.
+"SaintéLyon 80 km 2026"). Both running AND strength sessions live under it
+(PlannedSession.discipline = RUN | GYM | REST | CROSS). One season ends
+(COMPLETED/ARCHIVED), the next one is created. Future gym templates and pace
+zones also scope to a season.
+
+A plan can be created **three ways, all through the same
+`TrainingPlanService`** (never parallel code paths):
+1. **MCP** — Claude creates/adapts it conversationally (Phase 10);
+2. **manually** — sessions added via the calendar UI/API;
+3. **CSV import** — canonical format ONLY (docs/IMPORT-FORMAT.md), atomic,
+   line-numbered errors. External sources (Google Sheets…) get converted to
+   the canonical format outside the app — the API never learns foreign shapes.
+
 ## Architecture
 
 **Feature-first packaging** under `com.cavale`, each feature sliced into

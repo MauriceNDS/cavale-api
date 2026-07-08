@@ -1,4 +1,9 @@
-# Plan import — mapping the real training plan to the domain
+# Reference plan — mapping the owner's real training plan to the domain
+
+> **Note:** the *application's* import format is NOT this spreadsheet's shape.
+> The canonical CSV import format is specified in [IMPORT-FORMAT.md](IMPORT-FORMAT.md);
+> this sheet was converted to it by a one-off script in `../plan-data/`
+> (gitignored). This document remains as domain-modeling reference.
 
 The owner's actual plan ("Plan SaintéLyon 80 km 2026", 21 weeks, Google
 Sheets) is the reference dataset the domain model must be able to represent.

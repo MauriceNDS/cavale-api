@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.cavale.common.config.SecurityConfig;
 import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.dto.CreatePlanRequest;
+import com.cavale.training.service.PlanImportService;
 import com.cavale.training.service.TrainingPlanService;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -36,6 +37,9 @@ class TrainingPlanControllerTest {
 
     @MockitoBean
     private TrainingPlanService planService;
+
+    @MockitoBean
+    private PlanImportService importService;
 
     @MockitoBean
     private JwtDecoder jwtDecoder;
