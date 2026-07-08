@@ -90,7 +90,17 @@ every generated file is for.*
 - 🎓 *Write-heavy transactional design, optimistic locking (`@Version`).*
 
 ## Phase 8 — Strava integration
-*Goal: pull real running data into the app (free, personal-use API).*
+*Goal: pull real running data into the app at no extra cost.*
+
+> **Feasibility (verified 2026-07):** Strava's Standard Tier (self-serve, up to
+> 10 athletes, 200 req/15 min · 2 000/day) requires the developer to hold an
+> active Strava subscription since 2026-06-30 — which the owner already pays,
+> so net extra cost = €0. Garmin's Connect Developer Program is business-only
+> (personal applications rejected) and currently on hold → Garmin stays out of
+> scope; the owner's Garmin data reaches Strava anyway via device sync.
+> Auto-validation flow: OAuth connect → sync activities → match to planned
+> sessions (date + discipline + duration/distance proximity) → mark DONE and
+> link the Activity (planned vs actual).
 
 - OAuth2 **client** flow; store `StravaConnection` tokens securely; refresh.
 - Fetch activities with `RestClient`/`WebClient`; map to `Activity`.
