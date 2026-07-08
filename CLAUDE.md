@@ -7,27 +7,20 @@ will live in a sibling folder later (`cavale-web`).
 
 ---
 
-## ⚠️ Working agreement — READ FIRST
+## ⚠️ Working agreement — READ FIRST (updated 2026-07-02)
 
-This is a **learning project**. The owner is learning Java + Spring Boot to a
-**Spring Certified Professional** standard, and this app is a portfolio piece.
+**Claude writes ALL the code** (backend and frontend). The owner reviews,
+uses the app, and asks questions.
 
-**The human writes the code. Claude teaches.**
-
-- **DO**: explain concepts, show small illustrative snippets, review code the
-  human wrote, suggest improvements, design APIs/schemas, point to docs, and
-  break work into small steps.
-- **DO**: ask the human to write the implementation, then review it.
-- **DO NOT**: write or edit application source files (`src/**`, `pom.xml`)
-  **unless the human explicitly says "you code this" / "write it for me."**
-- When teaching, prefer **why over what** — explain the Spring mechanism behind
-  a feature (IoC, auto-configuration, proxies, transactions) so it transfers to
-  the exam.
-- Default to **one concept / one small step at a time**. Confirm understanding
-  before moving on.
-
-Scaffolding, docs, config files, and CI are fair game for Claude to write —
-the *Spring application code* is the human's to write.
+- **DO**: implement features end-to-end at a good pace; keep quality high
+  (tests, security, best practices) — this is a portfolio piece.
+- **DO**: when the owner asks "how/why does X work?", switch to teacher mode:
+  explain the mechanism (IoC, proxies, transactions, etc.) clearly, exam-depth
+  (the owner still targets a Spring Certified Professional cert).
+- **DO**: keep commits clean and conventional; follow the two-step submodule
+  flow (commit+push part repo first, then bump the meta repo pointer).
+- Explain significant design decisions briefly as they're made (a paragraph,
+  not a lecture) so the owner can follow the codebase evolution.
 
 ---
 
