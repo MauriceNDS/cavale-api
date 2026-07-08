@@ -11,8 +11,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.cavale.common.exception.ResourceNotFoundException;
+import com.cavale.training.domain.Discipline;
+import com.cavale.training.domain.PlanWeek;
+import com.cavale.training.domain.PlannedSession;
+import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.domain.TrainingPlan;
+import com.cavale.training.domain.WeekType;
 import com.cavale.training.dto.CreatePlanRequest;
+import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 import com.cavale.training.repository.TrainingPlanRepository;
@@ -93,5 +99,59 @@ class TrainingPlanServiceTest {
         assertThatThrownBy(() -> service().getCalendar(OWNER,
                 LocalDate.of(2026, 8, 10), LocalDate.of(2026, 8, 1)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private PlannedSession sessionOwnedBy(UUID userId) {
+        TrainingPlan plan = planOwnedBy(userId);
+        PlanWeek week = new PlanWeek(plan, 14, LocalDate.of(2026, 10, 5), null,
+                WeekType.SHOCK, null, null, null, null);
+        PlannedSession session = new PlannedSession(week, userId, LocalDate.of(2026, 10, 10), 0,
+                Discipline.RUN, "SL 4h nocturne", null, "EF", 240, 1500, 4, 5);
+        ReflectionTestUtils.setField(session, "id", UUID.randomUUID());
+        return session;
+    }
+
+    @Test
+    void updateSession_moveMarksPlannedSessionAsMoved() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(LocalDate.of(2026, 10, 11), null, null));
+
+        assertThat(session.getDate()).isEqualTo(LocalDate.of(2026, 10, 11));
+        assertThat(session.getStatus()).isEqualTo(SessionStatus.MOVED);
+    }
+
+    @Test
+    void updateSession_statusOnlyValidation() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(null, null, SessionStatus.DONE));
+
+        assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
+        assertThat(session.getDate()).isEqualTo(LocalDate.of(2026, 10, 10));
+    }
+
+    @Test
+    void updateSession_rejectsDateOutsidePlanRange() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(LocalDate.of(2027, 1, 1), null, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void updateSession_hidesForeignSessionAs404() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service().updateSession(STRANGER, session.getId(),
+                new UpdateSessionRequest(null, null, SessionStatus.DONE)))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

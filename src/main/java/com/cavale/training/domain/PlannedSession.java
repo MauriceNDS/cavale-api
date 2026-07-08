@@ -152,6 +152,16 @@ public class PlannedSession extends Auditable {
         this.status = status;
     }
 
+    /** Reschedule within the plan; a still-planned session becomes MOVED. */
+    public void moveTo(LocalDate newDate, int newOrderInDay) {
+        boolean dateChanged = !this.date.equals(newDate);
+        this.date = newDate;
+        this.orderInDay = newOrderInDay;
+        if (dateChanged && this.status == SessionStatus.PLANNED) {
+            this.status = SessionStatus.MOVED;
+        }
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

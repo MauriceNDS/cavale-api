@@ -14,6 +14,7 @@ import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.dto.CreatePlanRequest;
 import com.cavale.training.dto.CreateSessionRequest;
 import com.cavale.training.dto.CreateWeekRequest;
+import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 import com.cavale.training.repository.TrainingPlanRepository;
@@ -96,6 +97,27 @@ public class TrainingPlanService {
             throw new IllegalArgumentException("'to' must not be before 'from'");
         }
         return sessionRepository.findByUserIdAndDateBetweenOrderByDateAscOrderInDayAsc(userId, from, to);
+    }
+
+    @Transactional
+    public PlannedSession updateSession(UUID userId, UUID sessionId, UpdateSessionRequest request) {
+        PlannedSession session = sessionRepository.findById(sessionId)
+                .filter(s -> s.getUserId().equals(userId))
+                .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
+
+        if (request.date() != null || request.orderInDay() != null) {
+            LocalDate newDate = request.date() != null ? request.date() : session.getDate();
+            TrainingPlan plan = session.getWeek().getPlan();
+            if (newDate.isBefore(plan.getStartDate()) || newDate.isAfter(plan.getEndDate())) {
+                throw new IllegalArgumentException("date " + newDate + " is outside the plan range");
+            }
+            int newOrder = request.orderInDay() != null ? request.orderInDay() : session.getOrderInDay();
+            session.moveTo(newDate, newOrder);
+        }
+        if (request.status() != null) {
+            session.updateStatus(request.status());
+        }
+        return session;
     }
 
     @Transactional
