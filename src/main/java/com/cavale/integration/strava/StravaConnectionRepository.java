@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface StravaConnectionRepository extends JpaRepository<StravaConnection, UUID> {
 
     Optional<StravaConnection> findByUserId(UUID userId);
+
+    Optional<StravaConnection> findByAthleteId(long athleteId);
 }

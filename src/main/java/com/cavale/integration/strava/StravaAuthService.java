@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -16,66 +17,119 @@ import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cavale.user.domain.User;
+import com.cavale.user.repository.UserRepository;
+import com.cavale.user.service.TokenService;
+
 /**
- * Strava OAuth: the authorize URL carries a short-lived signed state so the
- * callback (which arrives WITHOUT our bearer token — it's a browser redirect
- * from strava.com) can still be tied to the right user, CSRF-safely.
+ * Strava OAuth, two flavours sharing one callback:
+ *
+ * CONNECT — an authenticated user links Strava from settings.
+ * LOGIN   — "Continuer avec Strava" on the login page: the athlete IS the
+ *           identity. First login creates the Cavale account and the
+ *           connection in one stroke (how Strava-ecosystem apps onboard).
+ *
+ * The authorize URL carries a short-lived signed state so the callback
+ * (a browser redirect from strava.com, no bearer token) stays user-bound
+ * and CSRF-safe.
  */
 @Service
 public class StravaAuthService {
 
-    private static final String STATE_PURPOSE = "strava-oauth";
+    private static final String PURPOSE_CONNECT = "strava-connect";
+    private static final String PURPOSE_LOGIN = "strava-login";
 
     private final StravaProperties properties;
     private final StravaClient stravaClient;
     private final StravaConnectionRepository connectionRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final TokenService tokenService;
     private final JwtEncoder jwtEncoder;
     private final JwtDecoder jwtDecoder;
 
     public StravaAuthService(StravaProperties properties, StravaClient stravaClient,
                              StravaConnectionRepository connectionRepository,
-                             JwtEncoder jwtEncoder, JwtDecoder jwtDecoder) {
+                             UserRepository userRepository, PasswordEncoder passwordEncoder,
+                             TokenService tokenService, JwtEncoder jwtEncoder, JwtDecoder jwtDecoder) {
         this.properties = properties;
         this.stravaClient = stravaClient;
         this.connectionRepository = connectionRepository;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.tokenService = tokenService;
         this.jwtEncoder = jwtEncoder;
         this.jwtDecoder = jwtDecoder;
     }
 
     public String authorizeUrl(UUID userId) {
-        requireConfigured();
-        String state = issueState(userId);
-        return properties.authBase() + "/oauth/authorize"
-                + "?client_id=" + properties.clientId()
-                + "&redirect_uri=" + URLEncoder.encode(properties.redirectUri(), StandardCharsets.UTF_8)
-                + "&response_type=code"
-                + "&approval_prompt=auto"
-                + "&scope=activity:read_all"
-                + "&state=" + state;
+        return buildAuthorizeUrl(issueState(PURPOSE_CONNECT, userId.toString()));
+    }
+
+    public String loginUrl() {
+        return buildAuthorizeUrl(issueState(PURPOSE_LOGIN, "anonymous"));
     }
 
     /** @return the frontend URL to redirect the browser to */
     @Transactional
     public String handleCallback(String code, String state, String error) {
-        if (error != null || code == null) {
+        String purpose;
+        String subject;
+        try {
+            Jwt jwt = jwtDecoder.decode(state);
+            purpose = jwt.getClaimAsString("purpose");
+            subject = jwt.getSubject();
+            if (!PURPOSE_CONNECT.equals(purpose) && !PURPOSE_LOGIN.equals(purpose)) {
+                throw new IllegalArgumentException("wrong token purpose");
+            }
+        } catch (JwtException | IllegalArgumentException | NullPointerException e) {
             return properties.frontendRedirect() + "?strava=error";
         }
-        UUID userId;
-        try {
-            userId = verifyState(state);
-        } catch (JwtException | IllegalArgumentException e) {
-            return properties.frontendRedirect() + "?strava=error";
+
+        boolean isLogin = PURPOSE_LOGIN.equals(purpose);
+        if (error != null || code == null) {
+            return isLogin
+                    ? properties.frontendLoginRedirect() + "#error"
+                    : properties.frontendRedirect() + "?strava=error";
         }
 
         StravaDtos.TokenResponse token = stravaClient.exchangeCode(code);
-        Instant expiresAt = Instant.ofEpochSecond(token.expiresAtEpoch());
+        return isLogin ? completeLogin(token) : completeConnect(UUID.fromString(subject), token);
+    }
 
+    private String completeConnect(UUID userId, StravaDtos.TokenResponse token) {
+        upsertConnection(userId, token);
+        return properties.frontendRedirect() + "?strava=connected";
+    }
+
+    private String completeLogin(StravaDtos.TokenResponse token) {
+        long athleteId = token.athlete().id();
+        User user = connectionRepository.findByAthleteId(athleteId)
+                .map(connection -> userRepository.findById(connection.getUserId()).orElseThrow())
+                .orElseGet(() -> createUserForAthlete(token.athlete()));
+
+        upsertConnection(user.getId(), token);
+        String cavaleJwt = tokenService.issueFor(user);
+        // fragment (#), not query: it stays out of server logs and referrers
+        return properties.frontendLoginRedirect() + "#token=" + cavaleJwt;
+    }
+
+    /**
+     * Strava's API exposes no email, so Strava-born accounts get a synthetic
+     * unique address; the random password is unusable — Strava IS the login.
+     */
+    private User createUserForAthlete(StravaDtos.Athlete athlete) {
+        String email = "strava-" + athlete.id() + "@users.cavale.local";
+        String unusablePassword = passwordEncoder.encode(UUID.randomUUID().toString());
+        return userRepository.save(new User(email, unusablePassword, athlete.displayName()));
+    }
+
+    private void upsertConnection(UUID userId, StravaDtos.TokenResponse token) {
+        Instant expiresAt = Instant.ofEpochSecond(token.expiresAtEpoch());
         connectionRepository.findByUserId(userId).ifPresentOrElse(
                 existing -> existing.updateTokens(token.accessToken(), token.refreshToken(), expiresAt),
                 () -> connectionRepository.save(new StravaConnection(userId, token.athlete().id(),
                         token.accessToken(), token.refreshToken(), expiresAt, "activity:read_all")));
-
-        return properties.frontendRedirect() + "?strava=connected";
     }
 
     @Transactional
@@ -96,6 +150,17 @@ public class StravaAuthService {
         return connection;
     }
 
+    private String buildAuthorizeUrl(String state) {
+        requireConfigured();
+        return properties.authBase() + "/oauth/authorize"
+                + "?client_id=" + properties.clientId()
+                + "&redirect_uri=" + URLEncoder.encode(properties.redirectUri(), StandardCharsets.UTF_8)
+                + "&response_type=code"
+                + "&approval_prompt=auto"
+                + "&scope=activity:read_all"
+                + "&state=" + state;
+    }
+
     private void requireConfigured() {
         if (!properties.configured()) {
             throw new StravaException("Strava integration is not configured "
@@ -103,23 +168,15 @@ public class StravaAuthService {
         }
     }
 
-    private String issueState(UUID userId) {
+    private String issueState(String purpose, String subject) {
         Instant now = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder()
-                .subject(userId.toString())
-                .claim("purpose", STATE_PURPOSE)
+                .subject(subject)
+                .claim("purpose", purpose)
                 .issuedAt(now)
                 .expiresAt(now.plusSeconds(600))
                 .build();
         return jwtEncoder.encode(JwtEncoderParameters.from(
                 JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
-    }
-
-    private UUID verifyState(String state) {
-        Jwt jwt = jwtDecoder.decode(state);
-        if (!STATE_PURPOSE.equals(jwt.getClaimAsString("purpose"))) {
-            throw new IllegalArgumentException("wrong token purpose");
-        }
-        return UUID.fromString(jwt.getSubject());
     }
 }

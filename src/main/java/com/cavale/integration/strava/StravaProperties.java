@@ -12,6 +12,7 @@ public record StravaProperties(
         String clientSecret,
         String redirectUri,
         String frontendRedirect,
+        String frontendLoginRedirect,
         String authBase,
         String apiBase) {
 

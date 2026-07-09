@@ -20,7 +20,13 @@ public final class StravaDtos {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Athlete(long id) {
+    public record Athlete(long id, String firstname, String lastname) {
+
+        public String displayName() {
+            String name = ((firstname != null ? firstname : "") + " "
+                    + (lastname != null ? lastname : "")).trim();
+            return name.isEmpty() ? "Athlète Strava" : name;
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

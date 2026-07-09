@@ -31,5 +31,6 @@ cavale:
     client-secret: ${CAVALE_STRAVA_CLIENT_SECRET:}
     redirect-uri: ${CAVALE_STRAVA_REDIRECT_URI:http://localhost:8080/api/strava/callback}
     frontend-redirect: ${CAVALE_STRAVA_FRONTEND_REDIRECT:http://localhost:5173/settings}
+    frontend-login-redirect: ${CAVALE_STRAVA_FRONTEND_LOGIN_REDIRECT:http://localhost:5173/auth/strava}
     auth-base: https://www.strava.com
     api-base: https://www.strava.com/api/v3
