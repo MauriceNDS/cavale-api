@@ -25,3 +25,11 @@ cavale:
       # HS256 secret, >= 32 bytes. The default is DEV-ONLY — set CAVALE_JWT_SECRET in any real environment.
       secret: ${CAVALE_JWT_SECRET:cavale-dev-only-secret-change-me-0123456789abcdef}
       ttl: ${CAVALE_JWT_TTL:PT24H}
+  strava:
+    # Create an API application at strava.com/settings/api, then set these.
+    client-id: ${CAVALE_STRAVA_CLIENT_ID:}
+    client-secret: ${CAVALE_STRAVA_CLIENT_SECRET:}
+    redirect-uri: ${CAVALE_STRAVA_REDIRECT_URI:http://localhost:8080/api/strava/callback}
+    frontend-redirect: ${CAVALE_STRAVA_FRONTEND_REDIRECT:http://localhost:5173/settings}
+    auth-base: https://www.strava.com
+    api-base: https://www.strava.com/api/v3

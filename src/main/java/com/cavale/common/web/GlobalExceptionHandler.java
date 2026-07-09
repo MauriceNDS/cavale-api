@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.cavale.common.exception.ResourceNotFoundException;
+import com.cavale.integration.strava.StravaException;
 import com.cavale.training.service.PlanImportException;
 import com.cavale.user.service.EmailAlreadyUsedException;
 import com.cavale.user.service.InvalidCredentialsException;
@@ -81,6 +82,14 @@ public class GlobalExceptionHandler {
     ProblemDetail handlePlanImport(PlanImportException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setTitle("Import failed");
+        problem.setDetail(ex.getMessage());
+        return problem;
+    }
+
+    @ExceptionHandler(StravaException.class)
+    ProblemDetail handleStrava(StravaException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        problem.setTitle("Strava");
         problem.setDetail(ex.getMessage());
         return problem;
     }

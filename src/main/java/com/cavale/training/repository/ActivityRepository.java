@@ -14,4 +14,6 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
     Optional<Activity> findBySessionId(UUID sessionId);
 
     List<Activity> findBySessionIdIn(Collection<UUID> sessionIds);
+
+    Optional<Activity> findByExternalId(Long externalId);
 }

@@ -59,6 +59,10 @@ public class Activity extends Auditable {
     @Column(columnDefinition = "text")
     private String comment;
 
+    /** Origin id at the source (Strava activity id) — null for manual entries. */
+    @Column(name = "external_id")
+    private Long externalId;
+
     protected Activity() {
     }
 
@@ -73,6 +77,15 @@ public class Activity extends Auditable {
         this.elevationM = elevationM;
         this.avgHr = avgHr;
         this.comment = comment;
+    }
+
+    public static Activity fromStrava(PlannedSession session, LocalDate date, int durationMin,
+                                      BigDecimal distanceKm, Integer elevationM, Integer avgHr,
+                                      String comment, long externalId) {
+        Activity activity = new Activity(session, ActivitySource.STRAVA, date, durationMin,
+                distanceKm, elevationM, avgHr, comment);
+        activity.externalId = externalId;
+        return activity;
     }
 
     public void updateMeasures(int durationMin, BigDecimal distanceKm, Integer elevationM,
@@ -122,6 +135,10 @@ public class Activity extends Auditable {
 
     public String getComment() {
         return comment;
+    }
+
+    public Long getExternalId() {
+        return externalId;
     }
 
     @Override
