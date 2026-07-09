@@ -2,20 +2,28 @@ package com.cavale.training.service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.common.exception.ResourceNotFoundException;
+import com.cavale.training.domain.Activity;
+import com.cavale.training.domain.ActivitySource;
+import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PlanWeek;
 import com.cavale.training.domain.PlannedSession;
+import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.dto.CreatePlanRequest;
 import com.cavale.training.dto.CreateSessionRequest;
 import com.cavale.training.dto.CreateWeekRequest;
 import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.dto.UpdateWeekRequest;
+import com.cavale.training.dto.ValidateSessionRequest;
+import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 import com.cavale.training.repository.TrainingPlanRepository;
@@ -31,13 +39,16 @@ public class TrainingPlanService {
     private final TrainingPlanRepository planRepository;
     private final PlanWeekRepository weekRepository;
     private final PlannedSessionRepository sessionRepository;
+    private final ActivityRepository activityRepository;
 
     public TrainingPlanService(TrainingPlanRepository planRepository,
                                PlanWeekRepository weekRepository,
-                               PlannedSessionRepository sessionRepository) {
+                               PlannedSessionRepository sessionRepository,
+                               ActivityRepository activityRepository) {
         this.planRepository = planRepository;
         this.weekRepository = weekRepository;
         this.sessionRepository = sessionRepository;
+        this.activityRepository = activityRepository;
     }
 
     @Transactional
@@ -125,9 +136,52 @@ public class TrainingPlanService {
             session.moveTo(newDate, newOrder);
         }
         if (request.status() != null) {
+            if (request.status() == SessionStatus.PLANNED) {
+                // Un-validating removes the manual measures recorded against it
+                activityRepository.findBySessionId(session.getId())
+                        .filter(a -> a.getSource() == ActivitySource.MANUAL)
+                        .ifPresent(activityRepository::delete);
+            }
             session.updateStatus(request.status());
         }
         return session;
+    }
+
+    /**
+     * Validate a running session with actual measures (time + distance required).
+     * Creates or replaces the MANUAL activity and marks the session DONE.
+     */
+    @Transactional
+    public Activity validateSession(UUID userId, UUID sessionId, ValidateSessionRequest request) {
+        PlannedSession session = sessionRepository.findById(sessionId)
+                .filter(s -> s.getUserId().equals(userId))
+                .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
+
+        if (session.getDiscipline() != Discipline.RUN) {
+            throw new IllegalArgumentException(
+                    "Only running sessions take validation measures; use the status update instead");
+        }
+
+        Activity activity = activityRepository.findBySessionId(session.getId())
+                .map(existing -> {
+                    existing.updateMeasures(request.durationMin(), request.distanceKm(),
+                            request.elevationM(), request.avgHr(), request.comment());
+                    return existing;
+                })
+                .orElseGet(() -> activityRepository.save(new Activity(session, ActivitySource.MANUAL,
+                        session.getDate(), request.durationMin(), request.distanceKm(),
+                        request.elevationM(), request.avgHr(), request.comment())));
+
+        session.updateStatus(SessionStatus.DONE);
+        return activity;
+    }
+
+    @Transactional(readOnly = true)
+    public Map<UUID, Activity> getActivitiesForSessions(List<PlannedSession> sessions) {
+        if (sessions.isEmpty()) return Map.of();
+        List<UUID> ids = sessions.stream().map(PlannedSession::getId).toList();
+        return activityRepository.findBySessionIdIn(ids).stream()
+                .collect(Collectors.toMap(a -> a.getSession().getId(), a -> a));
     }
 
     @Transactional

@@ -18,7 +18,11 @@ import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.domain.WeekType;
 import com.cavale.training.dto.CreatePlanRequest;
+import com.cavale.training.domain.Activity;
+import com.cavale.training.domain.ActivitySource;
 import com.cavale.training.dto.UpdateSessionRequest;
+import com.cavale.training.dto.ValidateSessionRequest;
+import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 import com.cavale.training.repository.TrainingPlanRepository;
@@ -42,8 +46,11 @@ class TrainingPlanServiceTest {
     @Mock
     private PlannedSessionRepository sessionRepository;
 
+    @Mock
+    private ActivityRepository activityRepository;
+
     private TrainingPlanService service() {
-        return new TrainingPlanService(planRepository, weekRepository, sessionRepository);
+        return new TrainingPlanService(planRepository, weekRepository, sessionRepository, activityRepository);
     }
 
     private static final UUID OWNER = UUID.randomUUID();
@@ -153,5 +160,52 @@ class TrainingPlanServiceTest {
         assertThatThrownBy(() -> service().updateSession(STRANGER, session.getId(),
                 new UpdateSessionRequest(null, null, SessionStatus.DONE)))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void validateSession_createsManualActivityAndMarksDone() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.empty());
+        when(activityRepository.save(any(Activity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Activity activity = service().validateSession(OWNER, session.getId(),
+                new ValidateSessionRequest(245, new java.math.BigDecimal("38.50"), 1520, 151, "Bonne SL"));
+
+        assertThat(activity.getSource()).isEqualTo(ActivitySource.MANUAL);
+        assertThat(activity.getDurationMin()).isEqualTo(245);
+        assertThat(activity.getDistanceKm()).isEqualByComparingTo("38.50");
+        assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
+    }
+
+    @Test
+    void validateSession_rejectsNonRunningSession() {
+        TrainingPlan plan = planOwnedBy(OWNER);
+        PlanWeek week = new PlanWeek(plan, 14, LocalDate.of(2026, 10, 5), null,
+                WeekType.SHOCK, null, null, null, null);
+        PlannedSession gym = new PlannedSession(week, OWNER, LocalDate.of(2026, 10, 5), 0,
+                Discipline.GYM, "FM-A", null, null, 55, null, null, null);
+        ReflectionTestUtils.setField(gym, "id", UUID.randomUUID());
+        when(sessionRepository.findById(gym.getId())).thenReturn(Optional.of(gym));
+
+        assertThatThrownBy(() -> service().validateSession(OWNER, gym.getId(),
+                new ValidateSessionRequest(55, new java.math.BigDecimal("1"), null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void updateSession_resetToPlannedDeletesManualActivity() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        session.updateStatus(SessionStatus.DONE);
+        Activity activity = new Activity(session, ActivitySource.MANUAL, session.getDate(),
+                240, new java.math.BigDecimal("38.0"), null, null, null);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.of(activity));
+
+        service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(null, null, SessionStatus.PLANNED));
+
+        verify(activityRepository).delete(activity);
+        assertThat(session.getStatus()).isEqualTo(SessionStatus.PLANNED);
     }
 }

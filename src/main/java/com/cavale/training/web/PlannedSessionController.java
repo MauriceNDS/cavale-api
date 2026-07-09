@@ -6,12 +6,15 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cavale.training.domain.Activity;
 import com.cavale.training.dto.SessionResponse;
 import com.cavale.training.dto.UpdateSessionRequest;
+import com.cavale.training.dto.ValidateSessionRequest;
 import com.cavale.training.service.TrainingPlanService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,5 +38,14 @@ public class PlannedSessionController {
                                   @Valid @RequestBody UpdateSessionRequest request) {
         UUID userId = UUID.fromString(jwt.getSubject());
         return SessionResponse.from(planService.updateSession(userId, sessionId, request));
+    }
+
+    @PostMapping("/{sessionId}/validate")
+    @Operation(summary = "Validate a running session with actual measures (time + distance required)")
+    public SessionResponse validate(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId,
+                                    @Valid @RequestBody ValidateSessionRequest request) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        Activity activity = planService.validateSession(userId, sessionId, request);
+        return SessionResponse.from(activity.getSession(), activity);
     }
 }
