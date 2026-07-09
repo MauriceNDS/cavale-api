@@ -15,6 +15,7 @@ import com.cavale.training.dto.CreatePlanRequest;
 import com.cavale.training.dto.CreateSessionRequest;
 import com.cavale.training.dto.CreateWeekRequest;
 import com.cavale.training.dto.UpdateSessionRequest;
+import com.cavale.training.dto.UpdateWeekRequest;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 import com.cavale.training.repository.TrainingPlanRepository;
@@ -97,6 +98,15 @@ public class TrainingPlanService {
             throw new IllegalArgumentException("'to' must not be before 'from'");
         }
         return sessionRepository.findByUserIdAndDateBetweenOrderByDateAscOrderInDayAsc(userId, from, to);
+    }
+
+    @Transactional
+    public PlanWeek updateWeek(UUID userId, UUID weekId, UpdateWeekRequest request) {
+        PlanWeek week = getOwnedWeek(userId, weekId);
+        if (request.focus() != null) {
+            week.updateFocus(request.focus().isBlank() ? null : request.focus().trim());
+        }
+        return week;
     }
 
     @Transactional

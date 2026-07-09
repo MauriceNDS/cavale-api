@@ -114,6 +114,10 @@ public class PlanWeek extends Auditable {
         return focus;
     }
 
+    public void updateFocus(String focus) {
+        this.focus = focus;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
