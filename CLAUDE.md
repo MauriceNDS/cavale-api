@@ -87,12 +87,14 @@ The **build/learning plan** lives in [docs/ROADMAP.md](docs/ROADMAP.md).
 ## Commands (once the project is generated)
 
 ```bash
-./mvnw spring-boot:run            # run the app
+set -a; source .env; set +a; ./mvnw spring-boot:run   # run with local secrets (.env is gitignored)
 ./mvnw test                       # all tests
 ./mvnw verify                     # tests + integration + checks
-./mvnw spotless:apply             # format (if Spotless added)
 docker compose up -d              # start Postgres locally
 ```
+
+Local secrets (Strava client id/secret, etc.) live in `api/.env` — gitignored,
+never committed. Production gets them from the deployment environment.
 
 ## Definition of done (every feature)
 
