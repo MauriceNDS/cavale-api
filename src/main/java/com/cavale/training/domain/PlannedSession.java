@@ -71,6 +71,10 @@ public class PlannedSession extends Auditable {
     @Column(nullable = false, length = 10)
     private SessionStatus status;
 
+    /** Athlete's free-text note — the detail carries the coach's structure. */
+    @Column(columnDefinition = "text")
+    private String comment;
+
     protected PlannedSession() {
     }
 
@@ -146,6 +150,14 @@ public class PlannedSession extends Auditable {
 
     public SessionStatus getStatus() {
         return status;
+    }
+
+    public String getComment() {
+        return comment;
+    }
+
+    public void updateComment(String comment) {
+        this.comment = comment;
     }
 
     public void updateStatus(SessionStatus status) {

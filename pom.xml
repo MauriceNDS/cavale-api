@@ -72,6 +72,11 @@
 			<artifactId>commons-csv</artifactId>
 			<version>1.14.1</version>
 		</dependency>
+		<dependency>
+			<groupId>com.garmin</groupId>
+			<artifactId>fit</artifactId>
+			<version>21.176.0</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

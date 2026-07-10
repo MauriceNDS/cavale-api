@@ -144,7 +144,17 @@ public class TrainingPlanService {
             }
             session.updateStatus(request.status());
         }
+        if (request.comment() != null) {
+            session.updateComment(request.comment().isBlank() ? null : request.comment().trim());
+        }
         return session;
+    }
+
+    @Transactional(readOnly = true)
+    public PlannedSession getOwnedSession(UUID userId, UUID sessionId) {
+        return sessionRepository.findById(sessionId)
+                .filter(s -> s.getUserId().equals(userId))
+                .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
     }
 
     /**

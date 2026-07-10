@@ -10,5 +10,6 @@ import jakarta.validation.constraints.Min;
 public record UpdateSessionRequest(
         LocalDate date,
         @Min(0) Integer orderInDay,
-        SessionStatus status) {
+        SessionStatus status,
+        String comment) {
 }

@@ -2,8 +2,12 @@ package com.cavale.training.web;
 
 import java.util.UUID;
 
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -13,10 +17,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.cavale.integration.strava.StravaActivityService;
 import com.cavale.training.domain.Activity;
+import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.dto.SessionResponse;
 import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.dto.ValidateSessionRequest;
 import com.cavale.training.service.TrainingPlanService;
+import com.cavale.training.workout.FitWorkoutExporter;
+import com.cavale.training.workout.WorkoutParser;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,11 +36,14 @@ public class PlannedSessionController {
 
     private final TrainingPlanService planService;
     private final StravaActivityService stravaActivityService;
+    private final FitWorkoutExporter fitExporter;
 
     public PlannedSessionController(TrainingPlanService planService,
-                                    StravaActivityService stravaActivityService) {
+                                    StravaActivityService stravaActivityService,
+                                    FitWorkoutExporter fitExporter) {
         this.planService = planService;
         this.stravaActivityService = stravaActivityService;
+        this.fitExporter = fitExporter;
     }
 
     public record ImportStravaRequest(long stravaActivityId) {
@@ -63,5 +73,18 @@ public class PlannedSessionController {
         UUID userId = UUID.fromString(jwt.getSubject());
         Activity activity = stravaActivityService.importToSession(userId, sessionId, request.stravaActivityId());
         return SessionResponse.from(activity.getSession(), activity);
+    }
+
+    @GetMapping("/{sessionId}/export.fit")
+    @Operation(summary = "Export the session as a Garmin .fit workout file")
+    public ResponseEntity<byte[]> exportFit(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        PlannedSession session = planService.getOwnedSession(userId, sessionId);
+        byte[] fit = fitExporter.export(session, WorkoutParser.parse(session.getDetail()));
+        String filename = "cavale-" + session.getDate() + ".fit";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(fit);
     }
 }
