@@ -6,14 +6,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.cavale.training.workout.WorkoutStructure.Block;
+import com.cavale.training.workout.WorkoutStructure.Node;
 import com.cavale.training.workout.WorkoutStructure.Section;
-import com.cavale.training.workout.WorkoutStructure.Step;
 
 /**
  * Heuristic parser for the plan's Campus-format descriptions
- * ("Échauffement : … Corps : … Retour au calme : …") into workout blocks.
- * Best-effort by design: anything it can't quantify stays readable in the
- * step label — never dropped.
+ * ("Échauffement : … Corps : … Retour au calme : …") into a workout tree:
+ * steps and (possibly nested) repeat groups. Best-effort by design — anything
+ * it can't quantify stays readable in a step label, never dropped.
  */
 public final class WorkoutParser {
 
@@ -27,9 +27,25 @@ public final class WorkoutParser {
     private static final Pattern DURATION = Pattern.compile(
             "(?:(\\d+)h(\\d+)?)|(?:(?:\\d+[-–])?(\\d+)\\s*[′'](?![′'\\d]))|(?:(?:\\d+[-–])?(\\d+)\\s*[″\"])");
 
-    /** e.g. "2 × (8 × 30″ …)" or "6 × 80–100 m" */
-    private static final Pattern REPEATS = Pattern.compile(
-            "(\\d+)\\s*[×x]\\s*(?:\\(\\s*(\\d+)\\s*[×x])?");
+    /** "2 × (8 × 30″ …)" — nested repeat */
+    private static final Pattern NESTED_REPEAT = Pattern.compile(
+            "^(\\d+)\\s*[×x]\\s*\\(\\s*(\\d+)\\s*[×x]\\s*(.+)\\)\\s*$");
+
+    /** "6×30/30" — classic work/recover alternation */
+    private static final Pattern SLASH_REPEAT = Pattern.compile(
+            "(\\d+)\\s*[×x]\\s*(\\d+)\\s*/\\s*(\\d+)");
+
+    /** "8 × 30″ en côte…" — simple repeat */
+    private static final Pattern SIMPLE_REPEAT = Pattern.compile("^(\\d+)\\s*[×x]\\s*(.+)$");
+
+    /** "R = 3′ entre séries" — recovery attached to the previous repeat group */
+    private static final Pattern SERIES_RECOVERY = Pattern.compile(
+            "^R\\s*=.*|^récup(?:ération)?\\s*[:=].*", Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern RECOVERY_SPLIT = Pattern.compile(
+            "[,—-]?\\s*r[ée]cup(?:ération)?\\s*[:=]?\\s*", Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern STRIDES = Pattern.compile("(\\d+)\\s*(?:[×x]\\s*)?lignes?\\b");
 
     private static final List<String> ZONES = List.of(
             "Seuil 60", "Seuil 30", "Récupération", "Récup", "Tempo", "VMA", "Sprint",
@@ -49,7 +65,6 @@ public final class WorkoutParser {
             if (previousSection != null) {
                 addBlock(blocks, previousSection, detail.substring(previousEnd, matcher.start()));
             } else if (previousEnd == 0 && !detail.substring(0, matcher.start()).isBlank()) {
-                // text before the first section marker → treat as main content
                 addBlock(blocks, Section.MAIN, detail.substring(0, matcher.start()));
             }
             previousSection = sectionOf(matcher.group(1));
@@ -59,7 +74,6 @@ public final class WorkoutParser {
         if (previousSection != null) {
             addBlock(blocks, previousSection, detail.substring(previousEnd));
         } else {
-            // no Campus markers at all → the whole text is one main block
             addBlock(blocks, Section.MAIN, detail);
         }
         return List.copyOf(blocks);
@@ -74,75 +88,95 @@ public final class WorkoutParser {
     }
 
     private static void addBlock(List<Block> blocks, Section section, String text) {
-        List<Step> steps = parseSteps(text);
-        if (!steps.isEmpty()) {
-            blocks.add(new Block(section, steps));
+        List<Node> nodes = parseNodes(text);
+        if (!nodes.isEmpty()) {
+            blocks.add(new Block(section, nodes));
         }
     }
 
-    private static List<Step> parseSteps(String text) {
-        List<Step> steps = new ArrayList<>();
-        // split into fragments on "+", ";", "puis" — outside parentheses
+    private static List<Node> parseNodes(String text) {
+        List<Node> nodes = new ArrayList<>();
         for (String fragment : splitTopLevel(text)) {
             String label = clean(fragment);
-            if (label.isEmpty() || label.length() <= 2) {
+            if (label.length() <= 2) {
                 continue;
             }
-            steps.add(toStep(label));
+            Node node = toNode(label, nodes);
+            if (node != null) {
+                nodes.add(node);
+            }
         }
-        return steps;
+        return nodes;
     }
 
-    private static Step toStep(String label) {
-        Integer repeats = null;
-        String repeatLabel = null;
-        Matcher rep = REPEATS.matcher(label);
-        if (rep.find()) {
-            int outer = Integer.parseInt(rep.group(1));
-            if (rep.group(2) != null) {
-                int inner = Integer.parseInt(rep.group(2));
-                repeats = outer * inner;
-                repeatLabel = outer + " × " + inner;
-            } else {
-                repeats = outer;
-                repeatLabel = String.valueOf(outer);
-            }
+    /** May return null when the fragment was folded into the previous repeat group. */
+    private static Node toNode(String label, List<Node> siblings) {
+        // "R = 3′ entre séries" → between-series recovery, belongs INSIDE the previous loop
+        if (SERIES_RECOVERY.matcher(label).matches() && !siblings.isEmpty()
+                && siblings.getLast().isRepeat()) {
+            Node previous = siblings.removeLast();
+            List<Node> children = new ArrayList<>(previous.children());
+            children.add(Node.step(label, firstDuration(label), null));
+            siblings.add(Node.repeat(previous.count(), children));
+            return null;
         }
 
-        Integer durationSec = null;
-        Matcher dur = DURATION.matcher(label);
-        // with repeats, the duration of one repetition is the LAST time token
-        // inside the repeated expression; without, the first token wins
+        Matcher nested = NESTED_REPEAT.matcher(label);
+        if (nested.matches()) {
+            int outer = Integer.parseInt(nested.group(1));
+            int inner = Integer.parseInt(nested.group(2));
+            return Node.repeat(outer, List.of(Node.repeat(inner, workAndRecovery(nested.group(3)))));
+        }
+
+        Matcher slash = SLASH_REPEAT.matcher(label);
+        if (slash.find()) {
+            int count = Integer.parseInt(slash.group(1));
+            int workSec = Integer.parseInt(slash.group(2));
+            int recoverSec = Integer.parseInt(slash.group(3));
+            String zone = zoneOf(label);
+            return Node.repeat(count, List.of(
+                    Node.step(label, workSec, zone != null ? zone : "VMA"),
+                    Node.step("récupération", recoverSec, "Récup")));
+        }
+
+        Matcher strides = STRIDES.matcher(label);
+        if (strides.find()) {
+            return Node.repeat(Integer.parseInt(strides.group(1)),
+                    List.of(Node.step(label, 20, "Sprint")));
+        }
+
+        Matcher simple = SIMPLE_REPEAT.matcher(label);
+        if (simple.matches() && !label.toLowerCase().contains("ligne")) {
+            return Node.repeat(Integer.parseInt(simple.group(1)), workAndRecovery(simple.group(2)));
+        }
+
+        return Node.step(label, firstDuration(label), zoneOf(label));
+    }
+
+    /** Splits "30″ en côte … récup = descente en trot" into work + recovery steps. */
+    private static List<Node> workAndRecovery(String content) {
+        String[] parts = RECOVERY_SPLIT.split(content, 2);
+        String work = clean(parts[0]);
+        List<Node> nodes = new ArrayList<>();
+        nodes.add(Node.step(work, firstDuration(work), zoneOf(work)));
+        if (parts.length > 1) {
+            String recovery = clean(parts[1]);
+            if (!recovery.isEmpty()) {
+                nodes.add(Node.step("récup : " + recovery, firstDuration(recovery), "Récup"));
+            }
+        }
+        return nodes;
+    }
+
+    private static Integer firstDuration(String text) {
+        Matcher dur = DURATION.matcher(text);
         while (dur.find()) {
-            Integer value = toSeconds(dur);
-            if (value != null) {
-                durationSec = value;
-                if (repeats == null) {
-                    break;
-                }
+            Integer seconds = toSeconds(dur);
+            if (seconds != null) {
+                return seconds;
             }
         }
-
-        String zone = ZONES.stream().filter(label::contains).findFirst()
-                .map(z -> z.equals("Récupération") ? "Récup" : z)
-                .orElse(null);
-
-        // "6 lignes droites" / "3 lignes" → short strides
-        if (zone == null && label.toLowerCase().contains("ligne")) {
-            zone = "Sprint";
-            if (durationSec == null) {
-                durationSec = 20;
-            }
-            if (repeats == null) {
-                Matcher strides = Pattern.compile("(\\d+)\\s+lignes?").matcher(label);
-                if (strides.find()) {
-                    repeats = Integer.parseInt(strides.group(1));
-                    repeatLabel = strides.group(1);
-                }
-            }
-        }
-
-        return new Step(label, repeats, repeatLabel, durationSec, zone);
+        return null;
     }
 
     private static Integer toSeconds(Matcher dur) {
@@ -157,6 +191,12 @@ public final class WorkoutParser {
             return Integer.parseInt(dur.group(4));
         }
         return null;
+    }
+
+    private static String zoneOf(String label) {
+        return ZONES.stream().filter(label::contains).findFirst()
+                .map(z -> z.equals("Récupération") ? "Récup" : z)
+                .orElse(null);
     }
 
     private static List<String> splitTopLevel(String text) {

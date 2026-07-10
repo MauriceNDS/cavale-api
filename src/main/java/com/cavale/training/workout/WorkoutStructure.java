@@ -13,17 +13,29 @@ public final class WorkoutStructure {
     }
 
     /**
-     * One executable piece of the workout.
+     * A workout node: either a single step or a repeat group.
      *
-     * @param label       cleaned human text ("8 × 30″ en côte 8–10 % à intensité VMA")
-     * @param repeats     total repetition count when the step is repeated (2×8 → 16), null otherwise
-     * @param repeatLabel human form of the repetition ("2 × 8"), null when not repeated
-     * @param durationSec duration of ONE repetition (or of the whole step when not repeated)
-     * @param zone        detected pace zone (EF, VMA, Seuil 60…), null if none
+     * step   → {type:"step", label, durationSec?, zone?}
+     * repeat → {type:"repeat", count, children[]} — children run in order,
+     *          the whole group loops `count` times. Groups may nest
+     *          (2 × (8 × 30″) → repeat(2, [repeat(8, [work, recover])])).
      */
-    public record Step(String label, Integer repeats, String repeatLabel, Integer durationSec, String zone) {
+    public record Node(String type, String label, Integer durationSec, String zone,
+                       Integer count, List<Node> children) {
+
+        public static Node step(String label, Integer durationSec, String zone) {
+            return new Node("step", label, durationSec, zone, null, null);
+        }
+
+        public static Node repeat(int count, List<Node> children) {
+            return new Node("repeat", null, null, null, count, List.copyOf(children));
+        }
+
+        public boolean isRepeat() {
+            return "repeat".equals(type);
+        }
     }
 
-    public record Block(Section section, List<Step> steps) {
+    public record Block(Section section, List<Node> nodes) {
     }
 }

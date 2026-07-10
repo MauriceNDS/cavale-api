@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.workout.WorkoutStructure.Block;
-import com.cavale.training.workout.WorkoutStructure.Step;
+import com.cavale.training.workout.WorkoutStructure.Node;
 import com.garmin.fit.DateTime;
 import com.garmin.fit.FileEncoder;
 import com.garmin.fit.FileIdMesg;
@@ -74,25 +74,35 @@ public class FitWorkoutExporter {
                 case COOLDOWN -> Intensity.COOLDOWN;
                 case MAIN -> Intensity.ACTIVE;
             };
-
-            for (Step step : block.steps()) {
-                if (step.repeats() != null && step.repeats() > 1 && step.durationSec() != null) {
-                    int firstIndex = steps.size();
-                    steps.add(timedStep(steps.size(), stepName(step), step.durationSec(), Intensity.ACTIVE));
-                    steps.add(openStep(steps.size(), "Récup (lap)", Intensity.REST));
-                    steps.add(repeatStep(steps.size(), firstIndex, step.repeats()));
-                } else if (step.durationSec() != null) {
-                    steps.add(timedStep(steps.size(), stepName(step), step.durationSec(), intensity));
-                } else {
-                    steps.add(openStep(steps.size(), stepName(step), intensity));
-                }
-            }
+            appendNodes(steps, block.nodes(), intensity);
         }
 
         if (steps.isEmpty()) {
             steps.add(openStep(0, "Séance libre", Intensity.ACTIVE));
         }
         return steps;
+    }
+
+    /** Repeat groups become native FIT repeat structures; nesting is preserved. */
+    private void appendNodes(List<WorkoutStepMesg> steps, List<Node> nodes, Intensity intensity) {
+        for (Node node : nodes) {
+            if (node.isRepeat()) {
+                int firstIndex = steps.size();
+                appendNodes(steps, node.children(), Intensity.ACTIVE);
+                if (steps.size() > firstIndex) {
+                    steps.add(repeatStep(steps.size(), firstIndex, node.count()));
+                }
+            } else {
+                boolean recovery = node.zone() != null && node.zone().contains("Récup")
+                        || node.label() != null && node.label().toLowerCase().contains("récup");
+                Intensity stepIntensity = recovery ? Intensity.REST : intensity;
+                if (node.durationSec() != null) {
+                    steps.add(timedStep(steps.size(), stepName(node), node.durationSec(), stepIntensity));
+                } else {
+                    steps.add(openStep(steps.size(), stepName(node), stepIntensity));
+                }
+            }
+        }
     }
 
     private static WorkoutStepMesg timedStep(int index, String name, int durationSec, Intensity intensity) {
@@ -127,8 +137,9 @@ public class FitWorkoutExporter {
         return step;
     }
 
-    private static String stepName(Step step) {
-        String name = step.zone() != null ? step.zone() : step.label();
+    private static String stepName(Node node) {
+        String name = node.zone() != null ? node.zone()
+                : node.label() != null ? node.label() : "Étape";
         return name.length() > 30 ? name.substring(0, 30) : name;
     }
 
