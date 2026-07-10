@@ -27,18 +27,22 @@ public record SessionResponse(
         Integer rpeMax,
         SessionStatus status,
         ActivitySummary activity,
-        List<WorkoutStructure.Block> structure) {
+        List<WorkoutStructure.Block> structure,
+        String structureNotes) {
 
     public static SessionResponse from(PlannedSession session) {
         return from(session, null);
     }
 
     public static SessionResponse from(PlannedSession session, Activity activity) {
+        WorkoutStructure.Parsed parsed = session.getDiscipline() == Discipline.RUN
+                ? WorkoutParser.parse(session.getDetail())
+                : WorkoutStructure.Parsed.EMPTY;
         return new SessionResponse(session.getId(), session.getWeek().getId(), session.getDate(),
                 session.getOrderInDay(), session.getDiscipline(), session.getTitle(), session.getDetail(),
                 session.getComment(), session.getZone(), session.getDurationMin(), session.getElevationM(),
                 session.getRpeMin(), session.getRpeMax(), session.getStatus(),
                 activity != null ? ActivitySummary.from(activity) : null,
-                session.getDiscipline() == Discipline.RUN ? WorkoutParser.parse(session.getDetail()) : List.of());
+                parsed.blocks(), parsed.notes());
     }
 }

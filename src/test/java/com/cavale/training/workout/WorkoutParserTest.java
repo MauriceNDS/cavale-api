@@ -19,7 +19,7 @@ class WorkoutParserTest {
                 Corps : 2 × (8 × 30″ en côte 8–10 % à intensité VMA — effort 9/10, récup = descente en trot) ; R = 3′ entre séries.
                 Retour au calme : 10′ EF.""";
 
-        List<Block> blocks = WorkoutParser.parse(detail);
+        List<Block> blocks = WorkoutParser.parse(detail).blocks();
 
         assertThat(blocks).extracting(Block::section)
                 .containsExactly(Section.WARMUP, Section.MAIN, Section.COOLDOWN);
@@ -56,7 +56,7 @@ class WorkoutParserTest {
 
     @Test
     void parsesThirtyThirty() {
-        List<Block> blocks = WorkoutParser.parse("Corps : 6×30/30 à VMA.");
+        List<Block> blocks = WorkoutParser.parse("Corps : 6×30/30 à VMA.").blocks();
 
         Node repeat = blocks.getFirst().nodes().getFirst();
         assertThat(repeat.isRepeat()).isTrue();
@@ -68,7 +68,7 @@ class WorkoutParserTest {
 
     @Test
     void plainTextBecomesSingleMainStep() {
-        List<Block> blocks = WorkoutParser.parse("EF souple, terrain roulant. Boire 500 ml/h.");
+        List<Block> blocks = WorkoutParser.parse("EF souple, terrain roulant. Boire 500 ml/h.").blocks();
 
         assertThat(blocks).hasSize(1);
         assertThat(blocks.getFirst().section()).isEqualTo(Section.MAIN);
@@ -80,7 +80,7 @@ class WorkoutParserTest {
     @Test
     void parsesHoursAndPuisSplits() {
         List<Block> blocks = WorkoutParser.parse(
-                "Échauffement : —\nCorps : 1h EF, puis 8 × 80–100 m progressives, retour marche.\nRetour au calme : 5′ marche");
+                "Échauffement : —\nCorps : 1h EF, puis 8 × 80–100 m progressives, retour marche.\nRetour au calme : 5′ marche").blocks();
 
         Block main = blocks.stream().filter(b -> b.section() == Section.MAIN).findFirst().orElseThrow();
         assertThat(main.nodes().get(0).durationSec()).isEqualTo(3600);
@@ -90,7 +90,26 @@ class WorkoutParserTest {
 
     @Test
     void emptyDetailGivesNoBlocks() {
-        assertThat(WorkoutParser.parse(null)).isEmpty();
-        assertThat(WorkoutParser.parse("  ")).isEmpty();
+        assertThat(WorkoutParser.parse(null).blocks()).isEmpty();
+        assertThat(WorkoutParser.parse("  ").blocks()).isEmpty();
+    }
+
+    @Test
+    void proseGoesToNotesNotToTheStructure() {
+        String detail = """
+                Échauffement : 20′ EF progressif + 3 lignes droites.
+                Corps : 30′ à intensité MAXIMALE que tu peux tenir RÉGULIÈREMENT sur 30′ (seul, à plat, parcours mesuré, pas de sprint final). FC moyenne des 20 DERNIÈRES minutes = ta LTHR.
+                Retour au calme : 10′ très facile. ➜ Reporter LTHR dans « Allures & Zones » et recaler montre Garmin + Strava.""";
+
+        var parsed = WorkoutParser.parse(detail);
+
+        // structure: strictly time/zone/loops
+        Block main = parsed.blocks().stream()
+                .filter(b -> b.section() == Section.MAIN).findFirst().orElseThrow();
+        assertThat(main.nodes().getFirst().durationSec()).isEqualTo(1800);
+
+        // prose lands in notes, none of it lost
+        assertThat(parsed.notes()).contains("parcours mesuré");
+        assertThat(parsed.notes()).contains("Reporter LTHR");
     }
 }

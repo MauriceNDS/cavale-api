@@ -80,7 +80,7 @@ public class PlannedSessionController {
     public ResponseEntity<byte[]> exportFit(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
         UUID userId = UUID.fromString(jwt.getSubject());
         PlannedSession session = planService.getOwnedSession(userId, sessionId);
-        byte[] fit = fitExporter.export(session, WorkoutParser.parse(session.getDetail()));
+        byte[] fit = fitExporter.export(session, WorkoutParser.parse(session.getDetail()).blocks());
         String filename = "cavale-" + session.getDate() + ".fit";
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")

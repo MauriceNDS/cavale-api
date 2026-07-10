@@ -7,13 +7,17 @@ import java.util.regex.Pattern;
 
 import com.cavale.training.workout.WorkoutStructure.Block;
 import com.cavale.training.workout.WorkoutStructure.Node;
+import com.cavale.training.workout.WorkoutStructure.Parsed;
 import com.cavale.training.workout.WorkoutStructure.Section;
 
 /**
  * Heuristic parser for the plan's Campus-format descriptions
- * ("Échauffement : … Corps : … Retour au calme : …") into a workout tree:
- * steps and (possibly nested) repeat groups. Best-effort by design — anything
- * it can't quantify stays readable in a step label, never dropped.
+ * ("Échauffement : … Corps : … Retour au calme : …").
+ *
+ * The output is strictly two-channel: the STRUCTURE carries only what a watch
+ * can execute — durations, pace zones, repeat loops — while every piece of
+ * prose (terrain, technique, instructions, reminders) goes to NOTES. Nothing
+ * is dropped; nothing pollutes the workout body.
  */
 public final class WorkoutParser {
 
@@ -29,7 +33,7 @@ public final class WorkoutParser {
 
     /** "2 × (8 × 30″ …)" — nested repeat */
     private static final Pattern NESTED_REPEAT = Pattern.compile(
-            "^(\\d+)\\s*[×x]\\s*\\(\\s*(\\d+)\\s*[×x]\\s*(.+)\\)\\s*$");
+            "^(\\d+)\\s*[×x]\\s*\\(\\s*(\\d+)\\s*[×x]\\s*(.+)\\)\\s*(.*)$");
 
     /** "6×30/30" — classic work/recover alternation */
     private static final Pattern SLASH_REPEAT = Pattern.compile(
@@ -51,32 +55,34 @@ public final class WorkoutParser {
             "Seuil 60", "Seuil 30", "Récupération", "Récup", "Tempo", "VMA", "Sprint",
             "allure course", "AC", "EF", "Z1", "Z2");
 
-    public static List<Block> parse(String detail) {
+    public static Parsed parse(String detail) {
         if (detail == null || detail.isBlank()) {
-            return List.of();
+            return Parsed.EMPTY;
         }
 
         List<Block> blocks = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
         Matcher matcher = SECTION.matcher(detail);
 
         int previousEnd = 0;
         Section previousSection = null;
         while (matcher.find()) {
             if (previousSection != null) {
-                addBlock(blocks, previousSection, detail.substring(previousEnd, matcher.start()));
+                addBlock(blocks, notes, previousSection, detail.substring(previousEnd, matcher.start()));
             } else if (previousEnd == 0 && !detail.substring(0, matcher.start()).isBlank()) {
-                addBlock(blocks, Section.MAIN, detail.substring(0, matcher.start()));
+                addBlock(blocks, notes, Section.MAIN, detail.substring(0, matcher.start()));
             }
             previousSection = sectionOf(matcher.group(1));
             previousEnd = matcher.end();
         }
 
         if (previousSection != null) {
-            addBlock(blocks, previousSection, detail.substring(previousEnd));
+            addBlock(blocks, notes, previousSection, detail.substring(previousEnd));
         } else {
-            addBlock(blocks, Section.MAIN, detail);
+            addBlock(blocks, notes, Section.MAIN, detail);
         }
-        return List.copyOf(blocks);
+
+        return new Parsed(List.copyOf(blocks), notes.isEmpty() ? null : String.join("\n", notes));
     }
 
     private static Section sectionOf(String label) {
@@ -87,14 +93,7 @@ public final class WorkoutParser {
         };
     }
 
-    private static void addBlock(List<Block> blocks, Section section, String text) {
-        List<Node> nodes = parseNodes(text);
-        if (!nodes.isEmpty()) {
-            blocks.add(new Block(section, nodes));
-        }
-    }
-
-    private static List<Node> parseNodes(String text) {
+    private static void addBlock(List<Block> blocks, List<String> notes, Section section, String text) {
         List<Node> nodes = new ArrayList<>();
         for (String fragment : splitTopLevel(text)) {
             String label = clean(fragment);
@@ -105,18 +104,23 @@ public final class WorkoutParser {
             if (node != null) {
                 nodes.add(node);
             }
+            if (node == null || isProse(label)) {
+                notes.add(label);
+            }
         }
-        return nodes;
+        if (!nodes.isEmpty()) {
+            blocks.add(new Block(section, nodes));
+        }
     }
 
-    /** May return null when the fragment was folded into the previous repeat group. */
+    /** May return null: pure prose, or folded into the previous repeat group. */
     private static Node toNode(String label, List<Node> siblings) {
         // "R = 3′ entre séries" → between-series recovery, belongs INSIDE the previous loop
         if (SERIES_RECOVERY.matcher(label).matches() && !siblings.isEmpty()
                 && siblings.getLast().isRepeat()) {
             Node previous = siblings.removeLast();
             List<Node> children = new ArrayList<>(previous.children());
-            children.add(Node.step(label, firstDuration(label), null));
+            children.add(Node.step(label, firstDuration(label), "Récup"));
             siblings.add(Node.repeat(previous.count(), children));
             return null;
         }
@@ -131,12 +135,10 @@ public final class WorkoutParser {
         Matcher slash = SLASH_REPEAT.matcher(label);
         if (slash.find()) {
             int count = Integer.parseInt(slash.group(1));
-            int workSec = Integer.parseInt(slash.group(2));
-            int recoverSec = Integer.parseInt(slash.group(3));
             String zone = zoneOf(label);
             return Node.repeat(count, List.of(
-                    Node.step(label, workSec, zone != null ? zone : "VMA"),
-                    Node.step("récupération", recoverSec, "Récup")));
+                    Node.step(label, Integer.parseInt(slash.group(2)), zone != null ? zone : "VMA"),
+                    Node.step("récupération", Integer.parseInt(slash.group(3)), "Récup")));
         }
 
         Matcher strides = STRIDES.matcher(label);
@@ -150,7 +152,12 @@ public final class WorkoutParser {
             return Node.repeat(Integer.parseInt(simple.group(1)), workAndRecovery(simple.group(2)));
         }
 
-        return Node.step(label, firstDuration(label), zoneOf(label));
+        Integer duration = firstDuration(label);
+        String zone = zoneOf(label);
+        if (duration == null && zone == null) {
+            return null; // pure prose — notes only
+        }
+        return Node.step(label, duration, zone);
     }
 
     /** Splits "30″ en côte … récup = descente en trot" into work + recovery steps. */
@@ -166,6 +173,21 @@ public final class WorkoutParser {
             }
         }
         return nodes;
+    }
+
+    /**
+     * True when the fragment carries meaning beyond its quantified tokens —
+     * terrain, technique, instructions — that must reach the notes.
+     */
+    private static boolean isProse(String label) {
+        String residual = DURATION.matcher(label).replaceAll(" ");
+        residual = residual.replaceAll("\\d+\\s*[×x/]|[()\\d]", " ");
+        for (String zone : ZONES) {
+            residual = residual.replace(zone, " ");
+        }
+        residual = residual.replaceAll(
+                "(?i)\\b(r|récup(?:ération)?|entre|séries?|lignes?|droites?|à|de|en|la|le|et|=)\\b", " ");
+        return residual.replaceAll("[^\\p{L}]", "").length() >= 8;
     }
 
     private static Integer firstDuration(String text) {

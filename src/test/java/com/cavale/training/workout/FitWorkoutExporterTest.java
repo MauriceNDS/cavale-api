@@ -35,7 +35,7 @@ class FitWorkoutExporterTest {
                 Retour au calme : 10′ EF.""";
         PlannedSession session = session(detail);
 
-        byte[] fit = new FitWorkoutExporter().export(session, WorkoutParser.parse(detail));
+        byte[] fit = new FitWorkoutExporter().export(session, WorkoutParser.parse(detail).blocks());
 
         assertThat(fit.length).isGreaterThan(50);
         // FIT header: bytes 8..11 spell ".FIT"
@@ -46,7 +46,7 @@ class FitWorkoutExporterTest {
     void exportsOpenStepWhenNothingParsed() {
         PlannedSession session = session(null);
 
-        byte[] fit = new FitWorkoutExporter().export(session, WorkoutParser.parse(null));
+        byte[] fit = new FitWorkoutExporter().export(session, WorkoutParser.parse(null).blocks());
 
         assertThat(new String(fit, 8, 4)).isEqualTo(".FIT");
     }

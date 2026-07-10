@@ -38,4 +38,14 @@ public final class WorkoutStructure {
 
     public record Block(Section section, List<Node> nodes) {
     }
+
+    /**
+     * Full parse result: the strict structure (time · zone · loops only) plus
+     * every piece of prose the structure can't carry — never dropped, shown
+     * as coach notes next to the athlete's comment.
+     */
+    public record Parsed(List<Block> blocks, String notes) {
+
+        public static final Parsed EMPTY = new Parsed(List.of(), null);
+    }
 }
