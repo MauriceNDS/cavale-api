@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cavale.integration.strava.StravaActivityService;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.dto.SessionResponse;
 import com.cavale.training.dto.UpdateSessionRequest;
@@ -27,9 +28,15 @@ import jakarta.validation.Valid;
 public class PlannedSessionController {
 
     private final TrainingPlanService planService;
+    private final StravaActivityService stravaActivityService;
 
-    public PlannedSessionController(TrainingPlanService planService) {
+    public PlannedSessionController(TrainingPlanService planService,
+                                    StravaActivityService stravaActivityService) {
         this.planService = planService;
+        this.stravaActivityService = stravaActivityService;
+    }
+
+    public record ImportStravaRequest(long stravaActivityId) {
     }
 
     @PatchMapping("/{sessionId}")
@@ -46,6 +53,15 @@ public class PlannedSessionController {
                                     @Valid @RequestBody ValidateSessionRequest request) {
         UUID userId = UUID.fromString(jwt.getSubject());
         Activity activity = planService.validateSession(userId, sessionId, request);
+        return SessionResponse.from(activity.getSession(), activity);
+    }
+
+    @PostMapping("/{sessionId}/validate-strava")
+    @Operation(summary = "Validate a running session by attaching a Strava activity")
+    public SessionResponse validateFromStrava(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId,
+                                              @RequestBody ImportStravaRequest request) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        Activity activity = stravaActivityService.importToSession(userId, sessionId, request.stravaActivityId());
         return SessionResponse.from(activity.getSession(), activity);
     }
 }

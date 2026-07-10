@@ -2,6 +2,7 @@ package com.cavale.integration.strava;
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -11,7 +12,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -26,14 +26,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class StravaController {
 
     private final StravaAuthService authService;
-    private final StravaSyncService syncService;
+    private final StravaActivityService activityService;
     private final StravaConnectionRepository connectionRepository;
     private final StravaProperties properties;
 
-    public StravaController(StravaAuthService authService, StravaSyncService syncService,
+    public StravaController(StravaAuthService authService, StravaActivityService activityService,
                             StravaConnectionRepository connectionRepository, StravaProperties properties) {
         this.authService = authService;
-        this.syncService = syncService;
+        this.activityService = activityService;
         this.connectionRepository = connectionRepository;
         this.properties = properties;
     }
@@ -65,10 +65,10 @@ public class StravaController {
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(redirect)).build();
     }
 
-    @PostMapping("/sync")
-    @Operation(summary = "Import recent Strava runs and validate matching sessions")
-    public StravaSyncService.SyncResult sync(@AuthenticationPrincipal Jwt jwt) {
-        return syncService.sync(userId(jwt));
+    @GetMapping("/activities")
+    @Operation(summary = "Recent Strava runs not yet attached to any session")
+    public List<StravaActivityService.StravaActivityOption> recentActivities(@AuthenticationPrincipal Jwt jwt) {
+        return activityService.listRecentNotImported(userId(jwt));
     }
 
     @DeleteMapping("/connection")
