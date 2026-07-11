@@ -1,5 +1,6 @@
 package com.cavale.training.web;
 
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.HttpHeaders;
@@ -23,7 +24,7 @@ import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.dto.ValidateSessionRequest;
 import com.cavale.training.service.TrainingPlanService;
 import com.cavale.training.workout.FitWorkoutExporter;
-import com.cavale.training.workout.WorkoutParser;
+import com.cavale.training.workout.WorkoutJson;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -80,11 +81,18 @@ public class PlannedSessionController {
     public ResponseEntity<byte[]> exportFit(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
         UUID userId = UUID.fromString(jwt.getSubject());
         PlannedSession session = planService.getOwnedSession(userId, sessionId);
-        byte[] fit = fitExporter.export(session, WorkoutParser.parse(session.getDetail()).blocks());
+        byte[] fit = fitExporter.export(session, WorkoutJson.read(session.getWorkoutJson()));
         String filename = "cavale-" + session.getDate() + ".fit";
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(fit);
+    }
+
+    @PostMapping("/backfill-workouts")
+    @Operation(summary = "Recompute the stored workout structure of all RUN sessions from their text")
+    public Map<String, Integer> backfillWorkouts(@AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        return Map.of("updated", planService.backfillWorkouts(userId));
     }
 }

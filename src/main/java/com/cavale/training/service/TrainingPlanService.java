@@ -27,6 +27,9 @@ import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 import com.cavale.training.repository.TrainingPlanRepository;
+import com.cavale.training.workout.WorkoutJson;
+import com.cavale.training.workout.WorkoutParser;
+import com.cavale.training.workout.WorkoutStructure;
 
 /**
  * Business rules for training plans. Every read/write is scoped to the
@@ -94,7 +97,32 @@ public class TrainingPlanService {
         PlannedSession session = new PlannedSession(week, userId, request.date(), request.orderInDay(),
                 request.discipline(), request.title().trim(), request.detail(), request.zone(),
                 request.durationMin(), request.elevationM(), request.rpeMin(), request.rpeMax());
+        if (request.discipline() == Discipline.RUN) {
+            // builder-provided structure wins; otherwise derive it from the text/zone
+            List<WorkoutStructure.Node> workout = request.workout() != null && !request.workout().isEmpty()
+                    ? request.workout()
+                    : WorkoutParser.parse(request.detail(), request.zone(), request.durationMin()).nodes();
+            session.updateWorkoutJson(WorkoutJson.write(workout));
+        }
         return sessionRepository.save(session);
+    }
+
+    /** Recomputes the canonical workout structure of every RUN session from its text. */
+    @Transactional
+    public int backfillWorkouts(UUID userId) {
+        List<PlannedSession> sessions = sessionRepository.findByUserId(userId);
+        int updated = 0;
+        for (PlannedSession session : sessions) {
+            if (session.getDiscipline() != Discipline.RUN) {
+                continue;
+            }
+            List<WorkoutStructure.Node> nodes = WorkoutParser
+                    .parse(session.getDetail(), session.getZone(), session.getDurationMin())
+                    .nodes();
+            session.updateWorkoutJson(WorkoutJson.write(nodes));
+            updated++;
+        }
+        return updated;
     }
 
     @Transactional(readOnly = true)
@@ -146,6 +174,9 @@ public class TrainingPlanService {
         }
         if (request.comment() != null) {
             session.updateComment(request.comment().isBlank() ? null : request.comment().trim());
+        }
+        if (request.workout() != null) {
+            session.updateWorkoutJson(WorkoutJson.write(request.workout()));
         }
         return session;
     }

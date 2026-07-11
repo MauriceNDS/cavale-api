@@ -1,8 +1,10 @@
 package com.cavale.training.dto;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import com.cavale.training.domain.SessionStatus;
+import com.cavale.training.workout.WorkoutStructure;
 
 import jakarta.validation.constraints.Min;
 
@@ -11,5 +13,6 @@ public record UpdateSessionRequest(
         LocalDate date,
         @Min(0) Integer orderInDay,
         SessionStatus status,
-        String comment) {
+        String comment,
+        List<WorkoutStructure.Node> workout) {
 }

@@ -4,112 +4,105 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import com.cavale.training.workout.WorkoutStructure.Block;
+import com.cavale.training.workout.WorkoutStructure.Allure;
 import com.cavale.training.workout.WorkoutStructure.Node;
-import com.cavale.training.workout.WorkoutStructure.Section;
+import com.cavale.training.workout.WorkoutStructure.Parsed;
+import com.cavale.training.workout.WorkoutStructure.Terrain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class WorkoutParserTest {
 
     @Test
-    void parsesNestedIntervalsIntoRepeatTree() {
+    void nestedIntervalsWithDeterministicRecoveries() {
         String detail = """
                 Échauffement : 20′ EF + 3 lignes droites.
                 Corps : 2 × (8 × 30″ en côte 8–10 % à intensité VMA — effort 9/10, récup = descente en trot) ; R = 3′ entre séries.
                 Retour au calme : 10′ EF.""";
 
-        List<Block> blocks = WorkoutParser.parse(detail).blocks();
+        List<Node> nodes = WorkoutParser.parse(detail, "VMA", 65).nodes();
 
-        assertThat(blocks).extracting(Block::section)
-                .containsExactly(Section.WARMUP, Section.MAIN, Section.COOLDOWN);
+        // warmup: EF block + strides loop (ALWAYS ≥ 2 blocks: sprint + récup)
+        assertThat(nodes.get(0).allure()).isEqualTo(Allure.EF);
+        assertThat(nodes.get(0).seconds()).isEqualTo(1200);
+        Node strides = nodes.get(1);
+        assertThat(strides.count()).isEqualTo(3);
+        assertThat(strides.children()).extracting(Node::allure)
+                .containsExactly(Allure.SPRINT, Allure.LENTE);
 
-        // Warmup: 20′ EF step + strides as a repeat group of 3
-        List<Node> warmup = blocks.get(0).nodes();
-        assertThat(warmup.get(0).durationSec()).isEqualTo(1200);
-        assertThat(warmup.get(0).zone()).isEqualTo("EF");
-        assertThat(warmup.get(1).isRepeat()).isTrue();
-        assertThat(warmup.get(1).count()).isEqualTo(3);
-        assertThat(warmup.get(1).children().getFirst().zone()).isEqualTo("Sprint");
-
-        // Main: outer repeat ×2 [ inner repeat ×8 [work 30″ VMA, récup open], R=3′ ]
-        List<Node> main = blocks.get(1).nodes();
-        assertThat(main).hasSize(1);
-        Node outer = main.getFirst();
-        assertThat(outer.isRepeat()).isTrue();
+        // main: 2 × [ 8 × [30″ VMA côte + récup LENTE] + 3 min LENTE ]
+        Node outer = nodes.get(2);
         assertThat(outer.count()).isEqualTo(2);
-        assertThat(outer.children()).hasSize(2);
-
         Node inner = outer.children().get(0);
-        assertThat(inner.isRepeat()).isTrue();
         assertThat(inner.count()).isEqualTo(8);
-        assertThat(inner.children().get(0).durationSec()).isEqualTo(30);
-        assertThat(inner.children().get(0).zone()).isEqualTo("VMA");
-        assertThat(inner.children().get(1).zone()).isEqualTo("Récup");
+        assertThat(inner.children().get(0).allure()).isEqualTo(Allure.VMA);
+        assertThat(inner.children().get(0).seconds()).isEqualTo(30);
+        assertThat(inner.children().get(0).terrain()).isEqualTo(Terrain.COTE);
+        assertThat(inner.children().get(1).allure()).isEqualTo(Allure.LENTE);
+        assertThat(inner.children().get(1).seconds()).isNotNull(); // deterministic default
+        assertThat(outer.children().get(1).allure()).isEqualTo(Allure.LENTE);
+        assertThat(outer.children().get(1).seconds()).isEqualTo(180);
 
-        Node seriesRecovery = outer.children().get(1);
-        assertThat(seriesRecovery.durationSec()).isEqualTo(180);
-
-        // Cooldown
-        assertThat(blocks.get(2).nodes().getFirst().durationSec()).isEqualTo(600);
+        // cooldown: EF stated explicitly
+        assertThat(nodes.get(3).seconds()).isEqualTo(600);
     }
 
     @Test
-    void parsesThirtyThirty() {
-        List<Block> blocks = WorkoutParser.parse("Corps : 6×30/30 à VMA.").blocks();
+    void proseOnlyDetailSynthesizesFromSessionZoneAndDuration() {
+        // "Reprise footing 30′" — the detail is pure instructions
+        Parsed parsed = WorkoutParser.parse(
+                "SI ET SEULEMENT SI feu vert du chirurgien : footing très plat, bandeau anti-sueur.",
+                "Récup", 30);
 
-        Node repeat = blocks.getFirst().nodes().getFirst();
-        assertThat(repeat.isRepeat()).isTrue();
-        assertThat(repeat.count()).isEqualTo(6);
-        assertThat(repeat.children().get(0).durationSec()).isEqualTo(30);
-        assertThat(repeat.children().get(1).durationSec()).isEqualTo(30);
-        assertThat(repeat.children().get(1).zone()).isEqualTo("Récup");
+        assertThat(parsed.nodes()).hasSize(1);
+        assertThat(parsed.nodes().getFirst().allure()).isEqualTo(Allure.LENTE);
+        assertThat(parsed.nodes().getFirst().seconds()).isEqualTo(1800);
+        assertThat(parsed.notes()).contains("feu vert du chirurgien");
     }
 
     @Test
-    void plainTextBecomesSingleMainStep() {
-        List<Block> blocks = WorkoutParser.parse("EF souple, terrain roulant. Boire 500 ml/h.").blocks();
+    void longRunSynthesizesEfNeverOpen() {
+        // "SL trail 1h30" — detail has instructions but no explicit structure
+        Parsed parsed = WorkoutParser.parse(
+                "Sortie longue trail EF STRICT, 400–500 D+. Boire 500 ml/h. Descentes en souplesse.",
+                "EF", 90);
 
-        assertThat(blocks).hasSize(1);
-        assertThat(blocks.getFirst().section()).isEqualTo(Section.MAIN);
-        Node step = blocks.getFirst().nodes().getFirst();
-        assertThat(step.isRepeat()).isFalse();
-        assertThat(step.zone()).isEqualTo("EF");
+        List<Node> nodes = parsed.nodes();
+        assertThat(nodes).isNotEmpty();
+        assertThat(nodes.getFirst().allure()).isEqualTo(Allure.EF);
+        assertThat(nodes.getFirst().seconds()).isNotNull();
     }
 
     @Test
-    void parsesHoursAndPuisSplits() {
-        List<Block> blocks = WorkoutParser.parse(
-                "Échauffement : —\nCorps : 1h EF, puis 8 × 80–100 m progressives, retour marche.\nRetour au calme : 5′ marche").blocks();
-
-        Block main = blocks.stream().filter(b -> b.section() == Section.MAIN).findFirst().orElseThrow();
-        assertThat(main.nodes().get(0).durationSec()).isEqualTo(3600);
-        assertThat(main.nodes().get(1).isRepeat()).isTrue();
-        assertThat(main.nodes().get(1).count()).isEqualTo(8);
-    }
-
-    @Test
-    void emptyDetailGivesNoBlocks() {
-        assertThat(WorkoutParser.parse(null).blocks()).isEmpty();
-        assertThat(WorkoutParser.parse("  ").blocks()).isEmpty();
-    }
-
-    @Test
-    void proseGoesToNotesNotToTheStructure() {
+    void lthrTestGetsSeuil30AndCooldownGetsLente() {
         String detail = """
                 Échauffement : 20′ EF progressif + 3 lignes droites.
-                Corps : 30′ à intensité MAXIMALE que tu peux tenir RÉGULIÈREMENT sur 30′ (seul, à plat, parcours mesuré, pas de sprint final). FC moyenne des 20 DERNIÈRES minutes = ta LTHR.
-                Retour au calme : 10′ très facile. ➜ Reporter LTHR dans « Allures & Zones » et recaler montre Garmin + Strava.""";
+                Corps : 30′ à intensité MAXIMALE que tu peux tenir RÉGULIÈREMENT sur 30′ (seul, à plat, parcours mesuré).
+                Retour au calme : 10′ très facile.""";
 
-        var parsed = WorkoutParser.parse(detail);
+        List<Node> nodes = WorkoutParser.parse(detail, "Test", 60).nodes();
 
-        // structure: strictly time/zone/loops
-        Block main = parsed.blocks().stream()
-                .filter(b -> b.section() == Section.MAIN).findFirst().orElseThrow();
-        assertThat(main.nodes().getFirst().durationSec()).isEqualTo(1800);
+        Node test = nodes.get(2);
+        assertThat(test.allure()).isEqualTo(Allure.SEUIL30);
+        assertThat(test.seconds()).isEqualTo(1800);
 
-        // prose lands in notes, none of it lost
-        assertThat(parsed.notes()).contains("parcours mesuré");
-        assertThat(parsed.notes()).contains("Reporter LTHR");
+        Node cooldown = nodes.getLast();
+        assertThat(cooldown.allure()).isEqualTo(Allure.LENTE);
+        assertThat(cooldown.seconds()).isEqualTo(600);
+    }
+
+    @Test
+    void thirtyThirtyAlternation() {
+        List<Node> nodes = WorkoutParser.parse("Corps : 6×30/30 à VMA.", "VMA", 40).nodes();
+
+        Node repeat = nodes.getFirst();
+        assertThat(repeat.count()).isEqualTo(6);
+        assertThat(repeat.children()).extracting(Node::allure)
+                .containsExactly(Allure.VMA, Allure.LENTE);
+    }
+
+    @Test
+    void emptyEverythingGivesNoNodes() {
+        assertThat(WorkoutParser.parse(null, null, null).nodes()).isEmpty();
     }
 }

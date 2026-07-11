@@ -32,5 +32,6 @@ public record CreateSessionRequest(
         @Min(0) Integer durationMin,
         @Min(0) Integer elevationM,
         @Min(0) @Max(10) Integer rpeMin,
-        @Min(0) @Max(10) Integer rpeMax) {
+        @Min(0) @Max(10) Integer rpeMax,
+        java.util.List<com.cavale.training.workout.WorkoutStructure.Node> workout) {
 }

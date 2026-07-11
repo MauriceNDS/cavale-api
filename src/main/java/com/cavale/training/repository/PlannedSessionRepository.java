@@ -15,4 +15,6 @@ public interface PlannedSessionRepository extends JpaRepository<PlannedSession, 
             UUID userId, LocalDate from, LocalDate to);
 
     List<PlannedSession> findByWeekIdOrderByDateAscOrderInDayAsc(UUID weekId);
+
+    List<PlannedSession> findByUserId(UUID userId);
 }

@@ -5,44 +5,47 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.cavale.training.workout.WorkoutStructure.Block;
+import com.cavale.training.workout.WorkoutStructure.Allure;
 import com.cavale.training.workout.WorkoutStructure.Node;
 import com.cavale.training.workout.WorkoutStructure.Parsed;
-import com.cavale.training.workout.WorkoutStructure.Section;
+import com.cavale.training.workout.WorkoutStructure.Terrain;
 
 /**
- * Heuristic parser for the plan's Campus-format descriptions
- * ("Échauffement : … Corps : … Retour au calme : …").
+ * IMPORT tool: converts the plan's Campus-format text into the canonical
+ * workout model (allure blocks, loops, deterministic durations). Used at
+ * import/backfill time — the app then reads only the STORED structure, which
+ * the athlete can edit with the builder.
  *
- * The output is strictly two-channel: the STRUCTURE carries only what a watch
- * can execute — durations, pace zones, repeat loops — while every piece of
- * prose (terrain, technique, instructions, reminders) goes to NOTES. Nothing
- * is dropped; nothing pollutes the workout body.
+ * Deterministic guarantees over best-effort text:
+ * - warm-ups without an allure become EF; cool-downs become LENTE;
+ * - every loop has at least two blocks (a récupération is added if missing,
+ *   defaulting to 1 min LENTE);
+ * - when the text yields no structure at all, the session's own zone +
+ *   duration synthesize a single block — never an empty body;
+ * - all prose goes to notes (consignes), nothing is dropped.
  */
 public final class WorkoutParser {
 
     private WorkoutParser() {
     }
 
+    private static final int DEFAULT_RECOVERY_SEC = 60;
+    private static final int STRIDE_SEC = 20;
+
     private static final Pattern SECTION = Pattern.compile(
             "(Échauffement|Corps|Retour au calme)\\s*:\\s*", Pattern.CASE_INSENSITIVE);
 
-    /** e.g. "1h30", "45′", "45'", "30″", "25-30′" (a range keeps its upper bound) */
     private static final Pattern DURATION = Pattern.compile(
-            "(?:(\\d+)h(\\d+)?)|(?:(?:\\d+[-–])?(\\d+)\\s*[′'](?![′'\\d]))|(?:(?:\\d+[-–])?(\\d+)\\s*[″\"])");
+            "(?:(\\d+)h(\\d+)?)|(?:(?:\\d+[-–])?(\\d+)\\s*(?:[′']|min\\b)(?![′'\\d]))|(?:(?:\\d+[-–])?(\\d+)\\s*(?:[″\"]|sec\\b))");
 
-    /** "2 × (8 × 30″ …)" — nested repeat */
     private static final Pattern NESTED_REPEAT = Pattern.compile(
             "^(\\d+)\\s*[×x]\\s*\\(\\s*(\\d+)\\s*[×x]\\s*(.+)\\)\\s*(.*)$");
 
-    /** "6×30/30" — classic work/recover alternation */
     private static final Pattern SLASH_REPEAT = Pattern.compile(
             "(\\d+)\\s*[×x]\\s*(\\d+)\\s*/\\s*(\\d+)");
 
-    /** "8 × 30″ en côte…" — simple repeat */
     private static final Pattern SIMPLE_REPEAT = Pattern.compile("^(\\d+)\\s*[×x]\\s*(.+)$");
 
-    /** "R = 3′ entre séries" — recovery attached to the previous repeat group */
     private static final Pattern SERIES_RECOVERY = Pattern.compile(
             "^R\\s*=.*|^récup(?:ération)?\\s*[:=].*", Pattern.CASE_INSENSITIVE);
 
@@ -51,56 +54,72 @@ public final class WorkoutParser {
 
     private static final Pattern STRIDES = Pattern.compile("(\\d+)\\s*(?:[×x]\\s*)?lignes?\\b");
 
-    private static final List<String> ZONES = List.of(
-            "Seuil 60", "Seuil 30", "Récupération", "Récup", "Tempo", "VMA", "Sprint",
-            "allure course", "AC", "EF", "Z1", "Z2");
-
-    public static Parsed parse(String detail) {
-        if (detail == null || detail.isBlank()) {
-            return Parsed.EMPTY;
-        }
-
-        List<Block> blocks = new ArrayList<>();
-        List<String> notes = new ArrayList<>();
-        Matcher matcher = SECTION.matcher(detail);
-
-        int previousEnd = 0;
-        Section previousSection = null;
-        while (matcher.find()) {
-            if (previousSection != null) {
-                addBlock(blocks, notes, previousSection, detail.substring(previousEnd, matcher.start()));
-            } else if (previousEnd == 0 && !detail.substring(0, matcher.start()).isBlank()) {
-                addBlock(blocks, notes, Section.MAIN, detail.substring(0, matcher.start()));
-            }
-            previousSection = sectionOf(matcher.group(1));
-            previousEnd = matcher.end();
-        }
-
-        if (previousSection != null) {
-            addBlock(blocks, notes, previousSection, detail.substring(previousEnd));
-        } else {
-            addBlock(blocks, notes, Section.MAIN, detail);
-        }
-
-        return new Parsed(List.copyOf(blocks), notes.isEmpty() ? null : String.join("\n", notes));
-    }
-
-    private static Section sectionOf(String label) {
-        return switch (label.toLowerCase()) {
-            case "échauffement" -> Section.WARMUP;
-            case "retour au calme" -> Section.COOLDOWN;
-            default -> Section.MAIN;
-        };
-    }
-
-    private static void addBlock(List<Block> blocks, List<String> notes, Section section, String text) {
+    /**
+     * @param detail            the imported description text (may be null)
+     * @param fallbackZone      the session's zone label, used when the text has no structure
+     * @param fallbackDurationMin the session's planned duration, same purpose
+     */
+    public static Parsed parse(String detail, String fallbackZone, Integer fallbackDurationMin) {
         List<Node> nodes = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
+
+        if (detail != null && !detail.isBlank()) {
+            Matcher matcher = SECTION.matcher(detail);
+            int previousEnd = 0;
+            String previousSection = null;
+            while (matcher.find()) {
+                if (previousSection != null) {
+                    parseInto(nodes, notes, previousSection, detail.substring(previousEnd, matcher.start()));
+                } else if (previousEnd == 0 && !detail.substring(0, matcher.start()).isBlank()) {
+                    parseInto(nodes, notes, "corps", detail.substring(0, matcher.start()));
+                }
+                previousSection = matcher.group(1).toLowerCase();
+                previousEnd = matcher.end();
+            }
+            if (previousSection != null) {
+                parseInto(nodes, notes, previousSection, detail.substring(previousEnd));
+            } else {
+                parseInto(nodes, notes, "corps", detail);
+            }
+        }
+
+        // Never an empty body: synthesize from the session's own zone + duration
+        if (nodes.isEmpty() && fallbackDurationMin != null) {
+            nodes.add(Node.step(allureOfZone(fallbackZone), fallbackDurationMin * 60, null));
+        }
+
+        // A single duration-less top-level block (e.g. an SL or EF whose time
+        // lives in the title) inherits the session duration — never "libre"
+        if (fallbackDurationMin != null) {
+            List<Integer> missing = new ArrayList<>();
+            for (int i = 0; i < nodes.size(); i++) {
+                if (!nodes.get(i).isRepeat() && nodes.get(i).seconds() == null) {
+                    missing.add(i);
+                }
+            }
+            if (missing.size() == 1) {
+                int i = missing.getFirst();
+                Node lone = nodes.get(i);
+                nodes.set(i, Node.step(lone.allure(), fallbackDurationMin * 60, lone.terrain()));
+            }
+        }
+
+        return new Parsed(List.copyOf(nodes), notes.isEmpty() ? null : String.join("\n", notes));
+    }
+
+    private static void parseInto(List<Node> nodes, List<String> notes, String section, String text) {
+        Allure sectionDefault = switch (section) {
+            case "échauffement" -> Allure.EF;
+            case "retour au calme" -> Allure.LENTE;
+            default -> null;
+        };
+
         for (String fragment : splitTopLevel(text)) {
             String label = clean(fragment);
             if (label.length() <= 2) {
                 continue;
             }
-            Node node = toNode(label, nodes);
+            Node node = toNode(label, nodes, sectionDefault);
             if (node != null) {
                 nodes.add(node);
             }
@@ -108,19 +127,20 @@ public final class WorkoutParser {
                 notes.add(label);
             }
         }
-        if (!nodes.isEmpty()) {
-            blocks.add(new Block(section, nodes));
-        }
     }
 
     /** May return null: pure prose, or folded into the previous repeat group. */
-    private static Node toNode(String label, List<Node> siblings) {
-        // "R = 3′ entre séries" → between-series recovery, belongs INSIDE the previous loop
+    private static Node toNode(String label, List<Node> siblings, Allure sectionDefault) {
+        // strength/core work never belongs in a running structure (it's its own session)
+        if (label.toLowerCase().matches(".*\\b(gainage|renfo|réathlétisation)\\b.*")) {
+            return null;
+        }
         if (SERIES_RECOVERY.matcher(label).matches() && !siblings.isEmpty()
                 && siblings.getLast().isRepeat()) {
             Node previous = siblings.removeLast();
             List<Node> children = new ArrayList<>(previous.children());
-            children.add(Node.step(label, firstDuration(label), "Récup"));
+            Integer seconds = firstDuration(label);
+            children.add(Node.step(Allure.LENTE, seconds != null ? seconds : DEFAULT_RECOVERY_SEC, null));
             siblings.add(Node.repeat(previous.count(), children));
             return null;
         }
@@ -134,17 +154,17 @@ public final class WorkoutParser {
 
         Matcher slash = SLASH_REPEAT.matcher(label);
         if (slash.find()) {
-            int count = Integer.parseInt(slash.group(1));
-            String zone = zoneOf(label);
-            return Node.repeat(count, List.of(
-                    Node.step(label, Integer.parseInt(slash.group(2)), zone != null ? zone : "VMA"),
-                    Node.step("récupération", Integer.parseInt(slash.group(3)), "Récup")));
+            Allure allure = allureOf(label, Allure.VMA);
+            return Node.repeat(Integer.parseInt(slash.group(1)), List.of(
+                    Node.step(allure, Integer.parseInt(slash.group(2)), terrainOf(label)),
+                    Node.step(Allure.LENTE, Integer.parseInt(slash.group(3)), null)));
         }
 
         Matcher strides = STRIDES.matcher(label);
         if (strides.find()) {
-            return Node.repeat(Integer.parseInt(strides.group(1)),
-                    List.of(Node.step(label, 20, "Sprint")));
+            return Node.repeat(Integer.parseInt(strides.group(1)), List.of(
+                    Node.step(Allure.SPRINT, STRIDE_SEC, null),
+                    Node.step(Allure.LENTE, DEFAULT_RECOVERY_SEC, null)));
         }
 
         Matcher simple = SIMPLE_REPEAT.matcher(label);
@@ -153,40 +173,48 @@ public final class WorkoutParser {
         }
 
         Integer duration = firstDuration(label);
-        String zone = zoneOf(label);
-        if (duration == null && zone == null) {
+        Allure allure = allureOf(label, null);
+        if (duration == null && allure == null) {
             return null; // pure prose — notes only
         }
-        return Node.step(label, duration, zone);
+        if (allure == null) {
+            allure = sectionDefault != null ? sectionDefault : Allure.EF;
+        }
+        return Node.step(allure, duration, terrainOf(label));
     }
 
-    /** Splits "30″ en côte … récup = descente en trot" into work + recovery steps. */
+    /** "30″ en côte … récup = descente en trot" → work block + récupération block. */
     private static List<Node> workAndRecovery(String content) {
         String[] parts = RECOVERY_SPLIT.split(content, 2);
         String work = clean(parts[0]);
+        Integer workSec = firstDuration(work);
+
         List<Node> nodes = new ArrayList<>();
-        nodes.add(Node.step(work, firstDuration(work), zoneOf(work)));
-        if (parts.length > 1) {
-            String recovery = clean(parts[1]);
-            if (!recovery.isEmpty()) {
-                nodes.add(Node.step("récup : " + recovery, firstDuration(recovery), "Récup"));
-            }
+        // metre-based strides ("80–100 m en accélération progressive") = short sprints
+        boolean metreStrides = workSec == null
+                && work.matches(".*\\d+\\s*(?:[-–]\\s*\\d+\\s*)?m\\b.*")
+                && work.toLowerCase().matches(".*(progressiv|accélération|vitesse).*");
+        if (metreStrides) {
+            nodes.add(Node.step(Allure.SPRINT, STRIDE_SEC, terrainOf(work)));
+        } else {
+            nodes.add(Node.step(allureOf(work, Allure.VMA), workSec, terrainOf(work)));
         }
+
+        Integer recoverySec = parts.length > 1 ? firstDuration(parts[1]) : null;
+        // a loop always has its récupération — deterministic default when unstated
+        nodes.add(Node.step(Allure.LENTE,
+                recoverySec != null ? recoverySec
+                        : workSec != null ? Math.max(DEFAULT_RECOVERY_SEC, workSec) : DEFAULT_RECOVERY_SEC,
+                null));
         return nodes;
     }
 
-    /**
-     * True when the fragment carries meaning beyond its quantified tokens —
-     * terrain, technique, instructions — that must reach the notes.
-     */
     private static boolean isProse(String label) {
         String residual = DURATION.matcher(label).replaceAll(" ");
         residual = residual.replaceAll("\\d+\\s*[×x/]|[()\\d]", " ");
-        for (String zone : ZONES) {
-            residual = residual.replace(zone, " ");
-        }
         residual = residual.replaceAll(
-                "(?i)\\b(r|récup(?:ération)?|entre|séries?|lignes?|droites?|à|de|en|la|le|et|=)\\b", " ");
+                "(?i)\\b(r|récup(?:ération)?|entre|séries?|lignes?|droites?|à|de|en|la|le|et|=|min|sec|EF|VMA|AC|Seuil|Tempo|Sprint|côte|descente|allure|course|Z1|Z2)\\b",
+                " ");
         return residual.replaceAll("[^\\p{L}]", "").length() >= 8;
     }
 
@@ -215,10 +243,35 @@ public final class WorkoutParser {
         return null;
     }
 
-    private static String zoneOf(String label) {
-        return ZONES.stream().filter(label::contains).findFirst()
-                .map(z -> z.equals("Récupération") ? "Récup" : z)
-                .orElse(null);
+    private static Allure allureOf(String label, Allure fallback) {
+        String lower = label.toLowerCase();
+        if (lower.contains("seuil 60")) return Allure.SEUIL60;
+        if (lower.contains("seuil 30")) return Allure.SEUIL30;
+        if (lower.contains("intensité maximale")) return Allure.SEUIL30; // LTHR test effort
+        if (lower.contains("vma")) return Allure.VMA;
+        if (lower.contains("sprint") || lower.contains("ligne")) return Allure.SPRINT;
+        if (lower.contains("allure course") || lower.contains("tempo") || label.contains("AC")) return Allure.COURSE;
+        // EF wins over incidental mentions of walking ("marcher si la respiration s'emballe")
+        if (label.contains("EF") || lower.contains("endurance fondamentale") || label.contains("Z2")) return Allure.EF;
+        if (lower.contains("récup") || lower.contains("très facile") || lower.contains("marche")
+                || lower.contains("trot") || label.contains("Z1")) return Allure.LENTE;
+        return fallback;
+    }
+
+    /** Maps a stored session zone label to the canonical allure. */
+    public static Allure allureOfZone(String zone) {
+        if (zone == null) return Allure.EF;
+        Allure detected = allureOf(zone, null);
+        if (detected != null) return detected;
+        if (zone.contains("Test")) return Allure.SEUIL30;
+        return Allure.EF;
+    }
+
+    private static Terrain terrainOf(String label) {
+        String lower = label.toLowerCase();
+        if (lower.contains("côte")) return Terrain.COTE;
+        if (lower.contains("descen")) return Terrain.DESCENTE;
+        return null;
     }
 
     private static List<String> splitTopLevel(String text) {
@@ -235,7 +288,7 @@ public final class WorkoutParser {
             if (splitHere) {
                 fragments.add(current.toString());
                 current.setLength(0);
-                if (c == 'p') i += 3; // skip "uis"
+                if (c == 'p') i += 3;
             } else {
                 current.append(c);
             }

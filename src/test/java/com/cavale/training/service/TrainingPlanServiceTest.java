@@ -124,7 +124,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 
         service().updateSession(OWNER, session.getId(),
-                new UpdateSessionRequest(LocalDate.of(2026, 10, 11), null, null, null));
+                new UpdateSessionRequest(LocalDate.of(2026, 10, 11), null, null, null, null));
 
         assertThat(session.getDate()).isEqualTo(LocalDate.of(2026, 10, 11));
         assertThat(session.getStatus()).isEqualTo(SessionStatus.MOVED);
@@ -136,7 +136,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 
         service().updateSession(OWNER, session.getId(),
-                new UpdateSessionRequest(null, null, SessionStatus.DONE, null));
+                new UpdateSessionRequest(null, null, SessionStatus.DONE, null, null));
 
         assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
         assertThat(session.getDate()).isEqualTo(LocalDate.of(2026, 10, 10));
@@ -148,7 +148,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 
         assertThatThrownBy(() -> service().updateSession(OWNER, session.getId(),
-                new UpdateSessionRequest(LocalDate.of(2027, 1, 1), null, null, null)))
+                new UpdateSessionRequest(LocalDate.of(2027, 1, 1), null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -158,7 +158,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 
         assertThatThrownBy(() -> service().updateSession(STRANGER, session.getId(),
-                new UpdateSessionRequest(null, null, SessionStatus.DONE, null)))
+                new UpdateSessionRequest(null, null, SessionStatus.DONE, null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -203,7 +203,7 @@ class TrainingPlanServiceTest {
         when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.of(activity));
 
         service().updateSession(OWNER, session.getId(),
-                new UpdateSessionRequest(null, null, SessionStatus.PLANNED, null));
+                new UpdateSessionRequest(null, null, SessionStatus.PLANNED, null, null));
 
         verify(activityRepository).delete(activity);
         assertThat(session.getStatus()).isEqualTo(SessionStatus.PLANNED);

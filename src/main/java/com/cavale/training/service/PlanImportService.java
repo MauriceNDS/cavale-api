@@ -108,7 +108,8 @@ public class PlanImportService {
                                 intObject(record, "duration_min", line),
                                 intObject(record, "elevation_m", line),
                                 intObject(record, "rpe_min", line),
-                                intObject(record, "rpe_max", line)));
+                                intObject(record, "rpe_max", line),
+                                null)); // structure derived from the text at creation
                         sessions++;
                     }
                     default -> throw new PlanImportException(line,

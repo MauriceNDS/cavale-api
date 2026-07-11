@@ -8,6 +8,7 @@ import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
+import com.cavale.training.workout.WorkoutJson;
 import com.cavale.training.workout.WorkoutParser;
 import com.cavale.training.workout.WorkoutStructure;
 
@@ -27,7 +28,7 @@ public record SessionResponse(
         Integer rpeMax,
         SessionStatus status,
         ActivitySummary activity,
-        List<WorkoutStructure.Block> structure,
+        List<WorkoutStructure.Node> workout,
         String structureNotes) {
 
     public static SessionResponse from(PlannedSession session) {
@@ -35,14 +36,19 @@ public record SessionResponse(
     }
 
     public static SessionResponse from(PlannedSession session, Activity activity) {
-        WorkoutStructure.Parsed parsed = session.getDiscipline() == Discipline.RUN
-                ? WorkoutParser.parse(session.getDetail())
-                : WorkoutStructure.Parsed.EMPTY;
+        List<WorkoutStructure.Node> workout = List.of();
+        String notes = null;
+        if (session.getDiscipline() == Discipline.RUN) {
+            // stored structure is the source of truth; parsing is import-time only
+            workout = WorkoutJson.read(session.getWorkoutJson());
+            notes = WorkoutParser.parse(session.getDetail(), session.getZone(), session.getDurationMin())
+                    .notes();
+        }
         return new SessionResponse(session.getId(), session.getWeek().getId(), session.getDate(),
                 session.getOrderInDay(), session.getDiscipline(), session.getTitle(), session.getDetail(),
                 session.getComment(), session.getZone(), session.getDurationMin(), session.getElevationM(),
                 session.getRpeMin(), session.getRpeMax(), session.getStatus(),
                 activity != null ? ActivitySummary.from(activity) : null,
-                parsed.blocks(), parsed.notes());
+                workout, notes);
     }
 }

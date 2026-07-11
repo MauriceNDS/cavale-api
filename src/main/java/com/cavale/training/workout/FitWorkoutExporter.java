@@ -6,11 +6,12 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
 import com.cavale.training.domain.PlannedSession;
-import com.cavale.training.workout.WorkoutStructure.Block;
+import com.cavale.training.workout.WorkoutStructure.Allure;
 import com.cavale.training.workout.WorkoutStructure.Node;
 import com.garmin.fit.DateTime;
 import com.garmin.fit.FileEncoder;
@@ -25,16 +26,28 @@ import com.garmin.fit.WorkoutMesg;
 import com.garmin.fit.WorkoutStepMesg;
 
 /**
- * Encodes a parsed workout as a Garmin .fit WORKOUT file. Steps with a known
- * duration become timed steps; repetitions become native repeat structures
- * (work + lap-press recovery); anything unquantified becomes an open step —
- * the watch guides what it can, the athlete laps the rest.
+ * Encodes the canonical workout tree as a Garmin .fit WORKOUT file. Every
+ * block is a timed step named by its allure; loops become native FIT repeat
+ * structures (nesting preserved); récupérations carry REST intensity.
  */
 @Component
 public class FitWorkoutExporter {
 
-    public byte[] export(PlannedSession session, List<Block> blocks) {
-        List<WorkoutStepMesg> steps = buildSteps(blocks);
+    private static final Map<Allure, String> ALLURE_NAME = Map.of(
+            Allure.LENTE, "Allure Lente",
+            Allure.EF, "Allure EF",
+            Allure.COURSE, "Allure Course",
+            Allure.SEUIL60, "Allure Seuil 60",
+            Allure.SEUIL30, "Allure Seuil 30",
+            Allure.VMA, "Allure VMA",
+            Allure.SPRINT, "Allure Sprint");
+
+    public byte[] export(PlannedSession session, List<Node> nodes) {
+        List<WorkoutStepMesg> steps = new ArrayList<>();
+        appendNodes(steps, nodes);
+        if (steps.isEmpty()) {
+            steps.add(openStep(0, "Séance libre", Intensity.ACTIVE));
+        }
 
         WorkoutMesg workout = new WorkoutMesg();
         workout.setWktName(workoutName(session));
@@ -65,44 +78,36 @@ public class FitWorkoutExporter {
         }
     }
 
-    private List<WorkoutStepMesg> buildSteps(List<Block> blocks) {
-        List<WorkoutStepMesg> steps = new ArrayList<>();
-
-        for (Block block : blocks) {
-            Intensity intensity = switch (block.section()) {
-                case WARMUP -> Intensity.WARMUP;
-                case COOLDOWN -> Intensity.COOLDOWN;
-                case MAIN -> Intensity.ACTIVE;
-            };
-            appendNodes(steps, block.nodes(), intensity);
-        }
-
-        if (steps.isEmpty()) {
-            steps.add(openStep(0, "Séance libre", Intensity.ACTIVE));
-        }
-        return steps;
-    }
-
-    /** Repeat groups become native FIT repeat structures; nesting is preserved. */
-    private void appendNodes(List<WorkoutStepMesg> steps, List<Node> nodes, Intensity intensity) {
+    private void appendNodes(List<WorkoutStepMesg> steps, List<Node> nodes) {
         for (Node node : nodes) {
             if (node.isRepeat()) {
                 int firstIndex = steps.size();
-                appendNodes(steps, node.children(), Intensity.ACTIVE);
+                appendNodes(steps, node.children());
                 if (steps.size() > firstIndex) {
                     steps.add(repeatStep(steps.size(), firstIndex, node.count()));
                 }
             } else {
-                boolean recovery = node.zone() != null && node.zone().contains("Récup")
-                        || node.label() != null && node.label().toLowerCase().contains("récup");
-                Intensity stepIntensity = recovery ? Intensity.REST : intensity;
-                if (node.durationSec() != null) {
-                    steps.add(timedStep(steps.size(), stepName(node), node.durationSec(), stepIntensity));
+                Intensity intensity = node.allure() == Allure.LENTE ? Intensity.REST : Intensity.ACTIVE;
+                String name = stepName(node);
+                if (node.seconds() != null) {
+                    steps.add(timedStep(steps.size(), name, node.seconds(), intensity));
                 } else {
-                    steps.add(openStep(steps.size(), stepName(node), stepIntensity));
+                    steps.add(openStep(steps.size(), name, intensity));
                 }
             }
         }
+    }
+
+    private static String stepName(Node node) {
+        String name = ALLURE_NAME.getOrDefault(node.allure(), "Étape");
+        if (node.terrain() != null) {
+            name += switch (node.terrain()) {
+                case COTE -> " (côte)";
+                case DESCENTE -> " (descente)";
+                case PLAT -> "";
+            };
+        }
+        return name.length() > 30 ? name.substring(0, 30) : name;
     }
 
     private static WorkoutStepMesg timedStep(int index, String name, int durationSec, Intensity intensity) {
@@ -135,12 +140,6 @@ public class FitWorkoutExporter {
         step.setIntensity(intensity);
         step.setTargetType(WktStepTarget.OPEN);
         return step;
-    }
-
-    private static String stepName(Node node) {
-        String name = node.zone() != null ? node.zone()
-                : node.label() != null ? node.label() : "Étape";
-        return name.length() > 30 ? name.substring(0, 30) : name;
     }
 
     private static String workoutName(PlannedSession session) {

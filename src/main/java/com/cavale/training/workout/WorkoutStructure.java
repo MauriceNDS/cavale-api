@@ -2,29 +2,34 @@ package com.cavale.training.workout;
 
 import java.util.List;
 
-/** Structured view of a session's description — feeds both the UI and .fit export. */
+/**
+ * Canonical, deterministic workout model. A block always has an ALLURE as its
+ * identity, a duration in seconds, and optionally a terrain. Loops repeat at
+ * least two blocks (typically work + récupération). No prose ever lives here.
+ */
 public final class WorkoutStructure {
 
     private WorkoutStructure() {
     }
 
-    public enum Section {
-        WARMUP, MAIN, COOLDOWN
+    public enum Allure {
+        LENTE, EF, COURSE, SEUIL60, SEUIL30, VMA, SPRINT
+    }
+
+    public enum Terrain {
+        PLAT, COTE, DESCENTE
     }
 
     /**
-     * A workout node: either a single step or a repeat group.
-     *
-     * step   → {type:"step", label, durationSec?, zone?}
-     * repeat → {type:"repeat", count, children[]} — children run in order,
-     *          the whole group loops `count` times. Groups may nest
-     *          (2 × (8 × 30″) → repeat(2, [repeat(8, [work, recover])])).
+     * step   → {type:"step", allure, seconds, terrain}
+     * repeat → {type:"repeat", count, children[]}
      */
-    public record Node(String type, String label, Integer durationSec, String zone,
+    public record Node(String type, Allure allure, Integer seconds, Terrain terrain,
                        Integer count, List<Node> children) {
 
-        public static Node step(String label, Integer durationSec, String zone) {
-            return new Node("step", label, durationSec, zone, null, null);
+        public static Node step(Allure allure, Integer seconds, Terrain terrain) {
+            return new Node("step", allure, seconds,
+                    terrain == null || terrain == Terrain.PLAT ? null : terrain, null, null);
         }
 
         public static Node repeat(int count, List<Node> children) {
@@ -36,15 +41,8 @@ public final class WorkoutStructure {
         }
     }
 
-    public record Block(Section section, List<Node> nodes) {
-    }
-
-    /**
-     * Full parse result: the strict structure (time · zone · loops only) plus
-     * every piece of prose the structure can't carry — never dropped, shown
-     * as coach notes next to the athlete's comment.
-     */
-    public record Parsed(List<Block> blocks, String notes) {
+    /** Import result: the strict structure plus every piece of prose (consignes). */
+    public record Parsed(List<Node> nodes, String notes) {
 
         public static final Parsed EMPTY = new Parsed(List.of(), null);
     }

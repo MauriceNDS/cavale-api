@@ -75,6 +75,10 @@ public class PlannedSession extends Auditable {
     @Column(columnDefinition = "text")
     private String comment;
 
+    /** Canonical workout tree (allure blocks + loops) as JSON — see WorkoutStructure. */
+    @Column(name = "workout_json", columnDefinition = "text")
+    private String workoutJson;
+
     protected PlannedSession() {
     }
 
@@ -158,6 +162,14 @@ public class PlannedSession extends Auditable {
 
     public void updateComment(String comment) {
         this.comment = comment;
+    }
+
+    public String getWorkoutJson() {
+        return workoutJson;
+    }
+
+    public void updateWorkoutJson(String workoutJson) {
+        this.workoutJson = workoutJson;
     }
 
     public void updateStatus(SessionStatus status) {
