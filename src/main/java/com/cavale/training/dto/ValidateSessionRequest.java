@@ -23,6 +23,8 @@ public record ValidateSessionRequest(
 
         @Min(30) @Max(250) Integer avgHr,
 
+        com.cavale.training.domain.PerceivedEffort perceivedEffort,
+
         @Size(max = 2000, message = "Comment must not exceed 2000 characters")
         String comment) {
 }

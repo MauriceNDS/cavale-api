@@ -11,4 +11,6 @@ public interface StravaClient {
     StravaDtos.TokenResponse refreshToken(String refreshToken);
 
     List<StravaDtos.ActivitySummary> listActivities(String accessToken, Instant after, Instant before);
+
+    StravaDtos.StreamSet getStreams(String accessToken, long activityId);
 }

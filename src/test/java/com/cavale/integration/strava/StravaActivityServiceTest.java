@@ -106,7 +106,7 @@ class StravaActivityServiceTest {
                 .thenReturn(List.of(run(7L, date, 62, "Run")));
         when(activityRepository.save(any(Activity.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service().importToSession(USER, session.getId(), 7L);
+        service().importToSession(USER, session.getId(), 7L, null, null);
 
         assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
         ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
@@ -123,7 +123,7 @@ class StravaActivityServiceTest {
         when(activityRepository.findBySessionId(session.getId()))
                 .thenReturn(Optional.of(mock(Activity.class)));
 
-        assertThatThrownBy(() -> service().importToSession(USER, session.getId(), 7L))
+        assertThatThrownBy(() -> service().importToSession(USER, session.getId(), 7L, null, null))
                 .isInstanceOf(StravaException.class)
                 .hasMessageContaining("already has measures");
     }
@@ -135,7 +135,7 @@ class StravaActivityServiceTest {
         when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.empty());
         when(activityRepository.findByExternalId(7L)).thenReturn(Optional.of(mock(Activity.class)));
 
-        assertThatThrownBy(() -> service().importToSession(USER, session.getId(), 7L))
+        assertThatThrownBy(() -> service().importToSession(USER, session.getId(), 7L, null, null))
                 .isInstanceOf(StravaException.class)
                 .hasMessageContaining("already attached");
     }

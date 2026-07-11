@@ -30,6 +30,19 @@ public final class StravaDtos {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Stream(java.util.List<Double> data) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record StreamSet(
+            Stream time,
+            Stream distance,
+            Stream heartrate,
+            Stream altitude,
+            @JsonProperty("velocity_smooth") Stream velocitySmooth) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record ActivitySummary(
             long id,
             String name,

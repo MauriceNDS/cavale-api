@@ -13,6 +13,7 @@ import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivitySource;
 import com.cavale.training.domain.Discipline;
+import com.cavale.training.domain.PerceivedEffort;
 import com.cavale.training.domain.PlanWeek;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
@@ -212,6 +213,9 @@ public class TrainingPlanService {
                 .orElseGet(() -> activityRepository.save(new Activity(session, ActivitySource.MANUAL,
                         session.getDate(), request.durationMin(), request.distanceKm(),
                         request.elevationM(), request.avgHr(), request.comment())));
+        activity.recordFeedback(
+                request.perceivedEffort() != null ? request.perceivedEffort() : PerceivedEffort.COMME_PREVU,
+                request.comment());
 
         session.updateStatus(SessionStatus.DONE);
         return activity;

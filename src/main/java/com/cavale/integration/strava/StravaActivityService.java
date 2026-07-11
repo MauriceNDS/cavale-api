@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.Discipline;
+import com.cavale.training.domain.PerceivedEffort;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.repository.ActivityRepository;
@@ -66,7 +67,8 @@ public class StravaActivityService {
     }
 
     @Transactional
-    public Activity importToSession(UUID userId, UUID sessionId, long stravaActivityId) {
+    public Activity importToSession(UUID userId, UUID sessionId, long stravaActivityId,
+                                    PerceivedEffort perceivedEffort, String comment) {
         PlannedSession session = sessionRepository.findById(sessionId)
                 .filter(s -> s.getUserId().equals(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
@@ -85,13 +87,29 @@ public class StravaActivityService {
                 .findFirst()
                 .orElseThrow(() -> new StravaException("Strava activity not found in the recent window"));
 
-        Activity activity = activityRepository.save(Activity.fromStrava(session,
+        Activity activity = Activity.fromStrava(session,
                 run.startDateLocal().toLocalDate(),
                 Math.max(1, Math.round(run.movingTime() / 60f)),
                 BigDecimal.valueOf(run.distance() / 1000.0).setScale(2, RoundingMode.HALF_UP),
                 (int) Math.round(run.totalElevationGain()),
                 run.averageHeartrate() != null ? (int) Math.round(run.averageHeartrate()) : null,
-                run.name(), run.id()));
+                run.name(), run.id());
+        activity.recordFeedback(perceivedEffort != null ? perceivedEffort : PerceivedEffort.COMME_PREVU,
+                comment);
+
+        // streams feed the report charts — a failure here must not block validation
+        try {
+            StravaConnection connection = authService.freshConnection(userId);
+            StravaDtos.StreamSet streams = stravaClient.getStreams(connection.getAccessToken(), run.id());
+            String json = StreamDownsampler.toJson(streams);
+            if (json != null) {
+                activity.attachStreams(json);
+            }
+        } catch (Exception e) {
+            // report simply won't have charts
+        }
+
+        activity = activityRepository.save(activity);
         session.updateStatus(SessionStatus.DONE);
         return activity;
     }

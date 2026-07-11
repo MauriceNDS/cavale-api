@@ -47,7 +47,9 @@ public class PlannedSessionController {
         this.fitExporter = fitExporter;
     }
 
-    public record ImportStravaRequest(long stravaActivityId) {
+    public record ImportStravaRequest(long stravaActivityId,
+                                      com.cavale.training.domain.PerceivedEffort perceivedEffort,
+                                      String comment) {
     }
 
     @PatchMapping("/{sessionId}")
@@ -67,12 +69,36 @@ public class PlannedSessionController {
         return SessionResponse.from(activity.getSession(), activity);
     }
 
+    @GetMapping("/{sessionId}")
+    @Operation(summary = "Get one session (with its activity when validated)")
+    public SessionResponse get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        PlannedSession session = planService.getOwnedSession(userId, sessionId);
+        Activity activity = planService.getActivitiesForSessions(java.util.List.of(session))
+                .get(session.getId());
+        return SessionResponse.from(session, activity);
+    }
+
+    @GetMapping("/{sessionId}/streams")
+    @Operation(summary = "Downsampled Strava streams of the session's activity (for charts)")
+    public ResponseEntity<String> streams(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        PlannedSession session = planService.getOwnedSession(userId, sessionId);
+        Activity activity = planService.getActivitiesForSessions(java.util.List.of(session))
+                .get(session.getId());
+        if (activity == null || activity.getStreamsJson() == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(activity.getStreamsJson());
+    }
+
     @PostMapping("/{sessionId}/validate-strava")
     @Operation(summary = "Validate a running session by attaching a Strava activity")
     public SessionResponse validateFromStrava(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId,
                                               @RequestBody ImportStravaRequest request) {
         UUID userId = UUID.fromString(jwt.getSubject());
-        Activity activity = stravaActivityService.importToSession(userId, sessionId, request.stravaActivityId());
+        Activity activity = stravaActivityService.importToSession(userId, sessionId,
+                request.stravaActivityId(), request.perceivedEffort(), request.comment());
         return SessionResponse.from(activity.getSession(), activity);
     }
 

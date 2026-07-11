@@ -63,6 +63,18 @@ public class Activity extends Auditable {
     @Column(name = "external_id")
     private Long externalId;
 
+    /** Activity name at the source ("Morning Trail Run") — null for manual entries. */
+    @Column(length = 200)
+    private String name;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "perceived_effort", length = 15)
+    private PerceivedEffort perceivedEffort;
+
+    /** Downsampled Strava streams (time/distance/hr/alt/vel) as JSON, for charts. */
+    @Column(name = "streams_json", columnDefinition = "text")
+    private String streamsJson;
+
     protected Activity() {
     }
 
@@ -81,11 +93,21 @@ public class Activity extends Auditable {
 
     public static Activity fromStrava(PlannedSession session, LocalDate date, int durationMin,
                                       BigDecimal distanceKm, Integer elevationM, Integer avgHr,
-                                      String comment, long externalId) {
+                                      String name, long externalId) {
         Activity activity = new Activity(session, ActivitySource.STRAVA, date, durationMin,
-                distanceKm, elevationM, avgHr, comment);
+                distanceKm, elevationM, avgHr, null);
+        activity.name = name;
         activity.externalId = externalId;
         return activity;
+    }
+
+    public void recordFeedback(PerceivedEffort perceivedEffort, String comment) {
+        this.perceivedEffort = perceivedEffort;
+        this.comment = comment;
+    }
+
+    public void attachStreams(String streamsJson) {
+        this.streamsJson = streamsJson;
     }
 
     public void updateMeasures(int durationMin, BigDecimal distanceKm, Integer elevationM,
@@ -139,6 +161,18 @@ public class Activity extends Auditable {
 
     public Long getExternalId() {
         return externalId;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public PerceivedEffort getPerceivedEffort() {
+        return perceivedEffort;
+    }
+
+    public String getStreamsJson() {
+        return streamsJson;
     }
 
     @Override
