@@ -55,12 +55,16 @@ public class StravaActivityService {
     public List<StravaActivityOption> listRecentNotImported(UUID userId) {
         List<StravaDtos.ActivitySummary> runs = fetchRecentRuns(userId);
 
-        Set<Long> importedIds = activityRepository
+        // Standalone history rows don't count as "imported" — attaching one
+        // to a session is exactly what this listing is for.
+        Set<Long> attachedIds = activityRepository
                 .findByExternalIdIn(runs.stream().map(StravaDtos.ActivitySummary::id).toList())
-                .stream().map(Activity::getExternalId).collect(Collectors.toSet());
+                .stream()
+                .filter(a -> a.getSession() != null)
+                .map(Activity::getExternalId).collect(Collectors.toSet());
 
         return runs.stream()
-                .filter(run -> !importedIds.contains(run.id()))
+                .filter(run -> !attachedIds.contains(run.id()))
                 .sorted(Comparator.comparing(StravaDtos.ActivitySummary::startDateLocal).reversed())
                 .map(StravaActivityService::toOption)
                 .toList();
@@ -78,8 +82,22 @@ public class StravaActivityService {
         if (activityRepository.findBySessionId(session.getId()).isPresent()) {
             throw new StravaException("This session already has measures — reset it first");
         }
-        if (activityRepository.findByExternalId(stravaActivityId).isPresent()) {
-            throw new StravaException("This Strava activity is already attached to another session");
+
+        // Already imported as history? Adopt it as this session's validation.
+        Activity known = activityRepository.findByExternalId(stravaActivityId).orElse(null);
+        if (known != null) {
+            if (known.getSession() != null) {
+                throw new StravaException("This Strava activity is already attached to another session");
+            }
+            if (!known.getUserId().equals(userId)) {
+                throw new StravaException("Strava activity not found in the recent window");
+            }
+            known.attachToSession(session);
+            known.recordFeedback(perceivedEffort != null ? perceivedEffort : PerceivedEffort.COMME_PREVU,
+                    comment);
+            attachStreamsQuietly(userId, known);
+            session.updateStatus(SessionStatus.DONE);
+            return known;
         }
 
         StravaDtos.ActivitySummary run = fetchRecentRuns(userId).stream()
@@ -97,10 +115,22 @@ public class StravaActivityService {
         activity.recordFeedback(perceivedEffort != null ? perceivedEffort : PerceivedEffort.COMME_PREVU,
                 comment);
 
-        // streams feed the report charts — a failure here must not block validation
+        attachStreamsQuietly(userId, activity);
+
+        activity = activityRepository.save(activity);
+        session.updateStatus(SessionStatus.DONE);
+        return activity;
+    }
+
+    /** Streams feed the report charts — a failure here must not block validation. */
+    private void attachStreamsQuietly(UUID userId, Activity activity) {
+        if (activity.getStreamsJson() != null || activity.getExternalId() == null) {
+            return;
+        }
         try {
             StravaConnection connection = authService.freshConnection(userId);
-            StravaDtos.StreamSet streams = stravaClient.getStreams(connection.getAccessToken(), run.id());
+            StravaDtos.StreamSet streams = stravaClient.getStreams(connection.getAccessToken(),
+                    activity.getExternalId());
             String json = StreamDownsampler.toJson(streams);
             if (json != null) {
                 activity.attachStreams(json);
@@ -108,10 +138,6 @@ public class StravaActivityService {
         } catch (Exception e) {
             // report simply won't have charts
         }
-
-        activity = activityRepository.save(activity);
-        session.updateStatus(SessionStatus.DONE);
-        return activity;
     }
 
     private List<StravaDtos.ActivitySummary> fetchRecentRuns(UUID userId) {

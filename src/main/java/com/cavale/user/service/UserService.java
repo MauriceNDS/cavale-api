@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.user.domain.User;
+import com.cavale.user.dto.UpdateProfileRequest;
 import com.cavale.user.repository.UserRepository;
 
 @Service
@@ -46,5 +47,17 @@ public class UserService {
     public User getById(UUID id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException(id));
+    }
+
+    @Transactional
+    public User updateProfile(UUID id, UpdateProfileRequest request) {
+        if (request.restingHr() != null && request.maxHr() != null
+                && request.restingHr() >= request.maxHr()) {
+            throw new IllegalArgumentException("Resting HR must be below max HR");
+        }
+        User user = getById(id);
+        user.updateProfile(request.displayName().trim(), request.weightKg(), request.heightCm(),
+                request.birthDate(), request.maxHr(), request.restingHr());
+        return user;
     }
 }

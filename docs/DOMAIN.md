@@ -15,11 +15,18 @@ build — don't treat this as final, treat it as the map.
 
 ## User area
 
-**User** — the athlete and the security principal.
+**User** — the athlete and the security principal. *(implemented)*
 - `id`, `email` (unique), `passwordHash`, `displayName`
 - profile: `weightKg`, `heightCm`, `birthDate`, `maxHr`, `restingHr`
-- `roles` (e.g. `USER`, `ADMIN`), `createdAt`
+  (edited via `PUT /users/me/profile`, shown on the athlete hub)
 - Owns everything below. **All user data is scoped by `userId`.**
+
+> **Athlete hub** (`GET /athlete/hub`): the home page's read model — profile,
+> seasons timeline (past/current/future plans + their MAIN objectives),
+> distance records (min elapsed per canonical distance over
+> `ActivityBestEffort`), longest runs, Riegel race-time estimations for
+> distances without a record, yearly/all-time totals, monthly trends
+> (volume, pace, HR, cadence) and weekly relative effort.
 
 ---
 
@@ -98,11 +105,17 @@ build — don't treat this as final, treat it as the map.
 - `id`, `userId`, `athleteId`, `accessToken`, `refreshToken`, `expiresAt`
 - tokens are **secrets** → encrypt at rest / store carefully.
 
-**Activity** — an imported run (source of truth for actual performance).
-- `id`, `userId`, `source` (STRAVA), `externalId` (unique per source)
-- `startedAt`, `distanceKm`, `movingTimeSec`, `elevationGainM`
-- `avgHr?`, `maxHr?`, `avgPaceSecPerKm`, `type`
-- optionally reconciled against a **PlannedSession** (planned vs actual).
+**Activity** — actual performance data. *(implemented)*
+- `id`, `userId`, `source` (MANUAL | STRAVA), `externalId?` (unique)
+- `date`, `durationMin`, `distanceKm`, `elevationM`, `avgHr?`, `maxHr?`
+- hub metrics: `avgCadenceSpm?` (both legs), `relativeEffort?` (suffer score),
+  `recordsAnalyzed` flag
+- `plannedSessionId?` — attached = that session's validation; **standalone =
+  imported Strava history** (the stats corpus). Attaching a session later
+  "adopts" the history row instead of duplicating it.
+- Full-history import: `POST /strava/sync-history` (paged summaries) then
+  `POST /strava/analyze-records` (batched detail calls extracting
+  **ActivityBestEffort** rows: fastest 1k/5k/10k/semi/… splits per activity).
 
 > **Statistics & progression** are aggregation queries over `Activity` (running)
 > and `SetLog`/`WorkoutLog` (strength) — weekly volume, D+ totals, pace trends,

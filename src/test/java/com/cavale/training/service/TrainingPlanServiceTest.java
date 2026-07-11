@@ -99,6 +99,16 @@ class TrainingPlanServiceTest {
     }
 
     @Test
+    void createPlan_futureStartMakesDraft() {
+        when(planRepository.save(any(TrainingPlan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TrainingPlan plan = service().createPlan(OWNER, new CreatePlanRequest(
+                "Saison 2027", "UTMB", LocalDate.now().plusDays(30), LocalDate.now().plusDays(200)));
+
+        assertThat(plan.getStatus().name()).isEqualTo("DRAFT");
+    }
+
+    @Test
     void createPlan_mainObjectiveFallsBackToPlanName() {
         when(planRepository.save(any(TrainingPlan.class))).thenAnswer(inv -> inv.getArgument(0));
 

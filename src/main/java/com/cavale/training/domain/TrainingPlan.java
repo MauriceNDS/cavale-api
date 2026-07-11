@@ -84,6 +84,10 @@ public class TrainingPlan extends Auditable {
         return endDate;
     }
 
+    public void updateStatus(PlanStatus status) {
+        this.status = status;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

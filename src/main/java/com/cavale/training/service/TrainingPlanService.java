@@ -17,6 +17,7 @@ import com.cavale.training.domain.Objective;
 import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.ObjectiveType;
 import com.cavale.training.domain.PerceivedEffort;
+import com.cavale.training.domain.PlanStatus;
 import com.cavale.training.domain.PlanWeek;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
@@ -72,8 +73,13 @@ public class TrainingPlanService {
         if (request.endDate().isBefore(request.startDate())) {
             throw new IllegalArgumentException("endDate must not be before startDate");
         }
-        TrainingPlan plan = planRepository.save(new TrainingPlan(userId, request.name().trim(),
-                request.goal(), request.startDate(), request.endDate()));
+        TrainingPlan plan = new TrainingPlan(userId, request.name().trim(),
+                request.goal(), request.startDate(), request.endDate());
+        if (request.startDate().isAfter(LocalDate.now())) {
+            // The next season, planned ahead — it activates when training starts
+            plan.updateStatus(PlanStatus.DRAFT);
+        }
+        plan = planRepository.save(plan);
         String objectiveName = request.goal() == null || request.goal().isBlank()
                 ? plan.getName()
                 : request.goal().trim();

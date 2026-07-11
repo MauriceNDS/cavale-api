@@ -20,7 +20,11 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 
-/** Actual performance recorded against a planned session (manual or Strava). */
+/**
+ * Actual performance data. Attached to a planned session it is that session's
+ * validation (manual entry or Strava import); without one it is imported
+ * Strava history — the stats corpus behind the athlete hub.
+ */
 @Entity
 @Table(name = "activity")
 public class Activity extends Auditable {
@@ -33,8 +37,8 @@ public class Activity extends Auditable {
     @Column(name = "user_id", nullable = false, updatable = false)
     private UUID userId;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "planned_session_id", nullable = false, updatable = false, unique = true)
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "planned_session_id", unique = true)
     private PlannedSession session;
 
     @Enumerated(EnumType.STRING)
@@ -75,6 +79,21 @@ public class Activity extends Auditable {
     @Column(name = "streams_json", columnDefinition = "text")
     private String streamsJson;
 
+    /** Strides per minute, both legs (Strava reports per leg — stored doubled). */
+    @Column(name = "avg_cadence_spm", precision = 5, scale = 1)
+    private BigDecimal avgCadenceSpm;
+
+    /** Strava's relative effort (suffer score) — training load per activity. */
+    @Column(name = "relative_effort")
+    private Integer relativeEffort;
+
+    @Column(name = "max_hr")
+    private Integer maxHr;
+
+    /** True once Strava's per-activity best efforts have been extracted. */
+    @Column(name = "records_analyzed", nullable = false)
+    private boolean recordsAnalyzed;
+
     protected Activity() {
     }
 
@@ -99,6 +118,51 @@ public class Activity extends Auditable {
         activity.name = name;
         activity.externalId = externalId;
         return activity;
+    }
+
+    /** Imported Strava history, not (yet) attached to any planned session. */
+    public static Activity stravaHistory(UUID userId, LocalDate date, int durationMin,
+                                         BigDecimal distanceKm, Integer elevationM, Integer avgHr,
+                                         String name, long externalId) {
+        Activity activity = new Activity();
+        activity.userId = userId;
+        activity.source = ActivitySource.STRAVA;
+        activity.date = date;
+        activity.durationMin = durationMin;
+        activity.distanceKm = distanceKm;
+        activity.elevationM = elevationM;
+        activity.avgHr = avgHr;
+        activity.name = name;
+        activity.externalId = externalId;
+        return activity;
+    }
+
+    /** Adopt a history activity as a session's validation. */
+    public void attachToSession(PlannedSession session) {
+        if (this.session != null) {
+            throw new IllegalStateException("Activity is already attached to a session");
+        }
+        if (!session.getUserId().equals(this.userId)) {
+            throw new IllegalArgumentException("Session belongs to another user");
+        }
+        this.session = session;
+    }
+
+    /** Fill hub metrics; never erases a value already present. */
+    public void enrich(BigDecimal avgCadenceSpm, Integer relativeEffort, Integer maxHr) {
+        if (this.avgCadenceSpm == null) {
+            this.avgCadenceSpm = avgCadenceSpm;
+        }
+        if (this.relativeEffort == null) {
+            this.relativeEffort = relativeEffort;
+        }
+        if (this.maxHr == null) {
+            this.maxHr = maxHr;
+        }
+    }
+
+    public void markRecordsAnalyzed() {
+        this.recordsAnalyzed = true;
     }
 
     public void recordFeedback(PerceivedEffort perceivedEffort, String comment) {
@@ -173,6 +237,22 @@ public class Activity extends Auditable {
 
     public String getStreamsJson() {
         return streamsJson;
+    }
+
+    public BigDecimal getAvgCadenceSpm() {
+        return avgCadenceSpm;
+    }
+
+    public Integer getRelativeEffort() {
+        return relativeEffort;
+    }
+
+    public Integer getMaxHr() {
+        return maxHr;
+    }
+
+    public boolean isRecordsAnalyzed() {
+        return recordsAnalyzed;
     }
 
     @Override

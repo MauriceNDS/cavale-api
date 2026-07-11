@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -27,13 +28,16 @@ public class StravaController {
 
     private final StravaAuthService authService;
     private final StravaActivityService activityService;
+    private final StravaSyncService syncService;
     private final StravaConnectionRepository connectionRepository;
     private final StravaProperties properties;
 
     public StravaController(StravaAuthService authService, StravaActivityService activityService,
+                            StravaSyncService syncService,
                             StravaConnectionRepository connectionRepository, StravaProperties properties) {
         this.authService = authService;
         this.activityService = activityService;
+        this.syncService = syncService;
         this.connectionRepository = connectionRepository;
         this.properties = properties;
     }
@@ -69,6 +73,18 @@ public class StravaController {
     @Operation(summary = "Recent Strava runs not yet attached to any session")
     public List<StravaActivityService.StravaActivityOption> recentActivities(@AuthenticationPrincipal Jwt jwt) {
         return activityService.listRecentNotImported(userId(jwt));
+    }
+
+    @PostMapping("/sync-history")
+    @Operation(summary = "Import the athlete's full Strava run history as activities")
+    public StravaSyncService.SyncResult syncHistory(@AuthenticationPrincipal Jwt jwt) {
+        return syncService.syncHistory(userId(jwt));
+    }
+
+    @PostMapping("/analyze-records")
+    @Operation(summary = "Extract best efforts (records) from the next batch of synced activities")
+    public StravaSyncService.AnalyzeResult analyzeRecords(@AuthenticationPrincipal Jwt jwt) {
+        return syncService.analyzeRecords(userId(jwt));
     }
 
     @DeleteMapping("/connection")

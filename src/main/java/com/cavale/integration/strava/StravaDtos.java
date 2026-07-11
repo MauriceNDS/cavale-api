@@ -1,6 +1,7 @@
 package com.cavale.integration.strava;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -54,6 +55,29 @@ public final class StravaDtos {
             @JsonProperty("moving_time") int movingTime,
             /** metres */
             @JsonProperty("total_elevation_gain") double totalElevationGain,
-            @JsonProperty("average_heartrate") Double averageHeartrate) {
+            @JsonProperty("average_heartrate") Double averageHeartrate,
+            @JsonProperty("max_heartrate") Double maxHeartrate,
+            /** strides per minute, ONE leg — double it for SPM */
+            @JsonProperty("average_cadence") Double averageCadence,
+            /** Strava's relative effort */
+            @JsonProperty("suffer_score") Double sufferScore) {
+    }
+
+    /** A fastest split inside one activity (1k, 5k, Half-Marathon…). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record BestEffort(
+            String name,
+            /** metres */
+            double distance,
+            @JsonProperty("elapsed_time") int elapsedTime) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ActivityDetail(
+            long id,
+            @JsonProperty("average_cadence") Double averageCadence,
+            @JsonProperty("max_heartrate") Double maxHeartrate,
+            @JsonProperty("suffer_score") Double sufferScore,
+            @JsonProperty("best_efforts") List<BestEffort> bestEfforts) {
     }
 }

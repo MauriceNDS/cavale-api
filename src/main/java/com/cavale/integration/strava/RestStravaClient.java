@@ -47,6 +47,28 @@ public class RestStravaClient implements StravaClient {
     }
 
     @Override
+    public List<StravaDtos.ActivitySummary> listActivitiesPage(String accessToken, int page, int perPage) {
+        return apiClient.get()
+                .uri(uri -> uri.path("/athlete/activities")
+                        .queryParam("page", page)
+                        .queryParam("per_page", perPage)
+                        .build())
+                .header("Authorization", "Bearer " + accessToken)
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    @Override
+    public StravaDtos.ActivityDetail getActivity(String accessToken, long activityId) {
+        return apiClient.get()
+                .uri(uri -> uri.path("/activities/{id}").build(activityId))
+                .header("Authorization", "Bearer " + accessToken)
+                .retrieve()
+                .body(StravaDtos.ActivityDetail.class);
+    }
+
+    @Override
     public StravaDtos.StreamSet getStreams(String accessToken, long activityId) {
         return apiClient.get()
                 .uri(uri -> uri.path("/activities/{id}/streams")
