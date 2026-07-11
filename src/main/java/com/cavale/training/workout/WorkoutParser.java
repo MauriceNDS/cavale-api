@@ -88,19 +88,24 @@ public final class WorkoutParser {
             nodes.add(Node.step(allureOfZone(fallbackZone), fallbackDurationMin * 60, null));
         }
 
-        // A single duration-less top-level block (e.g. an SL or EF whose time
-        // lives in the title) inherits the session duration — never "libre"
-        if (fallbackDurationMin != null) {
-            List<Integer> missing = new ArrayList<>();
-            for (int i = 0; i < nodes.size(); i++) {
-                if (!nodes.get(i).isRepeat() && nodes.get(i).seconds() == null) {
-                    missing.add(i);
-                }
+        // A repeat whose only child is a repeat collapses (2×(8×…) with no
+        // between-series recovery → 16×…): loops always hold ≥ 2 blocks
+        for (int i = 0; i < nodes.size(); i++) {
+            Node node = nodes.get(i);
+            if (node.isRepeat() && node.children().size() == 1 && node.children().getFirst().isRepeat()) {
+                Node inner = node.children().getFirst();
+                nodes.set(i, Node.repeat(node.count() * inner.count(), inner.children()));
             }
-            if (missing.size() == 1) {
-                int i = missing.getFirst();
-                Node lone = nodes.get(i);
-                nodes.set(i, Node.step(lone.allure(), fallbackDurationMin * 60, lone.terrain()));
+        }
+
+        // The main run often lives in the title ("SL trail 2h45 … fin à allure
+        // course"): when the parsed structure covers far less than the session
+        // duration, the missing time becomes a leading EF block
+        if (fallbackDurationMin != null && !nodes.isEmpty()) {
+            int structureSec = totalSeconds(nodes);
+            int gap = fallbackDurationMin * 60 - structureSec;
+            if (gap >= 20 * 60) {
+                nodes.add(0, Node.step(Allure.EF, gap, null));
             }
         }
 
@@ -140,7 +145,14 @@ public final class WorkoutParser {
             Node previous = siblings.removeLast();
             List<Node> children = new ArrayList<>(previous.children());
             Integer seconds = firstDuration(label);
-            children.add(Node.step(Allure.LENTE, seconds != null ? seconds : DEFAULT_RECOVERY_SEC, null));
+            Node recovery = Node.step(Allure.LENTE, seconds != null ? seconds : DEFAULT_RECOVERY_SEC, null);
+            // an explicit recovery REPLACES the default one, never stacks on it
+            if (children.size() >= 2 && !children.getLast().isRepeat()
+                    && children.getLast().allure() == Allure.LENTE) {
+                children.set(children.size() - 1, recovery);
+            } else {
+                children.add(recovery);
+            }
             siblings.add(Node.repeat(previous.count(), children));
             return null;
         }
@@ -149,7 +161,15 @@ public final class WorkoutParser {
         if (nested.matches()) {
             int outer = Integer.parseInt(nested.group(1));
             int inner = Integer.parseInt(nested.group(2));
-            return Node.repeat(outer, List.of(Node.repeat(inner, workAndRecovery(nested.group(3)))));
+            String innerContent = nested.group(3);
+            // "2 × (8 × 40″/20″)" — the slash sets the exact recovery time
+            Matcher innerSlash = Pattern.compile("^(\\d+)\\s*[″\"]?\\s*/\\s*(\\d+)").matcher(innerContent.trim());
+            List<Node> innerNodes = innerSlash.find()
+                    ? List.of(Node.step(allureOf(innerContent, Allure.VMA),
+                            Integer.parseInt(innerSlash.group(1)), terrainOf(innerContent)),
+                            Node.step(Allure.LENTE, Integer.parseInt(innerSlash.group(2)), null))
+                    : workAndRecovery(innerContent);
+            return Node.repeat(outer, List.of(Node.repeat(inner, innerNodes)));
         }
 
         Matcher slash = SLASH_REPEAT.matcher(label);
@@ -173,10 +193,10 @@ public final class WorkoutParser {
         }
 
         Integer duration = firstDuration(label);
-        Allure allure = allureOf(label, null);
-        if (duration == null && allure == null) {
-            return null; // pure prose — notes only
+        if (duration == null) {
+            return null; // a block without a time is prose — notes only
         }
+        Allure allure = allureOf(label, null);
         if (allure == null) {
             allure = sectionDefault != null ? sectionDefault : Allure.EF;
         }
@@ -218,15 +238,30 @@ public final class WorkoutParser {
         return residual.replaceAll("[^\\p{L}]", "").length() >= 8;
     }
 
+    /** Blocks longer than this are clock times ("départ 19h30"), not durations. */
+    private static final int MAX_BLOCK_SEC = 6 * 3600;
+
     private static Integer firstDuration(String text) {
         Matcher dur = DURATION.matcher(text);
         while (dur.find()) {
             Integer seconds = toSeconds(dur);
-            if (seconds != null) {
+            if (seconds != null && seconds <= MAX_BLOCK_SEC) {
                 return seconds;
             }
         }
         return null;
+    }
+
+    private static int totalSeconds(List<Node> nodes) {
+        int total = 0;
+        for (Node node : nodes) {
+            if (node.isRepeat()) {
+                total += node.count() * totalSeconds(node.children());
+            } else if (node.seconds() != null) {
+                total += node.seconds();
+            }
+        }
+        return total;
     }
 
     private static Integer toSeconds(Matcher dur) {

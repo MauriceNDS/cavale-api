@@ -95,7 +95,9 @@ class WorkoutParserTest {
     void thirtyThirtyAlternation() {
         List<Node> nodes = WorkoutParser.parse("Corps : 6×30/30 à VMA.", "VMA", 40).nodes();
 
-        Node repeat = nodes.getFirst();
+        // the session time not covered by the intervals becomes a leading EF block
+        assertThat(nodes.getFirst().allure()).isEqualTo(Allure.EF);
+        Node repeat = nodes.get(1);
         assertThat(repeat.count()).isEqualTo(6);
         assertThat(repeat.children()).extracting(Node::allure)
                 .containsExactly(Allure.VMA, Allure.LENTE);
