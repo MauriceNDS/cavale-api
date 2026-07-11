@@ -17,4 +17,7 @@ public interface PlannedSessionRepository extends JpaRepository<PlannedSession, 
     List<PlannedSession> findByWeekIdOrderByDateAscOrderInDayAsc(UUID weekId);
 
     List<PlannedSession> findByUserId(UUID userId);
+
+    /** Every session of a plan, across all its weeks (progress aggregation). */
+    List<PlannedSession> findByWeekPlanId(UUID planId);
 }

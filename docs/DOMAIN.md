@@ -29,9 +29,17 @@ build — don't treat this as final, treat it as the map.
 - `id`, `userId`, `name`, `goal`, `startDate`, `endDate`, `status`
 - relates to one or more **Objectives**; contains many **PlannedSessions**.
 
-**Objective / Race** — what the plan is built around.
-- `id`, `planId?`, `name`, `date`, `type` (RACE | FITNESS_GOAL)
-- race specifics: `distanceKm`, `elevationGainM` (D+), `priority` (A | B | C)
+**Objective** — what the plan is built around. *(implemented)*
+- `id`, `planId`, `userId`, `role` (MAIN | SECONDARY), `type` (RACE | RECOVERY | FITNESS | GENERAL)
+- `name`, `date?` (event day), `distanceKm?`, `elevationGainM?`, `location?`, `notes?`
+- `targetTimeMin?` (the goal), `resultTimeMin?` (once raced)
+- Every plan has **exactly one MAIN objective** (created with the plan, DB-enforced
+  by a partial unique index, undeletable on its own) — its period IS the plan's
+  date range. SECONDARY objectives are intermediate races/milestones the program
+  accounts for.
+- The **objective page** reads `GET /plans/{id}/progress`: per-week target-vs-actual
+  volume/D+/duration (targets from `PlanWeek`, actuals from `Activity`), session
+  adherence, current week, countdown.
 
 **PlannedSession** — one scheduled training day (the calendar atom).
 - `id`, `planId`, `userId`, `date`, `discipline` (RUN | GYM | REST | CROSS)
@@ -106,7 +114,7 @@ build — don't treat this as final, treat it as the map.
 
 ```
 User 1──* TrainingPlan 1──* PlannedSession *──1 GymTemplate
-User 1──* Objective                         └──? Activity (actual run)
+TrainingPlan 1──* Objective (1 MAIN + n SECONDARY)  └──? Activity (actual run)
 User 1──* GymTemplate 1──* TemplateExercise *──1 Exercise *──? alternatives
 User 1──* WorkoutLog 1──* SetLog *──1 Exercise
 Exercise 1──1 TheoryGuide

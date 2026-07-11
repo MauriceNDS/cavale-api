@@ -13,6 +13,9 @@ import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivitySource;
 import com.cavale.training.domain.Discipline;
+import com.cavale.training.domain.Objective;
+import com.cavale.training.domain.ObjectiveRole;
+import com.cavale.training.domain.ObjectiveType;
 import com.cavale.training.domain.PerceivedEffort;
 import com.cavale.training.domain.PlanWeek;
 import com.cavale.training.domain.PlannedSession;
@@ -25,6 +28,7 @@ import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.dto.UpdateWeekRequest;
 import com.cavale.training.dto.ValidateSessionRequest;
 import com.cavale.training.repository.ActivityRepository;
+import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 import com.cavale.training.repository.TrainingPlanRepository;
@@ -44,25 +48,38 @@ public class TrainingPlanService {
     private final PlanWeekRepository weekRepository;
     private final PlannedSessionRepository sessionRepository;
     private final ActivityRepository activityRepository;
+    private final ObjectiveRepository objectiveRepository;
 
     public TrainingPlanService(TrainingPlanRepository planRepository,
                                PlanWeekRepository weekRepository,
                                PlannedSessionRepository sessionRepository,
-                               ActivityRepository activityRepository) {
+                               ActivityRepository activityRepository,
+                               ObjectiveRepository objectiveRepository) {
         this.planRepository = planRepository;
         this.weekRepository = weekRepository;
         this.sessionRepository = sessionRepository;
         this.activityRepository = activityRepository;
+        this.objectiveRepository = objectiveRepository;
     }
 
+    /**
+     * Creates the plan AND its MAIN objective — a season always has one.
+     * The objective starts as a race named after the goal (or the plan),
+     * dated at the end of the season; the user refines it on the objective page.
+     */
     @Transactional
     public TrainingPlan createPlan(UUID userId, CreatePlanRequest request) {
         if (request.endDate().isBefore(request.startDate())) {
             throw new IllegalArgumentException("endDate must not be before startDate");
         }
-        TrainingPlan plan = new TrainingPlan(userId, request.name().trim(), request.goal(),
-                request.startDate(), request.endDate());
-        return planRepository.save(plan);
+        TrainingPlan plan = planRepository.save(new TrainingPlan(userId, request.name().trim(),
+                request.goal(), request.startDate(), request.endDate()));
+        String objectiveName = request.goal() == null || request.goal().isBlank()
+                ? plan.getName()
+                : request.goal().trim();
+        objectiveRepository.save(new Objective(plan, ObjectiveRole.MAIN, ObjectiveType.RACE,
+                objectiveName, plan.getEndDate()));
+        return plan;
     }
 
     @Transactional(readOnly = true)

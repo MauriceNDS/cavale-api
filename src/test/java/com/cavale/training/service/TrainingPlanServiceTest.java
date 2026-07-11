@@ -6,12 +6,15 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Discipline;
+import com.cavale.training.domain.Objective;
+import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.PlanWeek;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
@@ -23,6 +26,7 @@ import com.cavale.training.domain.ActivitySource;
 import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.dto.ValidateSessionRequest;
 import com.cavale.training.repository.ActivityRepository;
+import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 import com.cavale.training.repository.TrainingPlanRepository;
@@ -49,8 +53,12 @@ class TrainingPlanServiceTest {
     @Mock
     private ActivityRepository activityRepository;
 
+    @Mock
+    private ObjectiveRepository objectiveRepository;
+
     private TrainingPlanService service() {
-        return new TrainingPlanService(planRepository, weekRepository, sessionRepository, activityRepository);
+        return new TrainingPlanService(planRepository, weekRepository, sessionRepository,
+                activityRepository, objectiveRepository);
     }
 
     private static final UUID OWNER = UUID.randomUUID();
@@ -73,6 +81,33 @@ class TrainingPlanServiceTest {
         assertThat(plan.getName()).isEqualTo("SaintéLyon 2026");
         assertThat(plan.getUserId()).isEqualTo(OWNER);
         assertThat(plan.getStatus().name()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void createPlan_createsMainObjectiveFromGoal() {
+        when(planRepository.save(any(TrainingPlan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service().createPlan(OWNER, new CreatePlanRequest(
+                "SaintéLyon 2026", "SaintéLyon 80 km", LocalDate.of(2026, 7, 6), LocalDate.of(2026, 11, 29)));
+
+        ArgumentCaptor<Objective> captor = ArgumentCaptor.forClass(Objective.class);
+        verify(objectiveRepository).save(captor.capture());
+        Objective main = captor.getValue();
+        assertThat(main.getRole()).isEqualTo(ObjectiveRole.MAIN);
+        assertThat(main.getName()).isEqualTo("SaintéLyon 80 km");
+        assertThat(main.getDate()).isEqualTo(LocalDate.of(2026, 11, 29));
+    }
+
+    @Test
+    void createPlan_mainObjectiveFallsBackToPlanName() {
+        when(planRepository.save(any(TrainingPlan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service().createPlan(OWNER, new CreatePlanRequest(
+                "Reprise hiver", "  ", LocalDate.of(2027, 1, 4), LocalDate.of(2027, 3, 28)));
+
+        ArgumentCaptor<Objective> captor = ArgumentCaptor.forClass(Objective.class);
+        verify(objectiveRepository).save(captor.capture());
+        assertThat(captor.getValue().getName()).isEqualTo("Reprise hiver");
     }
 
     @Test
