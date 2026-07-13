@@ -5,6 +5,7 @@ import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.cavale.user.dto.UpdateProfileRequest;
 import com.cavale.user.dto.UpdateStatusRequest;
 import com.cavale.user.dto.UserResponse;
+import com.cavale.user.service.TokenService;
 import com.cavale.user.service.UserService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,9 +27,11 @@ import jakarta.validation.Valid;
 public class UserController {
 
     private final UserService userService;
+    private final TokenService tokenService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, TokenService tokenService) {
         this.userService = userService;
+        this.tokenService = tokenService;
     }
 
     @GetMapping("/me")
@@ -51,5 +55,13 @@ public class UserController {
                                      @Valid @RequestBody UpdateStatusRequest request) {
         UUID userId = UUID.fromString(jwt.getSubject());
         return UserResponse.from(userService.updateStatus(userId, request));
+    }
+
+    @PostMapping("/me/pat")
+    @Operation(summary = "Issue a long-lived personal access token (MCP client credential). "
+            + "Shown once — store it in the MCP client configuration.")
+    public TokenService.IssuedToken issuePat(@AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        return tokenService.issuePersonalToken(userService.getById(userId));
     }
 }

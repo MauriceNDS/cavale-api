@@ -24,14 +24,32 @@ public class TokenService {
     }
 
     public String issueFor(User user) {
+        return issue(user, jwtProperties.ttl(), "session");
+    }
+
+    /**
+     * Long-lived personal access token — the credential an MCP client
+     * (the owner's Claude) presents on every call. Same HS256 signature as
+     * session tokens, longer TTL, marked with purpose=pat.
+     */
+    public IssuedToken issuePersonalToken(User user) {
+        Instant expiresAt = Instant.now().plus(jwtProperties.patTtl());
+        return new IssuedToken(issue(user, jwtProperties.patTtl(), "pat"), expiresAt);
+    }
+
+    public record IssuedToken(String token, Instant expiresAt) {
+    }
+
+    private String issue(User user, java.time.Duration ttl, String purpose) {
         Instant now = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer("cavale-api")
                 .subject(user.getId().toString())
                 .issuedAt(now)
-                .expiresAt(now.plus(jwtProperties.ttl()))
+                .expiresAt(now.plus(ttl))
                 .claim("email", user.getEmail())
                 .claim("name", user.getDisplayName())
+                .claim("purpose", purpose)
                 .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
         return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();

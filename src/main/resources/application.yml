@@ -19,12 +19,33 @@ spring:
   flyway:
     enabled: true # run migrations on startup (none yet — that's Step 6)
 
+  ai:
+    mcp:
+      server:
+        name: cavale
+        version: 0.1.0
+        # STATELESS: plain JSON-RPC over HTTP POST /mcp — no session state,
+        # trivially proxied and authenticated with the same bearer JWTs as REST.
+        protocol: STATELESS
+        instructions: >-
+          Cavale is a personal ultra-trail training companion. You act as the
+          athlete's coach. ALWAYS call get_athlete_context before creating or
+          modifying anything: it tells you the athlete's availability (never
+          plan hard sessions for an INJURED or SICK athlete), the last race
+          (a race less than 4 weeks ago means the plan starts with recovery
+          weeks), recent training load and pain flags, and upcoming
+          objectives. Plans are seasons built around one main objective;
+          weeks carry a type (RECOVERY/TRANSITION/BUILD/DELOAD/SHOCK/TAPER/
+          RACE) and sessions belong to weeks. Write session detail in French.
+
 cavale:
   security:
     jwt:
       # HS256 secret, >= 32 bytes. The default is DEV-ONLY — set CAVALE_JWT_SECRET in any real environment.
       secret: ${CAVALE_JWT_SECRET:cavale-dev-only-secret-change-me-0123456789abcdef}
       ttl: ${CAVALE_JWT_TTL:PT24H}
+      # personal access tokens (MCP client credential) — long-lived by design
+      pat-ttl: ${CAVALE_JWT_PAT_TTL:P180D}
   strava:
     # Create an API application at strava.com/settings/api, then set these.
     client-id: ${CAVALE_STRAVA_CLIENT_ID:}
