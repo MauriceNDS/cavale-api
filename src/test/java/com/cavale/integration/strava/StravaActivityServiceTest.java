@@ -24,6 +24,8 @@ import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.domain.WeekType;
+import com.cavale.training.domain.ActivityBestEffort;
+import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 
@@ -52,8 +54,12 @@ class StravaActivityServiceTest {
     @Mock
     private ActivityRepository activityRepository;
 
+    @Mock
+    private ActivityBestEffortRepository bestEffortRepository;
+
     private StravaActivityService service() {
-        return new StravaActivityService(authService, stravaClient, sessionRepository, activityRepository);
+        return new StravaActivityService(authService, stravaClient, sessionRepository,
+                activityRepository, bestEffortRepository);
     }
 
     private static StravaConnection connection() {
@@ -175,5 +181,48 @@ class StravaActivityServiceTest {
         assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
         // adopted, not duplicated
         org.mockito.Mockito.verify(activityRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void importToSession_extractsBestEffortsInline() {
+        LocalDate date = LocalDate.now().minusDays(1);
+        PlannedSession session = runSession(date);
+        Activity history = Activity.stravaHistory(USER, date, 62,
+                new BigDecimal("10.50"), 180, 149, "Sortie 7", 7L);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.empty());
+        when(activityRepository.findByExternalId(7L)).thenReturn(Optional.of(history));
+        when(authService.freshConnection(USER)).thenReturn(connection());
+        when(stravaClient.getActivity(anyString(), org.mockito.ArgumentMatchers.eq(7L)))
+                .thenReturn(new StravaDtos.ActivityDetail(7L, 84.0, 175.0, 63.0,
+                        List.of(new StravaDtos.BestEffort("1k", 1000, 250))));
+
+        service().importToSession(USER, session.getId(), 7L, null, null);
+
+        assertThat(history.isRecordsAnalyzed()).isTrue();
+        assertThat(history.getRelativeEffort()).isEqualTo(63);
+        ArgumentCaptor<ActivityBestEffort> captor = ArgumentCaptor.forClass(ActivityBestEffort.class);
+        org.mockito.Mockito.verify(bestEffortRepository).save(captor.capture());
+        assertThat(captor.getValue().getDistanceM()).isEqualTo(1000);
+    }
+
+    @Test
+    void importToSession_detailFailureDoesNotBlockValidation() {
+        LocalDate date = LocalDate.now().minusDays(1);
+        PlannedSession session = runSession(date);
+        Activity history = Activity.stravaHistory(USER, date, 62,
+                new BigDecimal("10.50"), 180, 149, "Sortie 7", 7L);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.empty());
+        when(activityRepository.findByExternalId(7L)).thenReturn(Optional.of(history));
+        when(authService.freshConnection(USER)).thenReturn(connection());
+        when(stravaClient.getActivity(anyString(), org.mockito.ArgumentMatchers.eq(7L)))
+                .thenThrow(new RuntimeException("429 Too Many Requests"));
+
+        service().importToSession(USER, session.getId(), 7L, null, null);
+
+        assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
+        assertThat(history.isRecordsAnalyzed()).isFalse(); // next analyze batch picks it up
+        org.mockito.Mockito.verify(bestEffortRepository, org.mockito.Mockito.never()).save(any());
     }
 }

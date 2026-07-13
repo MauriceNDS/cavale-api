@@ -15,10 +15,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Activity;
+import com.cavale.training.domain.ActivityBestEffort;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PerceivedEffort;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
+import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 
@@ -37,14 +39,17 @@ public class StravaActivityService {
     private final StravaClient stravaClient;
     private final PlannedSessionRepository sessionRepository;
     private final ActivityRepository activityRepository;
+    private final ActivityBestEffortRepository bestEffortRepository;
 
     public StravaActivityService(StravaAuthService authService, StravaClient stravaClient,
                                  PlannedSessionRepository sessionRepository,
-                                 ActivityRepository activityRepository) {
+                                 ActivityRepository activityRepository,
+                                 ActivityBestEffortRepository bestEffortRepository) {
         this.authService = authService;
         this.stravaClient = stravaClient;
         this.sessionRepository = sessionRepository;
         this.activityRepository = activityRepository;
+        this.bestEffortRepository = bestEffortRepository;
     }
 
     public record StravaActivityOption(long id, String name, LocalDate date, int durationMin,
@@ -96,6 +101,7 @@ public class StravaActivityService {
             known.recordFeedback(perceivedEffort != null ? perceivedEffort : PerceivedEffort.COMME_PREVU,
                     comment);
             attachStreamsQuietly(userId, known);
+            analyzeRecordsQuietly(userId, known);
             session.updateStatus(SessionStatus.DONE);
             return known;
         }
@@ -118,8 +124,40 @@ public class StravaActivityService {
         attachStreamsQuietly(userId, activity);
 
         activity = activityRepository.save(activity);
+        analyzeRecordsQuietly(userId, activity);
         session.updateStatus(SessionStatus.DONE);
         return activity;
+    }
+
+    /**
+     * Best efforts feed the records page — validating a run is the natural
+     * moment to extract them (1 extra request), so records stay current
+     * without the manual "analyze" pass. A failure must not block validation;
+     * the batch analysis will pick the activity up later.
+     */
+    private void analyzeRecordsQuietly(UUID userId, Activity activity) {
+        if (activity.isRecordsAnalyzed() || activity.getExternalId() == null) {
+            return;
+        }
+        try {
+            StravaConnection connection = authService.freshConnection(userId);
+            StravaDtos.ActivityDetail detail = stravaClient.getActivity(connection.getAccessToken(),
+                    activity.getExternalId());
+            if (detail == null) {
+                return;
+            }
+            activity.enrich(StravaSyncService.cadenceSpm(detail.averageCadence()),
+                    detail.sufferScore() != null ? (int) Math.round(detail.sufferScore()) : null,
+                    detail.maxHeartrate() != null ? (int) Math.round(detail.maxHeartrate()) : null);
+            for (StravaDtos.BestEffort effort : detail.bestEfforts() != null
+                    ? detail.bestEfforts() : List.<StravaDtos.BestEffort>of()) {
+                bestEffortRepository.save(new ActivityBestEffort(activity, effort.name(),
+                        (int) Math.round(effort.distance()), effort.elapsedTime()));
+            }
+            activity.markRecordsAnalyzed();
+        } catch (Exception e) {
+            // records stay pending; the next analyze batch will catch up
+        }
     }
 
     /** Streams feed the report charts — a failure here must not block validation. */

@@ -137,8 +137,16 @@ public class StravaAuthService {
         connectionRepository.findByUserId(userId).ifPresent(connectionRepository::delete);
     }
 
-    /** Returns a fresh access token, refreshing (and persisting) if needed. */
-    @Transactional
+    /**
+     * Returns a fresh access token, refreshing (and persisting) if needed.
+     *
+     * Deliberately NOT @Transactional: every caller already runs in a
+     * transaction, and a proxy of its own would mark that outer transaction
+     * rollback-only whenever this throws (no connection, refresh failure) —
+     * even when the caller catches the exception as a best-effort step
+     * (UnexpectedRollbackException at commit). Callers must be transactional
+     * for the token refresh to persist.
+     */
     public StravaConnection freshConnection(UUID userId) {
         StravaConnection connection = connectionRepository.findByUserId(userId)
                 .orElseThrow(() -> new StravaException("Strava is not connected"));

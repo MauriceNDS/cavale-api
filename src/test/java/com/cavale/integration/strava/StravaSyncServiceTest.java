@@ -1,10 +1,12 @@
 package com.cavale.integration.strava;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,6 +22,7 @@ import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -101,6 +104,60 @@ class StravaSyncServiceTest {
         service().syncHistory(USER);
 
         verify(stravaClient, times(1)).listActivitiesPage(anyString(), anyInt(), anyInt());
+    }
+
+    @Test
+    void syncRecent_rescansMarginBeforeLastSyncAndUpserts() {
+        StravaConnection connection = connection();
+        Instant lastSync = Instant.now().minusSeconds(3600);
+        connection.markSynced(lastSync);
+        when(authService.freshConnection(USER)).thenReturn(connection);
+        when(stravaClient.listActivities(anyString(), any(), any()))
+                .thenReturn(List.of(summary(1L, "Run"), summary(2L, "Ride")));
+        when(activityRepository.findByExternalIdIn(anyCollection())).thenReturn(List.of());
+
+        StravaSyncService.SyncResult result = service().syncRecent(USER);
+
+        assertThat(result.imported()).isEqualTo(1);
+        assertThat(result.totalRuns()).isEqualTo(1);
+        assertThat(connection.getLastSyncAt()).isAfter(lastSync);
+
+        ArgumentCaptor<Instant> after = ArgumentCaptor.forClass(Instant.class);
+        verify(stravaClient).listActivities(anyString(), after.capture(), any());
+        // window starts a 3-day margin before the last sync (late uploads)
+        assertThat(after.getValue()).isEqualTo(lastSync.minus(Duration.ofDays(3)));
+    }
+
+    @Test
+    void syncRecent_bootstrapsThirtyDayWindowWhenNeverSynced() {
+        when(authService.freshConnection(USER)).thenReturn(connection());
+        when(stravaClient.listActivities(anyString(), any(), any())).thenReturn(List.of());
+
+        StravaSyncService.SyncResult result = service().syncRecent(USER);
+
+        assertThat(result.imported()).isZero();
+        ArgumentCaptor<Instant> after = ArgumentCaptor.forClass(Instant.class);
+        verify(stravaClient).listActivities(anyString(), after.capture(), any());
+        assertThat(after.getValue())
+                .isCloseTo(Instant.now().minus(Duration.ofDays(30)), within(5, ChronoUnit.SECONDS));
+    }
+
+    @Test
+    void syncRecent_enrichesKnownRunsInsteadOfDuplicating() {
+        StravaConnection connection = connection();
+        when(authService.freshConnection(USER)).thenReturn(connection);
+        when(stravaClient.listActivities(anyString(), any(), any()))
+                .thenReturn(List.of(summary(1L, "Run")));
+        Activity known = Activity.stravaHistory(USER, LocalDate.of(2026, 5, 10), 60,
+                new BigDecimal("12.00"), 250, 148, "Sortie 1", 1L);
+        when(activityRepository.findByExternalIdIn(anyCollection())).thenReturn(List.of(known));
+
+        StravaSyncService.SyncResult result = service().syncRecent(USER);
+
+        assertThat(result.imported()).isZero();
+        assertThat(result.updated()).isEqualTo(1);
+        verify(activityRepository, never()).save(any());
+        assertThat(known.getAvgCadenceSpm()).isEqualByComparingTo("168.0");
     }
 
     @Test

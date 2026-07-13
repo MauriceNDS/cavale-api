@@ -19,9 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 import com.cavale.integration.strava.StravaActivityService;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.PlannedSession;
+import com.cavale.training.dto.SessionProposalResponse;
 import com.cavale.training.dto.SessionResponse;
 import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.dto.ValidateSessionRequest;
+import com.cavale.training.service.SessionMatchService;
 import com.cavale.training.service.TrainingPlanService;
 import com.cavale.training.workout.FitWorkoutExporter;
 import com.cavale.training.workout.WorkoutJson;
@@ -37,13 +39,16 @@ public class PlannedSessionController {
 
     private final TrainingPlanService planService;
     private final StravaActivityService stravaActivityService;
+    private final SessionMatchService matchService;
     private final FitWorkoutExporter fitExporter;
 
     public PlannedSessionController(TrainingPlanService planService,
                                     StravaActivityService stravaActivityService,
+                                    SessionMatchService matchService,
                                     FitWorkoutExporter fitExporter) {
         this.planService = planService;
         this.stravaActivityService = stravaActivityService;
+        this.matchService = matchService;
         this.fitExporter = fitExporter;
     }
 
@@ -90,6 +95,17 @@ public class PlannedSessionController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(activity.getStreamsJson());
+    }
+
+    @GetMapping("/{sessionId}/proposal")
+    @Operation(summary = "Ingested Strava run that likely matches this session (204 when none)")
+    public ResponseEntity<SessionProposalResponse> proposal(@AuthenticationPrincipal Jwt jwt,
+                                                            @PathVariable UUID sessionId) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        PlannedSession session = planService.getOwnedSession(userId, sessionId);
+        return matchService.proposeFor(session)
+                .map(activity -> ResponseEntity.ok(SessionProposalResponse.from(activity)))
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PostMapping("/{sessionId}/validate-strava")

@@ -34,3 +34,7 @@ cavale:
     frontend-login-redirect: ${CAVALE_STRAVA_FRONTEND_LOGIN_REDIRECT:http://localhost:5173/auth/strava}
     auth-base: https://www.strava.com
     api-base: https://www.strava.com/api/v3
+    # Background ingestion of new runs (ISO-8601 durations). One request per
+    # connected athlete per tick — stays far under Strava's 200 req / 15 min.
+    ingest-interval: ${CAVALE_STRAVA_INGEST_INTERVAL:PT15M}
+    ingest-initial-delay: ${CAVALE_STRAVA_INGEST_INITIAL_DELAY:PT2M}

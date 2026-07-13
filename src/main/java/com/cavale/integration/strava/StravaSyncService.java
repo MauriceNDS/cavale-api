@@ -2,6 +2,7 @@ package com.cavale.integration.strava;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -21,14 +22,17 @@ import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 
 /**
- * Full-history Strava import behind the athlete hub. Two user-driven steps,
- * both idempotent and rate-limit-aware (Strava: 200 requests / 15 min):
+ * Strava import into the activity corpus. Three entry points, all idempotent
+ * and rate-limit-aware (Strava: 200 requests / 15 min):
  *
- * 1. {@link #syncHistory} — pages through the athlete's whole activity list
- *    (1 request per 200 activities) and upserts every run as an Activity;
- *    runs already imported (standalone or attached to a session) are only
- *    enriched with the newer summary metrics.
- * 2. {@link #analyzeRecords} — fetches per-activity detail (1 request each,
+ * 1. {@link #syncHistory} — user-driven: pages through the athlete's whole
+ *    activity list (1 request per 200 activities) and upserts every run as an
+ *    Activity; runs already imported (standalone or attached to a session)
+ *    are only enriched with the newer summary metrics.
+ * 2. {@link #syncRecent} — background: the windowed variant behind the
+ *    ingest scheduler (1 request), so a finished run lands in Cavale without
+ *    the athlete doing anything.
+ * 3. {@link #analyzeRecords} — fetches per-activity detail (1 request each,
  *    hence batched) to extract Strava's best efforts, which feed the
  *    distance records and race-time estimations.
  */
@@ -41,6 +45,10 @@ public class StravaSyncService {
     private static final int PAGE_SIZE = 200;
     private static final int MAX_PAGES = 100;
     private static final int ANALYZE_BATCH = 50;
+    /** Re-scanned before lastSyncAt — catches late uploads and settling metrics. */
+    private static final Duration RESYNC_MARGIN = Duration.ofDays(3);
+    /** First background sync of a never-synced athlete looks this far back. */
+    private static final Duration FIRST_SYNC_WINDOW = Duration.ofDays(30);
 
     private final StravaAuthService authService;
     private final StravaClient stravaClient;
@@ -80,22 +88,9 @@ public class StravaSyncService {
                     .toList();
             totalRuns += runs.size();
 
-            Map<Long, Activity> existing = activityRepository
-                    .findByExternalIdIn(runs.stream().map(StravaDtos.ActivitySummary::id).toList())
-                    .stream()
-                    .collect(Collectors.toMap(Activity::getExternalId, a -> a));
-
-            for (StravaDtos.ActivitySummary run : runs) {
-                Activity known = existing.get(run.id());
-                if (known != null) {
-                    known.enrich(cadenceSpm(run.averageCadence()),
-                            toInt(run.sufferScore()), toInt(run.maxHeartrate()));
-                    updated++;
-                    continue;
-                }
-                activityRepository.save(newHistoryActivity(userId, run));
-                imported++;
-            }
+            UpsertCounts counts = upsertRuns(userId, runs);
+            imported += counts.imported();
+            updated += counts.updated();
             if (batch.size() < PAGE_SIZE) {
                 break;
             }
@@ -103,6 +98,59 @@ public class StravaSyncService {
 
         connection.markSynced(Instant.now());
         return new SyncResult(imported, updated, totalRuns);
+    }
+
+    /**
+     * Windowed upsert of recent runs: since the last sync (re-scanning a
+     * margin before it — a watch can upload hours after the run ended, and
+     * summary metrics settle late), or a first bootstrap window when the
+     * athlete was never synced.
+     */
+    @Transactional
+    public SyncResult syncRecent(UUID userId) {
+        StravaConnection connection = authService.freshConnection(userId);
+        Instant now = Instant.now();
+        Instant after = connection.getLastSyncAt() != null
+                ? connection.getLastSyncAt().minus(RESYNC_MARGIN)
+                : now.minus(FIRST_SYNC_WINDOW);
+
+        List<StravaDtos.ActivitySummary> runs = stravaClient
+                .listActivities(connection.getAccessToken(), after, now).stream()
+                .filter(a -> RUN_SPORTS.contains(a.sportType()))
+                .toList();
+
+        UpsertCounts counts = upsertRuns(userId, runs);
+        connection.markSynced(now);
+        return new SyncResult(counts.imported(), counts.updated(), runs.size());
+    }
+
+    private record UpsertCounts(int imported, int updated) {
+    }
+
+    /** New runs become standalone history rows; known ones only gain metrics. */
+    private UpsertCounts upsertRuns(UUID userId, List<StravaDtos.ActivitySummary> runs) {
+        if (runs.isEmpty()) {
+            return new UpsertCounts(0, 0);
+        }
+        Map<Long, Activity> existing = activityRepository
+                .findByExternalIdIn(runs.stream().map(StravaDtos.ActivitySummary::id).toList())
+                .stream()
+                .collect(Collectors.toMap(Activity::getExternalId, a -> a));
+
+        int imported = 0;
+        int updated = 0;
+        for (StravaDtos.ActivitySummary run : runs) {
+            Activity known = existing.get(run.id());
+            if (known != null) {
+                known.enrich(cadenceSpm(run.averageCadence()),
+                        toInt(run.sufferScore()), toInt(run.maxHeartrate()));
+                updated++;
+                continue;
+            }
+            activityRepository.save(newHistoryActivity(userId, run));
+            imported++;
+        }
+        return new UpsertCounts(imported, updated);
     }
 
     /**
