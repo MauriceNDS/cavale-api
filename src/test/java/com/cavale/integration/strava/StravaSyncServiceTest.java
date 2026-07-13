@@ -66,6 +66,14 @@ class StravaSyncServiceTest {
                 12000, 3600, 250, 148.0, 172.0, 84.0, 61.0);
     }
 
+    /** Full activity detail as one Strava GET /activities/{id} returns it. */
+    static StravaDtos.ActivityDetail detail(long id, String name, Double cadence, Double maxHr,
+                                            Double sufferScore, List<StravaDtos.BestEffort> efforts) {
+        return new StravaDtos.ActivityDetail(id, name, "Run",
+                LocalDateTime.of(LocalDate.of(2026, 5, 10), LocalTime.of(8, 0)),
+                12000.0, 3600, 250.0, 148.0, cadence, maxHr, sufferScore, efforts);
+    }
+
     @Test
     void syncHistory_importsRunsSkipsOtherSportsAndKnownActivities() {
         when(authService.freshConnection(USER)).thenReturn(connection());
@@ -161,6 +169,73 @@ class StravaSyncServiceTest {
     }
 
     @Test
+    void upsertFromStrava_importsNewRunFullyAnalyzed() {
+        when(authService.freshConnection(USER)).thenReturn(connection());
+        when(stravaClient.getActivity(anyString(), eq(9L))).thenReturn(detail(9L, "Sortie 9",
+                84.0, 175.0, 63.0, List.of(new StravaDtos.BestEffort("1k", 1000, 255))));
+        when(activityRepository.findByExternalId(9L)).thenReturn(java.util.Optional.empty());
+        when(activityRepository.save(any(Activity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service().upsertFromStrava(USER, 9L);
+
+        ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityRepository).save(captor.capture());
+        Activity saved = captor.getValue();
+        assertThat(saved.getExternalId()).isEqualTo(9L);
+        assertThat(saved.getDistanceKm()).isEqualByComparingTo("12.00");
+        assertThat(saved.isRecordsAnalyzed()).isTrue(); // one fetch does it all
+        verify(bestEffortRepository).save(any(ActivityBestEffort.class));
+    }
+
+    @Test
+    void upsertFromStrava_refreshesKnownRunWithoutDuplicatingEfforts() {
+        when(authService.freshConnection(USER)).thenReturn(connection());
+        when(stravaClient.getActivity(anyString(), eq(9L))).thenReturn(detail(9L, "Renommée",
+                84.0, 175.0, 63.0, List.of(new StravaDtos.BestEffort("1k", 1000, 255))));
+        Activity known = Activity.stravaHistory(USER, LocalDate.of(2026, 5, 10), 55,
+                new BigDecimal("11.00"), 200, 150, "Ancien nom", 9L);
+        known.markRecordsAnalyzed();
+        when(activityRepository.findByExternalId(9L)).thenReturn(java.util.Optional.of(known));
+
+        service().upsertFromStrava(USER, 9L);
+
+        assertThat(known.getName()).isEqualTo("Renommée");
+        assertThat(known.getDurationMin()).isEqualTo(60);
+        verify(activityRepository, never()).save(any());
+        verify(bestEffortRepository, never()).save(any()); // unique(activity,distance)
+    }
+
+    @Test
+    void upsertFromStrava_ignoresNonRunSports() {
+        when(authService.freshConnection(USER)).thenReturn(connection());
+        when(stravaClient.getActivity(anyString(), eq(9L))).thenReturn(
+                new StravaDtos.ActivityDetail(9L, "Sortie vélo", "Ride",
+                        LocalDateTime.of(LocalDate.of(2026, 5, 10), LocalTime.of(8, 0)),
+                        40000.0, 5400, 400.0, 130.0, null, null, null, List.of()));
+
+        service().upsertFromStrava(USER, 9L);
+
+        verify(activityRepository, never()).save(any());
+    }
+
+    @Test
+    void deleteFromStrava_removesStandaloneButKeepsValidatedSessions() {
+        Activity standalone = Activity.stravaHistory(USER, LocalDate.of(2026, 5, 10), 60,
+                new BigDecimal("12.00"), 250, 148, "Sortie", 9L);
+        when(activityRepository.findByExternalId(9L)).thenReturn(java.util.Optional.of(standalone));
+        service().deleteFromStrava(USER, 9L);
+        verify(activityRepository).delete(standalone);
+
+        Activity attached = org.mockito.Mockito.mock(Activity.class);
+        when(attached.getUserId()).thenReturn(USER);
+        when(attached.getSession()).thenReturn(org.mockito.Mockito.mock(
+                com.cavale.training.domain.PlannedSession.class));
+        when(activityRepository.findByExternalId(10L)).thenReturn(java.util.Optional.of(attached));
+        service().deleteFromStrava(USER, 10L);
+        verify(activityRepository, never()).delete(attached);
+    }
+
+    @Test
     void analyzeRecords_extractsBestEffortsAndMarksAnalyzed() {
         when(authService.freshConnection(USER)).thenReturn(connection());
         Activity activity = Activity.stravaHistory(USER, LocalDate.of(2026, 5, 10), 60,
@@ -168,8 +243,8 @@ class StravaSyncServiceTest {
         when(activityRepository
                 .findByUserIdAndExternalIdIsNotNullAndRecordsAnalyzedFalseOrderByDateAsc(eq(USER), any()))
                 .thenReturn(List.of(activity));
-        when(stravaClient.getActivity(anyString(), eq(9L))).thenReturn(new StravaDtos.ActivityDetail(
-                9L, 84.0, 175.0, 63.0,
+        when(stravaClient.getActivity(anyString(), eq(9L))).thenReturn(detail(9L, "Sortie 9",
+                84.0, 175.0, 63.0,
                 List.of(new StravaDtos.BestEffort("1k", 1000, 255),
                         new StravaDtos.BestEffort("5k", 5000, 1450))));
         when(activityRepository.countByUserIdAndExternalIdIsNotNullAndRecordsAnalyzedFalse(USER))
@@ -199,7 +274,7 @@ class StravaSyncServiceTest {
                 .findByUserIdAndExternalIdIsNotNullAndRecordsAnalyzedFalseOrderByDateAsc(eq(USER), any()))
                 .thenReturn(List.of(first, second));
         when(stravaClient.getActivity(anyString(), eq(1L)))
-                .thenReturn(new StravaDtos.ActivityDetail(1L, null, null, null, List.of()));
+                .thenReturn(detail(1L, "A", null, null, null, List.of()));
         when(stravaClient.getActivity(anyString(), eq(2L)))
                 .thenThrow(new RuntimeException("429 Too Many Requests"));
         when(activityRepository.countByUserIdAndExternalIdIsNotNullAndRecordsAnalyzedFalse(USER))

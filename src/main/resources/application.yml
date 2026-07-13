@@ -57,5 +57,11 @@ cavale:
     api-base: https://www.strava.com/api/v3
     # Background ingestion of new runs (ISO-8601 durations). One request per
     # connected athlete per tick — stays far under Strava's 200 req / 15 min.
+    # With the webhook subscribed this is only the safety net.
     ingest-interval: ${CAVALE_STRAVA_INGEST_INTERVAL:PT15M}
     ingest-initial-delay: ${CAVALE_STRAVA_INGEST_INITIAL_DELAY:PT2M}
+    # Push events (webhook). Needs a publicly reachable URL — leave empty in
+    # dev, the poll above covers it. POST /api/strava/webhook-subscription
+    # subscribes once both are set.
+    webhook-callback-url: ${CAVALE_STRAVA_WEBHOOK_CALLBACK_URL:}
+    webhook-verify-token: ${CAVALE_STRAVA_WEBHOOK_VERIFY_TOKEN:}

@@ -46,6 +46,12 @@ public class StravaIngestScheduler {
                     log.info("Strava ingest: {} new run(s) for athlete {}",
                             result.imported(), connection.getAthleteId());
                 }
+                // drain pending records analysis, one batch per tick (rate budget)
+                StravaSyncService.AnalyzeResult analyzed = syncService.analyzeRecords(connection.getUserId());
+                if (analyzed.analyzed() > 0) {
+                    log.info("Strava ingest: {} record(s) analyzed for athlete {}, {} remaining",
+                            analyzed.analyzed(), connection.getAthleteId(), analyzed.remaining());
+                }
             } catch (Exception e) {
                 log.warn("Strava ingest failed for athlete {}: {}",
                         connection.getAthleteId(), e.getMessage());

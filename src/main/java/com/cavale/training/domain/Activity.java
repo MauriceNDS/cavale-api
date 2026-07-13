@@ -179,6 +179,16 @@ public class Activity extends Auditable {
         this.streamsJson = streamsJson;
     }
 
+    /** Refresh the source-of-truth measures from Strava; athlete feedback stays. */
+    public void refreshFromSource(String name, int durationMin, BigDecimal distanceKm,
+                                  Integer elevationM, Integer avgHr) {
+        this.name = name;
+        this.durationMin = durationMin;
+        this.distanceKm = distanceKm;
+        this.elevationM = elevationM;
+        this.avgHr = avgHr;
+    }
+
     public void updateMeasures(int durationMin, BigDecimal distanceKm, Integer elevationM,
                                Integer avgHr, String comment) {
         this.durationMin = durationMin;

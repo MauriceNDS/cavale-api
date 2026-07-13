@@ -124,6 +124,65 @@ public class StravaSyncService {
         return new SyncResult(counts.imported(), counts.updated(), runs.size());
     }
 
+    /**
+     * Upsert ONE activity from its Strava detail — the webhook path. A single
+     * request carries measures AND best efforts, so a fresh run is fully
+     * analyzed the moment Strava announces it.
+     */
+    @Transactional
+    public void upsertFromStrava(UUID userId, long stravaActivityId) {
+        StravaConnection connection = authService.freshConnection(userId);
+        StravaDtos.ActivityDetail detail =
+                stravaClient.getActivity(connection.getAccessToken(), stravaActivityId);
+        if (detail == null || !RUN_SPORTS.contains(detail.sportType())
+                || detail.startDateLocal() == null || detail.movingTime() == null) {
+            return;
+        }
+
+        Activity activity = activityRepository.findByExternalId(stravaActivityId)
+                .filter(a -> a.getUserId().equals(userId))
+                .orElse(null);
+        if (activity == null) {
+            activity = activityRepository.save(Activity.stravaHistory(userId,
+                    detail.startDateLocal().toLocalDate(),
+                    Math.max(1, Math.round(detail.movingTime() / 60f)),
+                    BigDecimal.valueOf((detail.distance() != null ? detail.distance() : 0) / 1000.0)
+                            .setScale(2, RoundingMode.HALF_UP),
+                    detail.totalElevationGain() != null
+                            ? (int) Math.round(detail.totalElevationGain()) : null,
+                    toInt(detail.averageHeartrate()),
+                    detail.name(), detail.id()));
+        } else {
+            activity.refreshFromSource(detail.name(),
+                    Math.max(1, Math.round(detail.movingTime() / 60f)),
+                    BigDecimal.valueOf((detail.distance() != null ? detail.distance() : 0) / 1000.0)
+                            .setScale(2, RoundingMode.HALF_UP),
+                    detail.totalElevationGain() != null
+                            ? (int) Math.round(detail.totalElevationGain()) : null,
+                    toInt(detail.averageHeartrate()));
+        }
+        activity.enrich(cadenceSpm(detail.averageCadence()),
+                toInt(detail.sufferScore()), toInt(detail.maxHeartrate()));
+
+        if (!activity.isRecordsAnalyzed()) {
+            for (StravaDtos.BestEffort effort : detail.bestEfforts() != null
+                    ? detail.bestEfforts() : List.<StravaDtos.BestEffort>of()) {
+                bestEffortRepository.save(new ActivityBestEffort(activity, effort.name(),
+                        (int) Math.round(effort.distance()), effort.elapsedTime()));
+            }
+            activity.markRecordsAnalyzed();
+        }
+    }
+
+    /** Webhook delete: Strava-only history goes; a validated session keeps its measures. */
+    @Transactional
+    public void deleteFromStrava(UUID userId, long stravaActivityId) {
+        activityRepository.findByExternalId(stravaActivityId)
+                .filter(a -> a.getUserId().equals(userId))
+                .filter(a -> a.getSession() == null)
+                .ifPresent(activityRepository::delete);
+    }
+
     private record UpsertCounts(int imported, int updated) {
     }
 

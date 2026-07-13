@@ -81,6 +81,42 @@ public class RestStravaClient implements StravaClient {
     }
 
     @Override
+    public StravaDtos.PushSubscription createPushSubscription(String callbackUrl, String verifyToken) {
+        return apiClient.post()
+                .uri(uri -> uri.path("/push_subscriptions")
+                        .queryParam("client_id", properties.clientId())
+                        .queryParam("client_secret", properties.clientSecret())
+                        .queryParam("callback_url", callbackUrl)
+                        .queryParam("verify_token", verifyToken)
+                        .build())
+                .retrieve()
+                .body(StravaDtos.PushSubscription.class);
+    }
+
+    @Override
+    public List<StravaDtos.PushSubscription> listPushSubscriptions() {
+        return apiClient.get()
+                .uri(uri -> uri.path("/push_subscriptions")
+                        .queryParam("client_id", properties.clientId())
+                        .queryParam("client_secret", properties.clientSecret())
+                        .build())
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    @Override
+    public void deletePushSubscription(long subscriptionId) {
+        apiClient.delete()
+                .uri(uri -> uri.path("/push_subscriptions/{id}")
+                        .queryParam("client_id", properties.clientId())
+                        .queryParam("client_secret", properties.clientSecret())
+                        .build(subscriptionId))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    @Override
     public List<StravaDtos.ActivitySummary> listActivities(String accessToken, Instant after, Instant before) {
         return apiClient.get()
                 .uri(uri -> uri.path("/athlete/activities")

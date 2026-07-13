@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,15 +32,18 @@ public class StravaController {
     private final StravaSyncService syncService;
     private final StravaConnectionRepository connectionRepository;
     private final StravaProperties properties;
+    private final StravaClient stravaClient;
 
     public StravaController(StravaAuthService authService, StravaActivityService activityService,
                             StravaSyncService syncService,
-                            StravaConnectionRepository connectionRepository, StravaProperties properties) {
+                            StravaConnectionRepository connectionRepository, StravaProperties properties,
+                            StravaClient stravaClient) {
         this.authService = authService;
         this.activityService = activityService;
         this.syncService = syncService;
         this.connectionRepository = connectionRepository;
         this.properties = properties;
+        this.stravaClient = stravaClient;
     }
 
     public record StravaStatus(boolean configured, boolean connected, Long athleteId, Instant lastSyncAt) {
@@ -92,6 +96,33 @@ public class StravaController {
     @Operation(summary = "Disconnect Strava")
     public void disconnect(@AuthenticationPrincipal Jwt jwt) {
         authService.disconnect(userId(jwt));
+    }
+
+    /* Push subscription — app-level (one per Strava application). */
+
+    @PostMapping("/webhook-subscription")
+    @Operation(summary = "Subscribe this deployment to Strava push events")
+    public StravaDtos.PushSubscription subscribeWebhook() {
+        if (!properties.webhookConfigured()) {
+            throw new StravaException("Webhook is not configured — set "
+                    + "CAVALE_STRAVA_WEBHOOK_CALLBACK_URL (public https URL of /api/strava/webhook) "
+                    + "and CAVALE_STRAVA_WEBHOOK_VERIFY_TOKEN");
+        }
+        return stravaClient.createPushSubscription(
+                properties.webhookCallbackUrl(), properties.webhookVerifyToken());
+    }
+
+    @GetMapping("/webhook-subscription")
+    @Operation(summary = "Current push subscription(s) of this Strava application")
+    public List<StravaDtos.PushSubscription> webhookSubscriptions() {
+        return stravaClient.listPushSubscriptions();
+    }
+
+    @DeleteMapping("/webhook-subscription/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Delete a push subscription")
+    public void deleteWebhookSubscription(@PathVariable long id) {
+        stravaClient.deletePushSubscription(id);
     }
 
     private static UUID userId(Jwt jwt) {

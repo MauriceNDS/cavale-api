@@ -75,9 +75,33 @@ public final class StravaDtos {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ActivityDetail(
             long id,
+            String name,
+            @JsonProperty("sport_type") String sportType,
+            @JsonProperty("start_date_local") LocalDateTime startDateLocal,
+            /** metres */
+            Double distance,
+            /** seconds */
+            @JsonProperty("moving_time") Integer movingTime,
+            /** metres */
+            @JsonProperty("total_elevation_gain") Double totalElevationGain,
+            @JsonProperty("average_heartrate") Double averageHeartrate,
             @JsonProperty("average_cadence") Double averageCadence,
             @JsonProperty("max_heartrate") Double maxHeartrate,
             @JsonProperty("suffer_score") Double sufferScore,
             @JsonProperty("best_efforts") List<BestEffort> bestEfforts) {
+    }
+
+    /** A webhook push event — https://developers.strava.com/docs/webhooks/ */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record WebhookEvent(
+            @JsonProperty("object_type") String objectType,
+            @JsonProperty("object_id") long objectId,
+            @JsonProperty("aspect_type") String aspectType,
+            @JsonProperty("owner_id") long ownerId,
+            @JsonProperty("subscription_id") long subscriptionId) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record PushSubscription(long id, @JsonProperty("callback_url") String callbackUrl) {
     }
 }

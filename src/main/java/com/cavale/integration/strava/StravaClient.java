@@ -18,4 +18,12 @@ public interface StravaClient {
     StravaDtos.ActivityDetail getActivity(String accessToken, long activityId);
 
     StravaDtos.StreamSet getStreams(String accessToken, long activityId);
+
+    /* Push subscriptions — app-level (client id/secret), one per application. */
+
+    StravaDtos.PushSubscription createPushSubscription(String callbackUrl, String verifyToken);
+
+    List<StravaDtos.PushSubscription> listPushSubscriptions();
+
+    void deletePushSubscription(long subscriptionId);
 }

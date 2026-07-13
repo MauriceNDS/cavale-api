@@ -194,7 +194,7 @@ class StravaActivityServiceTest {
         when(activityRepository.findByExternalId(7L)).thenReturn(Optional.of(history));
         when(authService.freshConnection(USER)).thenReturn(connection());
         when(stravaClient.getActivity(anyString(), org.mockito.ArgumentMatchers.eq(7L)))
-                .thenReturn(new StravaDtos.ActivityDetail(7L, 84.0, 175.0, 63.0,
+                .thenReturn(StravaSyncServiceTest.detail(7L, "Sortie 7", 84.0, 175.0, 63.0,
                         List.of(new StravaDtos.BestEffort("1k", 1000, 250))));
 
         service().importToSession(USER, session.getId(), 7L, null, null, false);

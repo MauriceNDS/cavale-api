@@ -37,7 +37,7 @@ class StravaAuthServiceTest {
     private static final StravaProperties PROPS = new StravaProperties(
             "12345", "secret", "http://localhost:8080/api/strava/callback",
             "http://localhost:5173/settings", "http://localhost:5173/auth/strava",
-            "https://www.strava.com", "https://www.strava.com/api/v3");
+            "https://www.strava.com", "https://www.strava.com/api/v3", null, null);
 
     @Mock
     private StravaClient stravaClient;
@@ -54,6 +54,9 @@ class StravaAuthServiceTest {
     @Mock
     private TokenService tokenService;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     private final JwtEncoder jwtEncoder;
     private final JwtDecoder jwtDecoder;
 
@@ -65,7 +68,7 @@ class StravaAuthServiceTest {
 
     private StravaAuthService service() {
         return new StravaAuthService(PROPS, stravaClient, connectionRepository, userRepository,
-                passwordEncoder, tokenService, jwtEncoder, jwtDecoder);
+                passwordEncoder, tokenService, jwtEncoder, jwtDecoder, eventPublisher);
     }
 
     private static StravaDtos.TokenResponse tokenResponse(long athleteId) {

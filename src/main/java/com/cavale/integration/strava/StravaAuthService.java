@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -47,11 +48,13 @@ public class StravaAuthService {
     private final TokenService tokenService;
     private final JwtEncoder jwtEncoder;
     private final JwtDecoder jwtDecoder;
+    private final ApplicationEventPublisher eventPublisher;
 
     public StravaAuthService(StravaProperties properties, StravaClient stravaClient,
                              StravaConnectionRepository connectionRepository,
                              UserRepository userRepository, PasswordEncoder passwordEncoder,
-                             TokenService tokenService, JwtEncoder jwtEncoder, JwtDecoder jwtDecoder) {
+                             TokenService tokenService, JwtEncoder jwtEncoder, JwtDecoder jwtDecoder,
+                             ApplicationEventPublisher eventPublisher) {
         this.properties = properties;
         this.stravaClient = stravaClient;
         this.connectionRepository = connectionRepository;
@@ -60,6 +63,7 @@ public class StravaAuthService {
         this.tokenService = tokenService;
         this.jwtEncoder = jwtEncoder;
         this.jwtDecoder = jwtDecoder;
+        this.eventPublisher = eventPublisher;
     }
 
     public String authorizeUrl(UUID userId) {
@@ -130,6 +134,8 @@ public class StravaAuthService {
                 existing -> existing.updateTokens(token.accessToken(), token.refreshToken(), expiresAt),
                 () -> connectionRepository.save(new StravaConnection(userId, token.athlete().id(),
                         token.accessToken(), token.refreshToken(), expiresAt, "activity:read_all")));
+        // after commit, the onboarding listener pulls the athlete's whole history
+        eventPublisher.publishEvent(new StravaConnectedEvent(userId));
     }
 
     @Transactional
