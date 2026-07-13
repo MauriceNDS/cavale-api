@@ -14,13 +14,14 @@ public record ActivitySummary(
         Integer elevationM,
         Integer avgHr,
         PerceivedEffort perceivedEffort,
+        boolean painFlag,
         String comment,
         boolean hasStreams) {
 
     public static ActivitySummary from(Activity activity) {
         return new ActivitySummary(activity.getSource(), activity.getName(), activity.getDurationMin(),
                 activity.getDistanceKm(), activity.getElevationM(), activity.getAvgHr(),
-                activity.getPerceivedEffort(), activity.getComment(),
+                activity.getPerceivedEffort(), activity.isPainFlag(), activity.getComment(),
                 activity.getStreamsJson() != null);
     }
 }

@@ -12,6 +12,8 @@ import com.cavale.common.domain.Auditable;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
@@ -49,6 +51,19 @@ public class User extends Auditable {
 
     @Column(name = "resting_hr")
     private Integer restingHr;
+
+    /* Availability — what a coach (human or MCP) may plan around. */
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "athlete_status", nullable = false, length = 10)
+    private AthleteStatus athleteStatus = AthleteStatus.AVAILABLE;
+
+    @Column(name = "status_note", columnDefinition = "text")
+    private String statusNote;
+
+    /** When the current status started — meaningful for "injured for 3 weeks". */
+    @Column(name = "status_since")
+    private LocalDate statusSince;
 
     protected User() {}
 
@@ -103,6 +118,27 @@ public class User extends Auditable {
 
     public Integer getRestingHr() {
         return restingHr;
+    }
+
+    /** The since-date only resets when the status actually changes. */
+    public void updateStatus(AthleteStatus status, String note, LocalDate today) {
+        if (status != this.athleteStatus) {
+            this.statusSince = today;
+        }
+        this.athleteStatus = status;
+        this.statusNote = note;
+    }
+
+    public AthleteStatus getAthleteStatus() {
+        return athleteStatus;
+    }
+
+    public String getStatusNote() {
+        return statusNote;
+    }
+
+    public LocalDate getStatusSince() {
+        return statusSince;
     }
 
     @Override

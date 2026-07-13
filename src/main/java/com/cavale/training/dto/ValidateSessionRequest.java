@@ -25,6 +25,13 @@ public record ValidateSessionRequest(
 
         com.cavale.training.domain.PerceivedEffort perceivedEffort,
 
+        /** Pain or niggle felt during the run — feeds the injury early-warning trail. */
+        Boolean painFlag,
+
         @Size(max = 2000, message = "Comment must not exceed 2000 characters")
         String comment) {
+
+    public boolean pain() {
+        return Boolean.TRUE.equals(painFlag);
+    }
 }

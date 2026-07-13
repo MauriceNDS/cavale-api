@@ -238,7 +238,7 @@ public class TrainingPlanService {
                         request.elevationM(), request.avgHr(), request.comment())));
         activity.recordFeedback(
                 request.perceivedEffort() != null ? request.perceivedEffort() : PerceivedEffort.COMME_PREVU,
-                request.comment());
+                request.comment(), request.pain());
 
         session.updateStatus(SessionStatus.DONE);
         return activity;

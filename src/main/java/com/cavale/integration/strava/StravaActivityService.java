@@ -77,7 +77,7 @@ public class StravaActivityService {
 
     @Transactional
     public Activity importToSession(UUID userId, UUID sessionId, long stravaActivityId,
-                                    PerceivedEffort perceivedEffort, String comment) {
+                                    PerceivedEffort perceivedEffort, String comment, boolean painFlag) {
         PlannedSession session = sessionRepository.findById(sessionId)
                 .filter(s -> s.getUserId().equals(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
@@ -99,7 +99,7 @@ public class StravaActivityService {
             }
             known.attachToSession(session);
             known.recordFeedback(perceivedEffort != null ? perceivedEffort : PerceivedEffort.COMME_PREVU,
-                    comment);
+                    comment, painFlag);
             attachStreamsQuietly(userId, known);
             analyzeRecordsQuietly(userId, known);
             session.updateStatus(SessionStatus.DONE);
@@ -119,7 +119,7 @@ public class StravaActivityService {
                 run.averageHeartrate() != null ? (int) Math.round(run.averageHeartrate()) : null,
                 run.name(), run.id());
         activity.recordFeedback(perceivedEffort != null ? perceivedEffort : PerceivedEffort.COMME_PREVU,
-                comment);
+                comment, painFlag);
 
         attachStreamsQuietly(userId, activity);
 

@@ -1,0 +1,68 @@
+package com.cavale.athlete.dto;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+import com.cavale.athlete.dto.AthleteHubResponse.DistanceRecord;
+import com.cavale.athlete.dto.AthleteHubResponse.Prediction;
+import com.cavale.training.domain.ObjectiveRole;
+import com.cavale.training.domain.ObjectiveType;
+import com.cavale.training.domain.PerceivedEffort;
+import com.cavale.training.domain.PlanStatus;
+import com.cavale.training.domain.WeekType;
+import com.cavale.training.dto.ObjectiveResponse;
+import com.cavale.user.domain.AthleteStatus;
+
+/**
+ * Where the athlete is RIGHT NOW, in one payload — the context a coach
+ * (human or the future MCP client) must read before touching a plan:
+ * availability, current season position, recent load and how it felt,
+ * the last race and what comes next.
+ */
+public record AthleteContextResponse(
+        Profile profile,
+        Status status,
+        Season season,
+        List<WeekLoad> recentWeeks,
+        List<SessionFeedback> recentFeedback,
+        LastRace lastRace,
+        List<UpcomingObjective> upcoming,
+        List<DistanceRecord> records,
+        List<Prediction> predictions) {
+
+    public record Profile(String displayName, Integer age, BigDecimal weightKg,
+                          Integer heightCm, Integer maxHr, Integer restingHr) {
+    }
+
+    public record Status(AthleteStatus status, String note, LocalDate since, Long daysSince) {
+    }
+
+    /** The active (or next) season and where the athlete stands inside it. */
+    public record Season(UUID planId, String name, String goal, PlanStatus planStatus,
+                         LocalDate startDate, LocalDate endDate,
+                         Integer currentWeekNumber, int totalWeeks,
+                         WeekType currentWeekType, String currentWeekPhase,
+                         ObjectiveResponse mainObjective) {
+    }
+
+    /** One ISO week of training: what was planned, done, and how heavy it was. */
+    public record WeekLoad(LocalDate weekStart, int plannedSessions, int doneSessions,
+                           int skippedSessions, int runs, BigDecimal distanceKm,
+                           int durationMin, int elevationM, int relativeEffort, int painFlags) {
+    }
+
+    /** How a validated run felt — the subjective trail behind the numbers. */
+    public record SessionFeedback(LocalDate date, String title, PerceivedEffort perceivedEffort,
+                                  boolean painFlag, String comment) {
+    }
+
+    public record LastRace(String name, LocalDate date, long daysSince, BigDecimal distanceKm,
+                           Integer elevationGainM, Integer resultTimeMin, Integer targetTimeMin) {
+    }
+
+    public record UpcomingObjective(String name, LocalDate date, long daysUntil, ObjectiveType type,
+                                    ObjectiveRole role, BigDecimal distanceKm, Integer targetTimeMin) {
+    }
+}

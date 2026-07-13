@@ -94,6 +94,10 @@ public class Activity extends Auditable {
     @Column(name = "records_analyzed", nullable = false)
     private boolean recordsAnalyzed;
 
+    /** Pain/niggle reported at validation — the injury early-warning trail. */
+    @Column(name = "pain_flag", nullable = false)
+    private boolean painFlag;
+
     protected Activity() {
     }
 
@@ -165,9 +169,10 @@ public class Activity extends Auditable {
         this.recordsAnalyzed = true;
     }
 
-    public void recordFeedback(PerceivedEffort perceivedEffort, String comment) {
+    public void recordFeedback(PerceivedEffort perceivedEffort, String comment, boolean painFlag) {
         this.perceivedEffort = perceivedEffort;
         this.comment = comment;
+        this.painFlag = painFlag;
     }
 
     public void attachStreams(String streamsJson) {
@@ -253,6 +258,10 @@ public class Activity extends Auditable {
 
     public boolean isRecordsAnalyzed() {
         return recordsAnalyzed;
+    }
+
+    public boolean isPainFlag() {
+        return painFlag;
     }
 
     @Override

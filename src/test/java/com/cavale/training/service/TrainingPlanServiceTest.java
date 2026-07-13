@@ -215,7 +215,7 @@ class TrainingPlanServiceTest {
         when(activityRepository.save(any(Activity.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Activity activity = service().validateSession(OWNER, session.getId(),
-                new ValidateSessionRequest(245, new java.math.BigDecimal("38.50"), 1520, 151, null, "Bonne SL"));
+                new ValidateSessionRequest(245, new java.math.BigDecimal("38.50"), 1520, 151, null, true, "Bonne SL"));
 
         assertThat(activity.getSource()).isEqualTo(ActivitySource.MANUAL);
         assertThat(activity.getDurationMin()).isEqualTo(245);
@@ -234,7 +234,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(gym.getId())).thenReturn(Optional.of(gym));
 
         assertThatThrownBy(() -> service().validateSession(OWNER, gym.getId(),
-                new ValidateSessionRequest(55, new java.math.BigDecimal("1"), null, null, null, null)))
+                new ValidateSessionRequest(55, new java.math.BigDecimal("1"), null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

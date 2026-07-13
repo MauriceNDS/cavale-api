@@ -1,5 +1,6 @@
 package com.cavale.user.service;
 
+import java.time.LocalDate;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -9,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.user.domain.User;
 import com.cavale.user.dto.UpdateProfileRequest;
+import com.cavale.user.dto.UpdateStatusRequest;
 import com.cavale.user.repository.UserRepository;
 
 @Service
@@ -47,6 +49,16 @@ public class UserService {
     public User getById(UUID id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException(id));
+    }
+
+    @Transactional
+    public User updateStatus(UUID id, UpdateStatusRequest request) {
+        User user = getById(id);
+        String note = request.note() != null && !request.note().isBlank()
+                ? request.note().trim()
+                : null;
+        user.updateStatus(request.status(), note, LocalDate.now());
+        return user;
     }
 
     @Transactional

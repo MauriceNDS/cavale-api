@@ -112,4 +112,24 @@ class UserServiceTest {
                 new UpdateProfileRequest("Alice", null, null, null, 180, 185)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void updateStatus_stampsSinceOnlyWhenStatusChanges() {
+        User user = new User("alice@cavale.run", "$2a$hashed", "Alice");
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
+
+        userService().updateStatus(id, new com.cavale.user.dto.UpdateStatusRequest(
+                com.cavale.user.domain.AthleteStatus.INJURED, "  TFL genou droit  "));
+        assertThat(user.getAthleteStatus()).isEqualTo(com.cavale.user.domain.AthleteStatus.INJURED);
+        assertThat(user.getStatusNote()).isEqualTo("TFL genou droit");
+        java.time.LocalDate firstSince = user.getStatusSince();
+        assertThat(firstSince).isEqualTo(java.time.LocalDate.now());
+
+        // same status, new note — the since-date must NOT reset
+        userService().updateStatus(id, new com.cavale.user.dto.UpdateStatusRequest(
+                com.cavale.user.domain.AthleteStatus.INJURED, "ça va mieux"));
+        assertThat(user.getStatusSince()).isEqualTo(firstSince);
+        assertThat(user.getStatusNote()).isEqualTo("ça va mieux");
+    }
 }

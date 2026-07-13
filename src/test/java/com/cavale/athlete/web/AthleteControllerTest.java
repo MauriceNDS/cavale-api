@@ -21,6 +21,7 @@ import com.cavale.athlete.dto.AthleteHubResponse.PeriodTotals;
 import com.cavale.athlete.dto.AthleteHubResponse.Profile;
 import com.cavale.athlete.dto.AthleteHubResponse.SyncState;
 import com.cavale.athlete.dto.AthleteHubResponse.Totals;
+import com.cavale.athlete.service.AthleteContextService;
 import com.cavale.athlete.service.AthleteStatsService;
 import com.cavale.common.config.SecurityConfig;
 
@@ -40,6 +41,9 @@ class AthleteControllerTest {
 
     @MockitoBean
     private AthleteStatsService statsService;
+
+    @MockitoBean
+    private AthleteContextService contextService;
 
     @MockitoBean
     private JwtDecoder jwtDecoder;

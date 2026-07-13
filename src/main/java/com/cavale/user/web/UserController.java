@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cavale.user.dto.UpdateProfileRequest;
+import com.cavale.user.dto.UpdateStatusRequest;
 import com.cavale.user.dto.UserResponse;
 import com.cavale.user.service.UserService;
 
@@ -42,5 +43,13 @@ public class UserController {
                                       @Valid @RequestBody UpdateProfileRequest request) {
         UUID userId = UUID.fromString(jwt.getSubject());
         return UserResponse.from(userService.updateProfile(userId, request));
+    }
+
+    @PutMapping("/me/status")
+    @Operation(summary = "Set the athlete's availability (injured, sick, recovering…)")
+    public UserResponse updateStatus(@AuthenticationPrincipal Jwt jwt,
+                                     @Valid @RequestBody UpdateStatusRequest request) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        return UserResponse.from(userService.updateStatus(userId, request));
     }
 }

@@ -14,4 +14,7 @@ public interface ObjectiveRepository extends JpaRepository<Objective, UUID> {
     List<Objective> findByPlanId(UUID planId);
 
     Optional<Objective> findByPlanIdAndRole(UUID planId, ObjectiveRole role);
+
+    /** Every objective across all the athlete's seasons (context timeline). */
+    List<Objective> findByUserId(UUID userId);
 }
