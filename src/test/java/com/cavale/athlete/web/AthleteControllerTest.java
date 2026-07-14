@@ -49,6 +49,9 @@ class AthleteControllerTest {
     private com.cavale.athlete.service.ActivityFeedService feedService;
 
     @MockitoBean
+    private com.cavale.athlete.service.RunningStatsService runningStatsService;
+
+    @MockitoBean
     private JwtDecoder jwtDecoder;
 
     private static final UUID USER_ID = UUID.randomUUID();

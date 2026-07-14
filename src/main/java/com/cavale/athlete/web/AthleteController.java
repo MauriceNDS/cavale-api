@@ -26,12 +26,15 @@ public class AthleteController {
     private final AthleteStatsService statsService;
     private final AthleteContextService contextService;
     private final ActivityFeedService feedService;
+    private final com.cavale.athlete.service.RunningStatsService runningStatsService;
 
     public AthleteController(AthleteStatsService statsService, AthleteContextService contextService,
-                             ActivityFeedService feedService) {
+                             ActivityFeedService feedService,
+                             com.cavale.athlete.service.RunningStatsService runningStatsService) {
         this.statsService = statsService;
         this.contextService = contextService;
         this.feedService = feedService;
+        this.runningStatsService = runningStatsService;
     }
 
     @GetMapping("/hub")
@@ -45,6 +48,13 @@ public class AthleteController {
             + "recent load and feel, last race, upcoming objectives (the coach/MCP context)")
     public AthleteContextResponse context(@AuthenticationPrincipal Jwt jwt) {
         return contextService.getContext(UUID.fromString(jwt.getSubject()));
+    }
+
+    @GetMapping("/running-stats")
+    @Operation(summary = "Deep running statistics: training load (Banister), weekly effort "
+            + "with target band, ACWR, trail volume, efficiency, duration checkpoints, predictions")
+    public com.cavale.athlete.dto.RunningStatsResponse runningStats(@AuthenticationPrincipal Jwt jwt) {
+        return runningStatsService.getStats(UUID.fromString(jwt.getSubject()));
     }
 
     @GetMapping("/activities")

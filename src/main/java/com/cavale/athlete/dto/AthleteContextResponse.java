@@ -25,6 +25,7 @@ public record AthleteContextResponse(
         Profile profile,
         Status status,
         Season season,
+        TrainingLoadSummary trainingLoad,
         List<WeekLoad> recentWeeks,
         GymLoad gym,
         List<SessionFeedback> recentFeedback,
@@ -57,6 +58,17 @@ public record AthleteContextResponse(
     /** How a validated run felt — the subjective trail behind the numbers. */
     public record SessionFeedback(LocalDate date, String title, PerceivedEffort perceivedEffort,
                                   boolean painFlag, String comment) {
+    }
+
+    /**
+     * The load dials a coach reads first: Banister fitness/fatigue/form,
+     * the acute:chronic ratio (sweet spot 0.8–1.3, danger above 1.5) and
+     * this week's effort against its progressive target band.
+     */
+    public record TrainingLoadSummary(double fitness, double fatigue, double formScore,
+                                      double acwr, String acwrZone,
+                                      int currentWeekEffort, Integer weekBandLow,
+                                      Integer weekBandHigh) {
     }
 
     /** The strength side of the load: weekly tonnage and fresh records. */

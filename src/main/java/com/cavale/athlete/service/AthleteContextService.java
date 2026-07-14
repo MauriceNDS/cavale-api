@@ -61,6 +61,7 @@ public class AthleteContextService {
     private final ObjectiveRepository objectiveRepository;
     private final com.cavale.gym.service.GymStatsService gymStatsService;
     private final com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository;
+    private final RunningStatsService runningStatsService;
 
     public AthleteContextService(UserService userService,
                                  TrainingPlanRepository planRepository,
@@ -70,7 +71,8 @@ public class AthleteContextService {
                                  ActivityBestEffortRepository bestEffortRepository,
                                  ObjectiveRepository objectiveRepository,
                                  com.cavale.gym.service.GymStatsService gymStatsService,
-                                 com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository) {
+                                 com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository,
+                                 RunningStatsService runningStatsService) {
         this.userService = userService;
         this.planRepository = planRepository;
         this.weekRepository = weekRepository;
@@ -80,6 +82,7 @@ public class AthleteContextService {
         this.objectiveRepository = objectiveRepository;
         this.gymStatsService = gymStatsService;
         this.workoutLogRepository = workoutLogRepository;
+        this.runningStatsService = runningStatsService;
     }
 
     @Transactional(readOnly = true)
@@ -99,6 +102,7 @@ public class AthleteContextService {
                 profile(user, today),
                 status(user, today),
                 season(userId, today),
+                trainingLoad(userId, today),
                 recentWeeks(userId, activities, today),
                 gymLoad(userId, today),
                 recentFeedback(activities),
@@ -106,6 +110,22 @@ public class AthleteContextService {
                 upcoming(objectives, today),
                 records,
                 AthleteStatsService.predictions(records));
+    }
+
+    /** The load dials, condensed from the running stats read model. */
+    private AthleteContextResponse.TrainingLoadSummary trainingLoad(UUID userId, LocalDate today) {
+        var stats = runningStatsService.getStats(userId, today);
+        if (stats.form().isEmpty()) {
+            return null;
+        }
+        var currentForm = stats.form().getLast();
+        var currentWeek = stats.weeklyEffort().isEmpty() ? null : stats.weeklyEffort().getLast();
+        return new AthleteContextResponse.TrainingLoadSummary(
+                currentForm.fitness(), currentForm.fatigue(), currentForm.formScore(),
+                stats.acwr().ratio(), stats.acwr().zone().name(),
+                currentWeek != null ? currentWeek.effort() : 0,
+                currentWeek != null ? currentWeek.bandLow() : null,
+                currentWeek != null ? currentWeek.bandHigh() : null);
     }
 
     /** The strength side, condensed from the gym stats read model. */

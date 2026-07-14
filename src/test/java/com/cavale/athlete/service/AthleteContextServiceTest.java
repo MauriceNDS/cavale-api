@@ -73,15 +73,27 @@ class AthleteContextServiceTest {
     @Mock
     private com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository;
 
+    @Mock
+    private RunningStatsService runningStatsService;
+
     private AthleteContextService service() {
         org.mockito.Mockito.lenient().when(gymStatsService.getStats(org.mockito.ArgumentMatchers.eq(USER),
                         org.mockito.ArgumentMatchers.any(LocalDate.class)))
                 .thenReturn(new com.cavale.gym.dto.GymStatsResponse(
                         java.util.List.of(), java.util.List.of(), java.util.List.of(),
                         java.util.List.of(), java.util.List.of()));
+        org.mockito.Mockito.lenient().when(runningStatsService.getStats(
+                        org.mockito.ArgumentMatchers.eq(USER),
+                        org.mockito.ArgumentMatchers.any(LocalDate.class)))
+                .thenReturn(new com.cavale.athlete.dto.RunningStatsResponse(
+                        java.util.List.of(), java.util.List.of(),
+                        new com.cavale.athlete.dto.RunningStatsResponse.Acwr(0, 0, 0,
+                                com.cavale.athlete.dto.RunningStatsResponse.AcwrZone.UNDER),
+                        java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                        java.util.List.of(), java.util.List.of()));
         return new AthleteContextService(userService, planRepository, weekRepository,
                 sessionRepository, activityRepository, bestEffortRepository, objectiveRepository,
-                gymStatsService, workoutLogRepository);
+                gymStatsService, workoutLogRepository, runningStatsService);
     }
 
     private static User user() {
