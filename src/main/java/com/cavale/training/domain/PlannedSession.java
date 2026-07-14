@@ -79,6 +79,15 @@ public class PlannedSession extends Auditable {
     @Column(name = "workout_json", columnDefinition = "text")
     private String workoutJson;
 
+    /**
+     * The strength program this GYM session realizes ("Force Max · A").
+     * EAGER on purpose: SessionResponse is mapped outside the transaction
+     * (OSIV off), and the variant+template pair is two tiny rows.
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "template_variant_id")
+    private com.cavale.gym.domain.GymTemplateVariant templateVariant;
+
     protected PlannedSession() {
     }
 
@@ -174,6 +183,14 @@ public class PlannedSession extends Auditable {
 
     public void updateStatus(SessionStatus status) {
         this.status = status;
+    }
+
+    public com.cavale.gym.domain.GymTemplateVariant getTemplateVariant() {
+        return templateVariant;
+    }
+
+    public void linkTemplateVariant(com.cavale.gym.domain.GymTemplateVariant variant) {
+        this.templateVariant = variant;
     }
 
     /** Reschedule within the plan; a still-planned session becomes MOVED. */

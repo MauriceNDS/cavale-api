@@ -152,7 +152,7 @@ public class CoachTools {
             @ToolParam(description = "RPE range high bound (0-10)", required = false) Integer rpeMax) {
         return SessionResponse.from(planService.addSession(currentUserId(), UUID.fromString(weekId),
                 new CreateSessionRequest(LocalDate.parse(date), 0, discipline, title, detail, zone,
-                        durationMin, elevationM, rpeMin, rpeMax, null)));
+                        durationMin, elevationM, rpeMin, rpeMax, null, null)));
     }
 
     @Tool(name = "update_session", description = """
@@ -167,7 +167,7 @@ public class CoachTools {
             @ToolParam(description = "Coach comment, French", required = false) String comment) {
         return SessionResponse.from(planService.updateSession(currentUserId(), UUID.fromString(sessionId),
                 new UpdateSessionRequest(date != null ? LocalDate.parse(date) : null, null,
-                        status, comment, null)));
+                        status, comment, null, null)));
     }
 
     @Tool(name = "update_week_focus", description = "Set the one-line focus of a week (French).")

@@ -14,5 +14,7 @@ public record UpdateSessionRequest(
         @Min(0) Integer orderInDay,
         SessionStatus status,
         String comment,
-        List<WorkoutStructure.Node> workout) {
+        List<WorkoutStructure.Node> workout,
+        /** GYM only: link (or re-link) the session to a program variant. */
+        java.util.UUID templateVariantId) {
 }

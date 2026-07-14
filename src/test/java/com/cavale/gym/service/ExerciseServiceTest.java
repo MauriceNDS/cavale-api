@@ -42,9 +42,12 @@ class ExerciseServiceTest {
     @Mock
     private TemplateExerciseAlternativeRepository alternativeRepository;
 
+    @Mock
+    private com.cavale.gym.repository.SetLogRepository setLogRepository;
+
     private ExerciseService service() {
         return new ExerciseService(exerciseRepository, templateExerciseRepository,
-                alternativeRepository);
+                alternativeRepository, setLogRepository);
     }
 
     private static ExerciseRequest squatRequest(String name) {

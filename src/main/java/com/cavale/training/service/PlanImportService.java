@@ -109,7 +109,8 @@ public class PlanImportService {
                                 intObject(record, "elevation_m", line),
                                 intObject(record, "rpe_min", line),
                                 intObject(record, "rpe_max", line),
-                                null)); // structure derived from the text at creation
+                                null,   // structure derived from the text at creation
+                                null)); // CSV import never links program variants
                         sessions++;
                     }
                     default -> throw new PlanImportException(line,

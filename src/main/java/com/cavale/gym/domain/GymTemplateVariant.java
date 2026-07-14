@@ -26,7 +26,8 @@ public class GymTemplateVariant extends Auditable {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    /** EAGER: "Force Max · A" must be printable wherever a variant travels. */
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "template_id", nullable = false, updatable = false)
     private GymTemplate template;
 

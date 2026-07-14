@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.common.exception.ResourceNotFoundException;
+import com.cavale.gym.service.GymTemplateService;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivitySource;
 import com.cavale.training.domain.Discipline;
@@ -50,17 +51,20 @@ public class TrainingPlanService {
     private final PlannedSessionRepository sessionRepository;
     private final ActivityRepository activityRepository;
     private final ObjectiveRepository objectiveRepository;
+    private final GymTemplateService gymTemplateService;
 
     public TrainingPlanService(TrainingPlanRepository planRepository,
                                PlanWeekRepository weekRepository,
                                PlannedSessionRepository sessionRepository,
                                ActivityRepository activityRepository,
-                               ObjectiveRepository objectiveRepository) {
+                               ObjectiveRepository objectiveRepository,
+                               GymTemplateService gymTemplateService) {
         this.planRepository = planRepository;
         this.weekRepository = weekRepository;
         this.sessionRepository = sessionRepository;
         this.activityRepository = activityRepository;
         this.objectiveRepository = objectiveRepository;
+        this.gymTemplateService = gymTemplateService;
     }
 
     /**
@@ -128,7 +132,18 @@ public class TrainingPlanService {
                     : WorkoutParser.parse(request.detail(), request.zone(), request.durationMin()).nodes();
             session.updateWorkoutJson(WorkoutJson.write(workout));
         }
+        if (request.templateVariantId() != null) {
+            linkVariant(userId, session, request.templateVariantId());
+        }
         return sessionRepository.save(session);
+    }
+
+    /** A strength program only makes sense on a GYM session. */
+    private void linkVariant(UUID userId, PlannedSession session, UUID templateVariantId) {
+        if (session.getDiscipline() != Discipline.GYM) {
+            throw new IllegalArgumentException("Seule une séance Renfo peut suivre un programme");
+        }
+        session.linkTemplateVariant(gymTemplateService.getOwnedVariant(userId, templateVariantId));
     }
 
     /** Recomputes the canonical workout structure of every RUN session from its text. */
@@ -201,6 +216,9 @@ public class TrainingPlanService {
         }
         if (request.workout() != null) {
             session.updateWorkoutJson(WorkoutJson.write(request.workout()));
+        }
+        if (request.templateVariantId() != null) {
+            linkVariant(userId, session, request.templateVariantId());
         }
         return session;
     }

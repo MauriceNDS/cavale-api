@@ -29,7 +29,10 @@ public record SessionResponse(
         SessionStatus status,
         ActivitySummary activity,
         List<WorkoutStructure.Node> workout,
-        String structureNotes) {
+        String structureNotes,
+        UUID templateVariantId,
+        String templateName,
+        String variantLabel) {
 
     public static SessionResponse from(PlannedSession session) {
         return from(session, null);
@@ -44,11 +47,15 @@ public record SessionResponse(
             notes = WorkoutParser.parse(session.getDetail(), session.getZone(), session.getDurationMin())
                     .notes();
         }
+        var variant = session.getTemplateVariant(); // EAGER pair — safe outside the tx
         return new SessionResponse(session.getId(), session.getWeek().getId(), session.getDate(),
                 session.getOrderInDay(), session.getDiscipline(), session.getTitle(), session.getDetail(),
                 session.getComment(), session.getZone(), session.getDurationMin(), session.getElevationM(),
                 session.getRpeMin(), session.getRpeMax(), session.getStatus(),
                 activity != null ? ActivitySummary.from(activity) : null,
-                workout, notes);
+                workout, notes,
+                variant != null ? variant.getId() : null,
+                variant != null ? variant.getTemplate().getName() : null,
+                variant != null ? variant.getLabel() : null);
     }
 }

@@ -10,6 +10,7 @@ import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.gym.domain.Exercise;
 import com.cavale.gym.dto.ExerciseRequest;
 import com.cavale.gym.repository.ExerciseRepository;
+import com.cavale.gym.repository.SetLogRepository;
 import com.cavale.gym.repository.TemplateExerciseAlternativeRepository;
 import com.cavale.gym.repository.TemplateExerciseRepository;
 
@@ -25,13 +26,16 @@ public class ExerciseService {
     private final ExerciseRepository exerciseRepository;
     private final TemplateExerciseRepository templateExerciseRepository;
     private final TemplateExerciseAlternativeRepository alternativeRepository;
+    private final SetLogRepository setLogRepository;
 
     public ExerciseService(ExerciseRepository exerciseRepository,
                            TemplateExerciseRepository templateExerciseRepository,
-                           TemplateExerciseAlternativeRepository alternativeRepository) {
+                           TemplateExerciseAlternativeRepository alternativeRepository,
+                           SetLogRepository setLogRepository) {
         this.exerciseRepository = exerciseRepository;
         this.templateExerciseRepository = templateExerciseRepository;
         this.alternativeRepository = alternativeRepository;
+        this.setLogRepository = setLogRepository;
     }
 
     @Transactional(readOnly = true)
@@ -90,6 +94,10 @@ public class ExerciseService {
                 || alternativeRepository.existsByExerciseId(exerciseId)) {
             throw new IllegalArgumentException(
                     "Cet exercice est utilisé par un programme — archive-le plutôt");
+        }
+        if (setLogRepository.existsByExerciseId(exerciseId)) {
+            throw new IllegalArgumentException(
+                    "Des séries enregistrées référencent cet exercice — archive-le plutôt");
         }
         if (exerciseRepository.existsByDerivedFromId(exerciseId)) {
             throw new IllegalArgumentException(
