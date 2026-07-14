@@ -28,6 +28,21 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
     org.springframework.data.domain.Page<Activity> findByUserId(
             UUID userId, org.springframework.data.domain.Pageable pageable);
 
+    /** Feed search: name (activity or linked session title) + date range. */
+    @org.springframework.data.jpa.repository.Query("""
+            select a from Activity a left join a.session s
+            where a.userId = :userId
+              and a.date between :from and :to
+              and (lower(coalesce(a.name, '')) like :pattern
+                   or lower(coalesce(s.title, '')) like :pattern)
+            """)
+    org.springframework.data.domain.Page<Activity> search(
+            @org.springframework.data.repository.query.Param("userId") UUID userId,
+            @org.springframework.data.repository.query.Param("pattern") String pattern,
+            @org.springframework.data.repository.query.Param("from") java.time.LocalDate from,
+            @org.springframework.data.repository.query.Param("to") java.time.LocalDate to,
+            org.springframework.data.domain.Pageable pageable);
+
     /** Unattached (history) activities around a date — the matcher's candidates. */
     List<Activity> findByUserIdAndSessionIsNullAndDateBetween(UUID userId, LocalDate from, LocalDate to);
 

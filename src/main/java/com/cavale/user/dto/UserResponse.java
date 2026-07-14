@@ -17,6 +17,7 @@ public record UserResponse(
         LocalDate birthDate,
         Integer maxHr,
         Integer restingHr,
+        boolean gymEnabled,
         AthleteStatus athleteStatus,
         String statusNote,
         LocalDate statusSince,
@@ -25,7 +26,7 @@ public record UserResponse(
     public static UserResponse from(User user) {
         return new UserResponse(user.getId(), user.getEmail(), user.getDisplayName(),
                 user.getWeightKg(), user.getHeightCm(), user.getBirthDate(),
-                user.getMaxHr(), user.getRestingHr(), user.getAthleteStatus(),
+                user.getMaxHr(), user.getRestingHr(), user.isGymEnabled(), user.getAthleteStatus(),
                 user.getStatusNote(), user.getStatusSince(), user.getCreatedAt());
     }
 }

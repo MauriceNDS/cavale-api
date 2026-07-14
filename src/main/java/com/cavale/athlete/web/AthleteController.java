@@ -58,16 +58,22 @@ public class AthleteController {
     }
 
     @GetMapping("/activities")
-    @Operation(summary = "The unified history feed: runs and gym workouts, newest first")
+    @Operation(summary = "The unified history feed: runs and gym workouts, newest first — "
+            + "searchable by name and date range, paginated")
     public ActivityFeedResponse activities(
             @AuthenticationPrincipal Jwt jwt,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "ALL") String type,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String q,
+            @org.springframework.web.bind.annotation.RequestParam(required = false)
+            java.time.LocalDate from,
+            @org.springframework.web.bind.annotation.RequestParam(required = false)
+            java.time.LocalDate to,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int size) {
         ActivityFeedResponse.FeedType feedType = "RUN".equalsIgnoreCase(type)
                 ? ActivityFeedResponse.FeedType.RUN
                 : "GYM".equalsIgnoreCase(type) ? ActivityFeedResponse.FeedType.GYM : null;
-        return feedService.feed(UUID.fromString(jwt.getSubject()), feedType,
+        return feedService.feed(UUID.fromString(jwt.getSubject()), feedType, q, from, to,
                 Math.max(0, page), Math.min(Math.max(1, size), 50));
     }
 }

@@ -13,6 +13,7 @@ public record ActivitySummary(
         BigDecimal distanceKm,
         Integer elevationM,
         Integer avgHr,
+        BigDecimal avgCadenceSpm,
         PerceivedEffort perceivedEffort,
         boolean painFlag,
         String comment,
@@ -21,7 +22,7 @@ public record ActivitySummary(
     public static ActivitySummary from(Activity activity) {
         return new ActivitySummary(activity.getSource(), activity.getName(), activity.getDurationMin(),
                 activity.getDistanceKm(), activity.getElevationM(), activity.getAvgHr(),
-                activity.getPerceivedEffort(), activity.isPainFlag(), activity.getComment(),
-                activity.getStreamsJson() != null);
+                activity.getAvgCadenceSpm(), activity.getPerceivedEffort(), activity.isPainFlag(),
+                activity.getComment(), activity.getStreamsJson() != null);
     }
 }

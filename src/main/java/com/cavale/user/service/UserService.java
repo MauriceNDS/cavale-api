@@ -70,6 +70,9 @@ public class UserService {
         User user = getById(id);
         user.updateProfile(request.displayName().trim(), request.weightKg(), request.heightCm(),
                 request.birthDate(), request.maxHr(), request.restingHr());
+        if (request.gymEnabled() != null) {
+            user.updateGymEnabled(request.gymEnabled());
+        }
         return user;
     }
 }

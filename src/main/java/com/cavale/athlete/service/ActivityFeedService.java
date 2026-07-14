@@ -48,28 +48,40 @@ public class ActivityFeedService {
         this.setLogRepository = setLogRepository;
     }
 
+    /** Search knobs: q matches the run/session/template name, dates bound the range. */
     @Transactional(readOnly = true)
-    public ActivityFeedResponse feed(UUID userId, FeedType type, int page, int size) {
-        int fetch = (page + 1) * size + 1; // +1: an honest hasMore without counts
+    public ActivityFeedResponse feed(UUID userId, FeedType type, String q,
+                                     LocalDate from, LocalDate to, int page, int size) {
+        int fetch = (page + 1) * size + 1;
+        String pattern = "%" + (q == null ? "" : q.trim().toLowerCase()) + "%";
+        LocalDate fromDate = from != null ? from : LocalDate.of(1970, 1, 1);
+        LocalDate toDate = to != null ? to : LocalDate.of(9999, 12, 31);
 
-        List<FeedItem> runs = type == FeedType.GYM ? List.of() : runs(userId, fetch);
-        List<FeedItem> workouts = type == FeedType.RUN ? List.of() : workouts(userId, fetch);
+        var runPage = type == FeedType.GYM ? null
+                : activityRepository.search(userId, pattern, fromDate, toDate,
+                        PageRequest.of(0, fetch, Sort.by(Sort.Direction.DESC, "date")
+                                .and(Sort.by(Sort.Direction.DESC, "createdAt"))));
+        var workoutPage = type == FeedType.RUN ? null
+                : workoutLogRepository.search(userId, WorkoutStatus.FINISHED, pattern,
+                        fromDate.atStartOfDay(ZoneId.systemDefault()).toInstant(),
+                        toDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant(),
+                        PageRequest.of(0, fetch, Sort.by(Sort.Direction.DESC, "startedAt")));
 
-        List<FeedItem> merged = new java.util.ArrayList<>(runs);
-        merged.addAll(workouts);
+        List<FeedItem> merged = new java.util.ArrayList<>();
+        if (runPage != null) {
+            runPage.getContent().forEach(a -> merged.add(runItem(a)));
+        }
+        if (workoutPage != null) {
+            merged.addAll(workoutItems(workoutPage.getContent()));
+        }
         merged.sort(Comparator.comparing(FeedItem::date).reversed());
 
-        int from = Math.min(page * size, merged.size());
-        int to = Math.min(from + size, merged.size());
-        return new ActivityFeedResponse(merged.subList(from, to), page, merged.size() > to);
-    }
-
-    private List<FeedItem> runs(UUID userId, int fetch) {
-        Pageable pageable = PageRequest.of(0, fetch,
-                Sort.by(Sort.Direction.DESC, "date").and(Sort.by(Sort.Direction.DESC, "createdAt")));
-        return activityRepository.findByUserId(userId, pageable).getContent().stream()
-                .map(ActivityFeedService::runItem)
-                .toList();
+        long total = (runPage != null ? runPage.getTotalElements() : 0)
+                + (workoutPage != null ? workoutPage.getTotalElements() : 0);
+        int start = Math.min(page * size, merged.size());
+        int end = Math.min(start + size, merged.size());
+        return new ActivityFeedResponse(merged.subList(start, end), page,
+                (long) (page + 1) * size < total, total);
     }
 
     private static FeedItem runItem(Activity activity) {
@@ -87,11 +99,7 @@ public class ActivityFeedService {
                 null, null, null);
     }
 
-    private List<FeedItem> workouts(UUID userId, int fetch) {
-        Pageable pageable = PageRequest.of(0, fetch, Sort.by(Sort.Direction.DESC, "startedAt"));
-        List<WorkoutLog> logs = workoutLogRepository
-                .findByUserIdAndStatus(userId, WorkoutStatus.FINISHED, pageable).getContent();
-
+    private List<FeedItem> workoutItems(List<WorkoutLog> logs) {
         Map<UUID, List<SetLog>> setsByLog = setLogRepository
                 .findByWorkoutLogIdIn(logs.stream().map(WorkoutLog::getId).toList()).stream()
                 .collect(Collectors.groupingBy(s -> s.getWorkoutLog().getId()));

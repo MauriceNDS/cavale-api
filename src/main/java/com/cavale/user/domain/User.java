@@ -65,6 +65,10 @@ public class User extends Auditable {
     @Column(name = "status_since")
     private LocalDate statusSince;
 
+    /** Running only, or running + strength — pure UI gating. */
+    @Column(name = "gym_enabled", nullable = false)
+    private boolean gymEnabled = true;
+
     protected User() {}
 
     public User(String email, String passwordHash, String displayName) {
@@ -121,6 +125,14 @@ public class User extends Auditable {
     }
 
     /** The since-date only resets when the status actually changes. */
+    public void updateGymEnabled(boolean gymEnabled) {
+        this.gymEnabled = gymEnabled;
+    }
+
+    public boolean isGymEnabled() {
+        return gymEnabled;
+    }
+
     public void updateStatus(AthleteStatus status, String note, LocalDate today) {
         if (status != this.athleteStatus) {
             this.statusSince = today;

@@ -171,7 +171,10 @@ public class StravaAuthService {
                 + "&redirect_uri=" + URLEncoder.encode(properties.redirectUri(), StandardCharsets.UTF_8)
                 + "&response_type=code"
                 + "&approval_prompt=auto"
-                + "&scope=activity:read_all"
+                // request EXACTLY what Strava grants (it always adds `read`):
+                // a narrower request than the grant re-triggers the consent
+                // screen on every login despite approval_prompt=auto
+                + "&scope=read,activity:read_all"
                 + "&state=" + state;
     }
 

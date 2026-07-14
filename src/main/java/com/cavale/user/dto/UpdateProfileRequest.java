@@ -31,5 +31,8 @@ public record UpdateProfileRequest(
         Integer maxHr,
 
         @Positive(message = "Resting HR must be positive")
-        Integer restingHr) {
+        Integer restingHr,
+
+        /** null = unchanged; false hides the strength side in the UI. */
+        Boolean gymEnabled) {
 }

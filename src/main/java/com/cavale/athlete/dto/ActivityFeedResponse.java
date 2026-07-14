@@ -12,7 +12,7 @@ import com.cavale.training.domain.PerceivedEffort;
  * One page of the unified history: runs (Strava-linked, standalone or
  * manual) and gym workouts, merged newest first.
  */
-public record ActivityFeedResponse(List<FeedItem> items, int page, boolean hasMore) {
+public record ActivityFeedResponse(List<FeedItem> items, int page, boolean hasMore, long total) {
 
     public enum FeedType { RUN, GYM }
 

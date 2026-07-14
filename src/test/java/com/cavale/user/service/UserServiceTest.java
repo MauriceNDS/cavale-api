@@ -97,7 +97,7 @@ class UserServiceTest {
         when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
 
         userService().updateProfile(id, new UpdateProfileRequest("  Alice B ",
-                new java.math.BigDecimal("62.5"), 168, java.time.LocalDate.of(1995, 3, 14), 192, 48));
+                new java.math.BigDecimal("62.5"), 168, java.time.LocalDate.of(1995, 3, 14), 192, 48, null));
 
         assertThat(user.getDisplayName()).isEqualTo("Alice B");
         assertThat(user.getWeightKg()).isEqualByComparingTo("62.5");
@@ -109,7 +109,7 @@ class UserServiceTest {
     @Test
     void updateProfile_rejectsRestingHrAboveMaxHr() {
         assertThatThrownBy(() -> userService().updateProfile(java.util.UUID.randomUUID(),
-                new UpdateProfileRequest("Alice", null, null, null, 180, 185)))
+                new UpdateProfileRequest("Alice", null, null, null, 180, 185, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
