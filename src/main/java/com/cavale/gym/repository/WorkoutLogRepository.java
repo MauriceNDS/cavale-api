@@ -16,5 +16,8 @@ public interface WorkoutLogRepository extends JpaRepository<WorkoutLog, UUID> {
 
     List<WorkoutLog> findByUserIdAndStatusOrderByStartedAtDesc(UUID userId, WorkoutStatus status);
 
+    org.springframework.data.domain.Page<WorkoutLog> findByUserIdAndStatus(
+            UUID userId, WorkoutStatus status, org.springframework.data.domain.Pageable pageable);
+
     Optional<WorkoutLog> findBySessionId(UUID sessionId);
 }

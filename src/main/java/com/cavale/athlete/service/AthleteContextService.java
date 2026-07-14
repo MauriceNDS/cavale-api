@@ -59,6 +59,8 @@ public class AthleteContextService {
     private final ActivityRepository activityRepository;
     private final ActivityBestEffortRepository bestEffortRepository;
     private final ObjectiveRepository objectiveRepository;
+    private final com.cavale.gym.service.GymStatsService gymStatsService;
+    private final com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository;
 
     public AthleteContextService(UserService userService,
                                  TrainingPlanRepository planRepository,
@@ -66,7 +68,9 @@ public class AthleteContextService {
                                  PlannedSessionRepository sessionRepository,
                                  ActivityRepository activityRepository,
                                  ActivityBestEffortRepository bestEffortRepository,
-                                 ObjectiveRepository objectiveRepository) {
+                                 ObjectiveRepository objectiveRepository,
+                                 com.cavale.gym.service.GymStatsService gymStatsService,
+                                 com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository) {
         this.userService = userService;
         this.planRepository = planRepository;
         this.weekRepository = weekRepository;
@@ -74,6 +78,8 @@ public class AthleteContextService {
         this.activityRepository = activityRepository;
         this.bestEffortRepository = bestEffortRepository;
         this.objectiveRepository = objectiveRepository;
+        this.gymStatsService = gymStatsService;
+        this.workoutLogRepository = workoutLogRepository;
     }
 
     @Transactional(readOnly = true)
@@ -94,11 +100,40 @@ public class AthleteContextService {
                 status(user, today),
                 season(userId, today),
                 recentWeeks(userId, activities, today),
+                gymLoad(userId, today),
                 recentFeedback(activities),
                 lastRace(objectives, today),
                 upcoming(objectives, today),
                 records,
                 AthleteStatsService.predictions(records));
+    }
+
+    /** The strength side, condensed from the gym stats read model. */
+    private AthleteContextResponse.GymLoad gymLoad(UUID userId, LocalDate today) {
+        var stats = gymStatsService.getStats(userId, today);
+        List<com.cavale.gym.domain.WorkoutLog> finished = workoutLogRepository
+                .findByUserIdAndStatusOrderByStartedAtDesc(userId,
+                        com.cavale.gym.domain.WorkoutStatus.FINISHED);
+        List<AthleteContextResponse.GymWeek> weeks = stats.weeklyTonnage().stream()
+                .skip(Math.max(0, stats.weeklyTonnage().size() - WEEKS_BACK))
+                .map(w -> new AthleteContextResponse.GymWeek(w.weekStart(), w.workouts(),
+                        w.tonnageKg(),
+                        (int) finished.stream()
+                                .filter(com.cavale.gym.domain.WorkoutLog::isPainFlag)
+                                .filter(log -> {
+                                    LocalDate day = LocalDate.ofInstant(log.getStartedAt(),
+                                            java.time.ZoneId.systemDefault());
+                                    return !day.isBefore(w.weekStart())
+                                            && day.isBefore(w.weekStart().plusDays(7));
+                                })
+                                .count()))
+                .toList();
+        List<AthleteContextResponse.GymPr> prs = stats.prWall().stream()
+                .limit(5)
+                .map(pr -> new AthleteContextResponse.GymPr(pr.exerciseName(), pr.reps(),
+                        pr.weightKg(), pr.date()))
+                .toList();
+        return new AthleteContextResponse.GymLoad(weeks, prs);
     }
 
     private static AthleteContextResponse.Profile profile(User user, LocalDate today) {

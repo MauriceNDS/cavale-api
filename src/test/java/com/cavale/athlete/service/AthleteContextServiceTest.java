@@ -67,9 +67,21 @@ class AthleteContextServiceTest {
     @Mock
     private ObjectiveRepository objectiveRepository;
 
+    @Mock
+    private com.cavale.gym.service.GymStatsService gymStatsService;
+
+    @Mock
+    private com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository;
+
     private AthleteContextService service() {
+        org.mockito.Mockito.lenient().when(gymStatsService.getStats(org.mockito.ArgumentMatchers.eq(USER),
+                        org.mockito.ArgumentMatchers.any(LocalDate.class)))
+                .thenReturn(new com.cavale.gym.dto.GymStatsResponse(
+                        java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                        java.util.List.of(), java.util.List.of()));
         return new AthleteContextService(userService, planRepository, weekRepository,
-                sessionRepository, activityRepository, bestEffortRepository, objectiveRepository);
+                sessionRepository, activityRepository, bestEffortRepository, objectiveRepository,
+                gymStatsService, workoutLogRepository);
     }
 
     private static User user() {

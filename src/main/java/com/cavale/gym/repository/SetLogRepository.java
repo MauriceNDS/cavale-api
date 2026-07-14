@@ -15,6 +15,12 @@ public interface SetLogRepository extends JpaRepository<SetLog, UUID> {
 
     List<SetLog> findByWorkoutLogIdOrderByPositionAscSetNumberAsc(UUID workoutLogId);
 
+    List<SetLog> findByWorkoutLogIdIn(java.util.Collection<UUID> workoutLogIds);
+
+    /** Every set of every finished workout, oldest first — the stats corpus. */
+    List<SetLog> findByWorkoutLogUserIdAndWorkoutLogStatusOrderByWorkoutLogStartedAtAsc(
+            UUID userId, com.cavale.gym.domain.WorkoutStatus status);
+
     Optional<SetLog> findByWorkoutLogIdAndExerciseIdAndSetNumber(UUID workoutLogId, UUID exerciseId,
                                                                  int setNumber);
 

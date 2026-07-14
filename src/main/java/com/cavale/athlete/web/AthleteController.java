@@ -8,8 +8,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cavale.athlete.dto.ActivityFeedResponse;
 import com.cavale.athlete.dto.AthleteContextResponse;
 import com.cavale.athlete.dto.AthleteHubResponse;
+import com.cavale.athlete.service.ActivityFeedService;
 import com.cavale.athlete.service.AthleteContextService;
 import com.cavale.athlete.service.AthleteStatsService;
 
@@ -23,10 +25,13 @@ public class AthleteController {
 
     private final AthleteStatsService statsService;
     private final AthleteContextService contextService;
+    private final ActivityFeedService feedService;
 
-    public AthleteController(AthleteStatsService statsService, AthleteContextService contextService) {
+    public AthleteController(AthleteStatsService statsService, AthleteContextService contextService,
+                             ActivityFeedService feedService) {
         this.statsService = statsService;
         this.contextService = contextService;
+        this.feedService = feedService;
     }
 
     @GetMapping("/hub")
@@ -40,5 +45,19 @@ public class AthleteController {
             + "recent load and feel, last race, upcoming objectives (the coach/MCP context)")
     public AthleteContextResponse context(@AuthenticationPrincipal Jwt jwt) {
         return contextService.getContext(UUID.fromString(jwt.getSubject()));
+    }
+
+    @GetMapping("/activities")
+    @Operation(summary = "The unified history feed: runs and gym workouts, newest first")
+    public ActivityFeedResponse activities(
+            @AuthenticationPrincipal Jwt jwt,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "ALL") String type,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int size) {
+        ActivityFeedResponse.FeedType feedType = "RUN".equalsIgnoreCase(type)
+                ? ActivityFeedResponse.FeedType.RUN
+                : "GYM".equalsIgnoreCase(type) ? ActivityFeedResponse.FeedType.GYM : null;
+        return feedService.feed(UUID.fromString(jwt.getSubject()), feedType,
+                Math.max(0, page), Math.min(Math.max(1, size), 50));
     }
 }

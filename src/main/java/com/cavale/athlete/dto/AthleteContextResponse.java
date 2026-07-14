@@ -26,6 +26,7 @@ public record AthleteContextResponse(
         Status status,
         Season season,
         List<WeekLoad> recentWeeks,
+        GymLoad gym,
         List<SessionFeedback> recentFeedback,
         LastRace lastRace,
         List<UpcomingObjective> upcoming,
@@ -56,6 +57,16 @@ public record AthleteContextResponse(
     /** How a validated run felt — the subjective trail behind the numbers. */
     public record SessionFeedback(LocalDate date, String title, PerceivedEffort perceivedEffort,
                                   boolean painFlag, String comment) {
+    }
+
+    /** The strength side of the load: weekly tonnage and fresh records. */
+    public record GymLoad(List<GymWeek> weeks, List<GymPr> recentPrs) {
+    }
+
+    public record GymWeek(LocalDate weekStart, int workouts, BigDecimal tonnageKg, int painFlags) {
+    }
+
+    public record GymPr(String exerciseName, int reps, BigDecimal weightKg, LocalDate date) {
     }
 
     public record LastRace(String name, LocalDate date, long daysSince, BigDecimal distanceKm,

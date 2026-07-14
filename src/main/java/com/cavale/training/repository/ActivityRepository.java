@@ -24,6 +24,10 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
     /** The whole training history of one athlete — the hub's stats corpus. */
     List<Activity> findByUserId(UUID userId);
 
+    /** One page of the history, for the unified activities feed. */
+    org.springframework.data.domain.Page<Activity> findByUserId(
+            UUID userId, org.springframework.data.domain.Pageable pageable);
+
     /** Unattached (history) activities around a date — the matcher's candidates. */
     List<Activity> findByUserIdAndSessionIsNullAndDateBetween(UUID userId, LocalDate from, LocalDate to);
 

@@ -12,8 +12,25 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 
+import java.util.Set;
+
 import com.cavale.athlete.dto.AthleteContextResponse;
 import com.cavale.athlete.service.AthleteContextService;
+import com.cavale.gym.domain.Equipment;
+import com.cavale.gym.domain.ExerciseCategory;
+import com.cavale.gym.domain.ExerciseMeasure;
+import com.cavale.gym.domain.Muscle;
+import com.cavale.gym.dto.ExerciseRequest;
+import com.cavale.gym.dto.ExerciseResponse;
+import com.cavale.gym.dto.TemplateDtos.TemplateExerciseRequest;
+import com.cavale.gym.dto.TemplateDtos.TemplateExerciseResponse;
+import com.cavale.gym.dto.TemplateDtos.TemplateRequest;
+import com.cavale.gym.dto.TemplateDtos.TemplateResponse;
+import com.cavale.gym.dto.TemplateDtos.VariantDetailResponse;
+import com.cavale.gym.dto.TemplateDtos.VariantRequest;
+import com.cavale.gym.dto.TemplateDtos.VariantSummary;
+import com.cavale.gym.service.ExerciseService;
+import com.cavale.gym.service.GymTemplateService;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.ObjectiveType;
 import com.cavale.training.domain.SessionStatus;
@@ -44,12 +61,17 @@ public class CoachTools {
     private final AthleteContextService contextService;
     private final TrainingPlanService planService;
     private final ObjectiveService objectiveService;
+    private final ExerciseService exerciseService;
+    private final GymTemplateService gymTemplateService;
 
     public CoachTools(AthleteContextService contextService, TrainingPlanService planService,
-                      ObjectiveService objectiveService) {
+                      ObjectiveService objectiveService, ExerciseService exerciseService,
+                      GymTemplateService gymTemplateService) {
         this.contextService = contextService;
         this.planService = planService;
         this.objectiveService = objectiveService;
+        this.exerciseService = exerciseService;
+        this.gymTemplateService = gymTemplateService;
     }
 
     /* ── Read ──────────────────────────────────────────────────────────── */
@@ -138,7 +160,9 @@ public class CoachTools {
             sessions, write `detail` in French using the workout notation the parser \
             understands, e.g. '20′ EF + 3×10′ Seuil 60 (récup 3′) + 10′ EF' — the \
             structured workout (and the watch .fit export) is derived from it. \
-            zone examples: 'EF', 'Seuil 60', 'Seuil 30', 'VMA', 'SL'.""")
+            zone examples: 'EF', 'Seuil 60', 'Seuil 30', 'VMA', 'SL'. For GYM \
+            sessions, ALWAYS pass templateVariantId (see list_gym_templates) so the \
+            athlete can start the live workout from the session.""")
     public SessionResponse addSession(
             @ToolParam(description = "Week UUID") String weekId,
             @ToolParam(description = "Session date, ISO date, inside the week") String date,
@@ -149,10 +173,12 @@ public class CoachTools {
             @ToolParam(description = "Planned duration in minutes", required = false) Integer durationMin,
             @ToolParam(description = "Planned elevation gain in m", required = false) Integer elevationM,
             @ToolParam(description = "RPE range low bound (0-10)", required = false) Integer rpeMin,
-            @ToolParam(description = "RPE range high bound (0-10)", required = false) Integer rpeMax) {
+            @ToolParam(description = "RPE range high bound (0-10)", required = false) Integer rpeMax,
+            @ToolParam(description = "GYM only: program variant UUID", required = false) String templateVariantId) {
         return SessionResponse.from(planService.addSession(currentUserId(), UUID.fromString(weekId),
                 new CreateSessionRequest(LocalDate.parse(date), 0, discipline, title, detail, zone,
-                        durationMin, elevationM, rpeMin, rpeMax, null, null)));
+                        durationMin, elevationM, rpeMin, rpeMax, null,
+                        templateVariantId != null ? UUID.fromString(templateVariantId) : null)));
     }
 
     @Tool(name = "update_session", description = """
@@ -218,6 +244,115 @@ public class CoachTools {
                         date != null ? LocalDate.parse(date) : null,
                         distanceKm != null ? BigDecimal.valueOf(distanceKm) : null,
                         elevationGainM, targetTimeMin, location, notes)));
+    }
+
+    /* ── Gym: library ─────────────────────────────────────────────────── */
+
+    @Tool(name = "list_exercises", description = """
+            The athlete's exercise library. ALWAYS call this before creating an \
+            exercise: reuse an existing one when the movement already exists, and \
+            derive (derivedFromId) instead of creating a near-duplicate when only \
+            the execution differs (slow eccentric, explosive, added load…).""")
+    public List<ExerciseResponse> listExercises() {
+        return exerciseService.list(currentUserId()).stream().map(ExerciseResponse::from).toList();
+    }
+
+    @Tool(name = "create_exercise", description = """
+            Add an exercise to the library. Check list_exercises FIRST — duplicate \
+            names are rejected, and a movement that differs only in execution must \
+            DERIVE from its parent via derivedFromId, not duplicate it. Fill the \
+            theory: how to perform it (French), a resource URL when you know a \
+            good one, target muscles, and why it matters for trail running.""")
+    public ExerciseResponse createExercise(
+            @ToolParam(description = "Name, French, e.g. 'Squat excentrique lent'") String name,
+            @ToolParam(description = "Category") ExerciseCategory category,
+            @ToolParam(description = "Equipment") Equipment equipment,
+            @ToolParam(description = "How a set is measured") ExerciseMeasure measure,
+            @ToolParam(description = "How to perform it, French", required = false) String description,
+            @ToolParam(description = "Video or article URL", required = false) String resourceUrl,
+            @ToolParam(description = "Why a trail runner needs it, French", required = false) String runningBenefit,
+            @ToolParam(description = "Target muscles", required = false) Set<Muscle> muscles,
+            @ToolParam(description = "Parent exercise UUID when deriving", required = false) String derivedFromId) {
+        return ExerciseResponse.from(exerciseService.create(currentUserId(),
+                new ExerciseRequest(name, category, equipment, measure, description, resourceUrl,
+                        runningBenefit, muscles,
+                        derivedFromId != null ? UUID.fromString(derivedFromId) : null, null)));
+    }
+
+    /* ── Gym: programs ────────────────────────────────────────────────── */
+
+    @Tool(name = "list_gym_templates", description = """
+            The strength programs with their variants (A/B/C) and exercise counts. \
+            Check before creating — duplicate names are rejected.""")
+    public List<TemplateResponse> listGymTemplates() {
+        UUID userId = currentUserId();
+        return gymTemplateService.listTemplates(userId).stream()
+                .map(template -> TemplateResponse.from(template,
+                        gymTemplateService.getVariants(userId, template.getId()).stream()
+                                .map(v -> VariantSummary.from(v,
+                                        gymTemplateService.getExercises(userId, v.getId()).size()))
+                                .toList()))
+                .toList();
+    }
+
+    @Tool(name = "get_template_variant", description =
+            "One variant with its ordered prescriptions and their alternatives.")
+    public VariantDetailResponse getTemplateVariant(
+            @ToolParam(description = "Variant UUID") String variantId) {
+        return gymTemplateService.getVariantDetail(currentUserId(), UUID.fromString(variantId));
+    }
+
+    @Tool(name = "create_gym_template", description = """
+            Create a strength program (born with variant A). Check \
+            list_gym_templates first. Then fill it with add_template_exercise, \
+            add variants with add_template_variant.""")
+    public TemplateResponse createGymTemplate(
+            @ToolParam(description = "Name, e.g. 'Force Max'") String name,
+            @ToolParam(description = "Goal, French", required = false) String goal) {
+        UUID userId = currentUserId();
+        var template = gymTemplateService.createTemplate(userId, new TemplateRequest(name, goal, null));
+        return TemplateResponse.from(template,
+                gymTemplateService.getVariants(userId, template.getId()).stream()
+                        .map(v -> VariantSummary.from(v, 0)).toList());
+    }
+
+    @Tool(name = "add_template_variant", description =
+            "Add an empty variant (label B, C…) to a program.")
+    public VariantSummary addTemplateVariant(
+            @ToolParam(description = "Template UUID") String templateId,
+            @ToolParam(description = "Label, e.g. 'B'") String label,
+            @ToolParam(description = "Note", required = false) String note) {
+        return VariantSummary.from(gymTemplateService.addVariant(currentUserId(),
+                UUID.fromString(templateId), new VariantRequest(label, note)), 0);
+    }
+
+    @Tool(name = "add_template_exercise", description = """
+            Append a prescription to a variant: sets × reps (or seconds for \
+            SECONDS exercises), optional rest, % of estimated 1RM and note. The \
+            exercise must exist in the library (list_exercises / create_exercise).""")
+    public TemplateExerciseResponse addTemplateExercise(
+            @ToolParam(description = "Variant UUID") String variantId,
+            @ToolParam(description = "Exercise UUID") String exerciseId,
+            @ToolParam(description = "Number of sets") int sets,
+            @ToolParam(description = "Reps per set (rep-based exercises)", required = false) Integer reps,
+            @ToolParam(description = "Seconds per set (SECONDS exercises)", required = false) Integer seconds,
+            @ToolParam(description = "Rest between sets, seconds", required = false) Integer restSec,
+            @ToolParam(description = "% of estimated 1RM", required = false) Integer intensityPct,
+            @ToolParam(description = "Note (tempo…), French", required = false) String note) {
+        return TemplateExerciseResponse.from(gymTemplateService.addExercise(currentUserId(),
+                UUID.fromString(variantId), new TemplateExerciseRequest(UUID.fromString(exerciseId),
+                        sets, reps, seconds, restSec, intensityPct, note)), List.of());
+    }
+
+    @Tool(name = "add_exercise_alternative", description = """
+            Add a fallback to a prescription (machine busy / no gym). Prefer a \
+            BODYWEIGHT exercise as the no-gym option.""")
+    public String addExerciseAlternative(
+            @ToolParam(description = "Template exercise UUID (from get_template_variant)") String templateExerciseId,
+            @ToolParam(description = "Alternative exercise UUID") String exerciseId) {
+        gymTemplateService.addAlternative(currentUserId(), UUID.fromString(templateExerciseId),
+                UUID.fromString(exerciseId));
+        return "ok";
     }
 
     /** MCP calls carry the same bearer JWT as REST — the athlete comes from it. */
