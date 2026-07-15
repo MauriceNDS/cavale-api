@@ -44,13 +44,16 @@ import com.cavale.training.dto.CreateSessionRequest;
 import com.cavale.training.dto.CreateWeekRequest;
 import com.cavale.training.dto.CourseResponse;
 import com.cavale.training.dto.ObjectiveResponse;
+import com.cavale.training.dto.PlanRealignResponse;
 import com.cavale.training.dto.PlanResponse;
+import com.cavale.training.dto.PlanValidationResponse;
 import com.cavale.training.dto.SessionResponse;
 import com.cavale.training.dto.UpdateObjectiveRequest;
 import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.dto.UpdateWeekRequest;
 import com.cavale.training.dto.WeekResponse;
 import com.cavale.training.service.ObjectiveService;
+import com.cavale.training.service.PlanCoachService;
 import com.cavale.training.service.TrainingPlanService;
 
 /**
@@ -68,16 +71,19 @@ public class CoachTools {
     private final ExerciseService exerciseService;
     private final GymTemplateService gymTemplateService;
     private final CourseService courseService;
+    private final PlanCoachService coachService;
 
     public CoachTools(AthleteContextService contextService, TrainingPlanService planService,
                       ObjectiveService objectiveService, ExerciseService exerciseService,
-                      GymTemplateService gymTemplateService, CourseService courseService) {
+                      GymTemplateService gymTemplateService, CourseService courseService,
+                      PlanCoachService coachService) {
         this.contextService = contextService;
         this.planService = planService;
         this.objectiveService = objectiveService;
         this.exerciseService = exerciseService;
         this.gymTemplateService = gymTemplateService;
         this.courseService = courseService;
+        this.coachService = coachService;
     }
 
     /* ── Read ──────────────────────────────────────────────────────────── */
@@ -169,6 +175,41 @@ public class CoachTools {
                 new CreatePlanRequest(name, goal, LocalDate.parse(startDate), LocalDate.parse(endDate))));
     }
 
+    @Tool(name = "scaffold_plan", description = """
+            Build the periodized WEEK SKELETON of an EMPTY plan. Create the plan \
+            first (create_training_plan), refine its MAIN objective's kind, \
+            intensity and date (update_objective), then scaffold. It lays out \
+            base → build → peak → taper with a deload every ~4th week and \
+            progressive target loads from the athlete's current volume, aware of \
+            road vs trail and balance vs performance. Returns the created weeks — \
+            then fill each with add_session and finish with validate_plan. Fails \
+            if the plan already has weeks.""")
+    public List<WeekResponse> scaffoldPlan(@ToolParam(description = "Plan UUID") String planId) {
+        return coachService.scaffold(currentUserId(), UUID.fromString(planId), LocalDate.now()).stream()
+                .map(WeekResponse::from).toList();
+    }
+
+    @Tool(name = "validate_plan", description = """
+            Structural check on a plan: empty training weeks, sessions with no \
+            usable workout, two hard days back-to-back, a missing taper or \
+            deload. Returns valid=true with an empty issues list when the plan is \
+            sound. Run it after generating and fix every issue before finishing.""")
+    public PlanValidationResponse validatePlan(@ToolParam(description = "Plan UUID") String planId) {
+        return coachService.validate(currentUserId(), UUID.fromString(planId));
+    }
+
+    @Tool(name = "plan_realign", description = """
+            When sessions were missed, analyse how to rebuild FORWARD against the \
+            fixed race date — never stack the lost work onto later weeks. Returns \
+            the tier (IGNORE/RESCHEDULE/REBUILD/EXTEND/RESTART), the missed \
+            volume, and a redistribution that adds ~60%% of it across the next \
+            weeks (hard days first, never two hard days back-to-back — drop the \
+            rest). Apply the moves with update_session / add_session and explain \
+            the change to the athlete.""")
+    public PlanRealignResponse planRealign(@ToolParam(description = "Plan UUID") String planId) {
+        return coachService.realign(currentUserId(), UUID.fromString(planId), LocalDate.now());
+    }
+
     @Tool(name = "add_week", description = """
             Add one week to a plan. weekType: RECOVERY, TRANSITION, BUILD, DELOAD, \
             SHOCK, TAPER or RACE. startDate must be the Monday of that week, inside \
@@ -209,8 +250,18 @@ public class CoachTools {
             @ToolParam(description = "RPE range low bound (0-10)", required = false) Integer rpeMin,
             @ToolParam(description = "RPE range high bound (0-10)", required = false) Integer rpeMax,
             @ToolParam(description = "GYM only: program variant UUID", required = false) String templateVariantId) {
-        return SessionResponse.from(planService.addSession(currentUserId(), UUID.fromString(weekId),
-                new CreateSessionRequest(LocalDate.parse(date), 0, discipline, title, detail, zone,
+        UUID userId = currentUserId();
+        LocalDate day = LocalDate.parse(date);
+        // Guardrail: never two hard days back-to-back (P15).
+        if (PlanCoachService.isHard(discipline, zone, rpeMax)
+                && planService.getCalendar(userId, day.minusDays(1), day.plusDays(1)).stream()
+                        .filter(s -> !s.getDate().equals(day))
+                        .anyMatch(PlanCoachService::isHard)) {
+            throw new IllegalArgumentException("That schedules two hard days back-to-back — keep an "
+                    + "easy or rest day between hard sessions.");
+        }
+        return SessionResponse.from(planService.addSession(userId, UUID.fromString(weekId),
+                new CreateSessionRequest(day, 0, discipline, title, detail, zone,
                         durationMin, elevationM, rpeMin, rpeMax, null,
                         templateVariantId != null ? UUID.fromString(templateVariantId) : null)));
     }
