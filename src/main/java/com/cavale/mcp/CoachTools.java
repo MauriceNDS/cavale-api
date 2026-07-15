@@ -82,7 +82,9 @@ public class CoachTools {
             sessions when INJURED or SICK), current season position, last 6 weeks \
             of load with pain flags, recent perceived-effort feedback, the last \
             race with days since (less than 28 days ago => start with recovery \
-            weeks), upcoming objectives, distance records and race-time estimates.""")
+            weeks), upcoming objectives, distance records and race-time estimates. \
+            profile.preferredLanguage ('fr'|'en') is the language to write ALL \
+            generated content in: plan names, focus, titles, details, notes.""")
     public AthleteContextResponse getAthleteContext() {
         return contextService.getContext(currentUserId());
     }
@@ -148,7 +150,7 @@ public class CoachTools {
             @ToolParam(description = "Training phase label, e.g. 'Base', 'Spécifique'", required = false) String phase,
             @ToolParam(description = "Target volume in km", required = false) Double targetVolumeKm,
             @ToolParam(description = "Target elevation gain in m", required = false) Integer targetElevationM,
-            @ToolParam(description = "One-line focus of the week, in French", required = false) String focus) {
+            @ToolParam(description = "One-line focus of the week, in the athlete's preferred language", required = false) String focus) {
         return WeekResponse.from(planService.addWeek(currentUserId(), UUID.fromString(planId),
                 new CreateWeekRequest(weekNumber, LocalDate.parse(startDate), phase, weekType,
                         targetVolumeKm != null ? BigDecimal.valueOf(targetVolumeKm) : null,
@@ -157,7 +159,7 @@ public class CoachTools {
 
     @Tool(name = "add_session", description = """
             Add one session to a week. discipline: RUN, GYM, REST or CROSS. For RUN \
-            sessions, write `detail` in French using the workout notation the parser \
+            sessions, write `detail` in the athlete's preferred language using the workout notation the parser \
             understands, e.g. '20′ EF + 3×10′ Seuil 60 (récup 3′) + 10′ EF' — the \
             structured workout (and the watch .fit export) is derived from it. \
             zone examples: 'EF', 'Seuil 60', 'Seuil 30', 'VMA', 'SL'. For GYM \
@@ -167,8 +169,8 @@ public class CoachTools {
             @ToolParam(description = "Week UUID") String weekId,
             @ToolParam(description = "Session date, ISO date, inside the week") String date,
             @ToolParam(description = "Discipline") Discipline discipline,
-            @ToolParam(description = "Short title, French, e.g. 'EF vallonné 1h'") String title,
-            @ToolParam(description = "Workout text in French (see notation above)", required = false) String detail,
+            @ToolParam(description = "Short title, athlete's language, e.g. 'EF vallonné 1h'") String title,
+            @ToolParam(description = "Workout text in the athlete's language (see notation above)", required = false) String detail,
             @ToolParam(description = "Main intensity zone", required = false) String zone,
             @ToolParam(description = "Planned duration in minutes", required = false) Integer durationMin,
             @ToolParam(description = "Planned elevation gain in m", required = false) Integer elevationM,
@@ -190,13 +192,13 @@ public class CoachTools {
             @ToolParam(description = "Session UUID") String sessionId,
             @ToolParam(description = "New date, ISO date", required = false) String date,
             @ToolParam(description = "New status", required = false) SessionStatus status,
-            @ToolParam(description = "Coach comment, French", required = false) String comment) {
+            @ToolParam(description = "Coach comment, athlete's language", required = false) String comment) {
         return SessionResponse.from(planService.updateSession(currentUserId(), UUID.fromString(sessionId),
                 new UpdateSessionRequest(date != null ? LocalDate.parse(date) : null, null,
                         status, comment, null, null)));
     }
 
-    @Tool(name = "update_week_focus", description = "Set the one-line focus of a week (French).")
+    @Tool(name = "update_week_focus", description = "Set the one-line focus of a week (athlete's preferred language).")
     public WeekResponse updateWeekFocus(
             @ToolParam(description = "Week UUID") String weekId,
             @ToolParam(description = "New focus") String focus) {
@@ -218,7 +220,7 @@ public class CoachTools {
             @ToolParam(description = "Target time in minutes", required = false) Integer targetTimeMin,
             @ToolParam(description = "Actual result in minutes, once raced", required = false) Integer resultTimeMin,
             @ToolParam(description = "Location", required = false) String location,
-            @ToolParam(description = "Notes, French", required = false) String notes) {
+            @ToolParam(description = "Notes, athlete's language", required = false) String notes) {
         return ObjectiveResponse.from(objectiveService.update(currentUserId(), UUID.fromString(objectiveId),
                 new UpdateObjectiveRequest(type, name,
                         date != null ? LocalDate.parse(date) : null,
@@ -238,7 +240,7 @@ public class CoachTools {
             @ToolParam(description = "Race elevation gain in m", required = false) Integer elevationGainM,
             @ToolParam(description = "Target time in minutes", required = false) Integer targetTimeMin,
             @ToolParam(description = "Location", required = false) String location,
-            @ToolParam(description = "Notes, French", required = false) String notes) {
+            @ToolParam(description = "Notes, athlete's language", required = false) String notes) {
         return ObjectiveResponse.from(objectiveService.addSecondary(currentUserId(), UUID.fromString(planId),
                 new CreateObjectiveRequest(type, name,
                         date != null ? LocalDate.parse(date) : null,
@@ -261,16 +263,16 @@ public class CoachTools {
             Add an exercise to the library. Check list_exercises FIRST — duplicate \
             names are rejected, and a movement that differs only in execution must \
             DERIVE from its parent via derivedFromId, not duplicate it. Fill the \
-            theory: how to perform it (French), a resource URL when you know a \
+            theory: how to perform it (athlete's language), a resource URL when you know a \
             good one, target muscles, and why it matters for trail running.""")
     public ExerciseResponse createExercise(
-            @ToolParam(description = "Name, French, e.g. 'Squat excentrique lent'") String name,
+            @ToolParam(description = "Name, athlete's language, e.g. 'Squat excentrique lent'") String name,
             @ToolParam(description = "Category") ExerciseCategory category,
             @ToolParam(description = "Equipment") Equipment equipment,
             @ToolParam(description = "How a set is measured") ExerciseMeasure measure,
-            @ToolParam(description = "How to perform it, French", required = false) String description,
+            @ToolParam(description = "How to perform it, athlete's language", required = false) String description,
             @ToolParam(description = "Video or article URL", required = false) String resourceUrl,
-            @ToolParam(description = "Why a trail runner needs it, French", required = false) String runningBenefit,
+            @ToolParam(description = "Why a trail runner needs it, athlete's language", required = false) String runningBenefit,
             @ToolParam(description = "Target muscles", required = false) Set<Muscle> muscles,
             @ToolParam(description = "Parent exercise UUID when deriving", required = false) String derivedFromId) {
         return ExerciseResponse.from(exerciseService.create(currentUserId(),
@@ -308,7 +310,7 @@ public class CoachTools {
             add variants with add_template_variant.""")
     public TemplateResponse createGymTemplate(
             @ToolParam(description = "Name, e.g. 'Force Max'") String name,
-            @ToolParam(description = "Goal, French", required = false) String goal) {
+            @ToolParam(description = "Goal, athlete's language", required = false) String goal) {
         UUID userId = currentUserId();
         var template = gymTemplateService.createTemplate(userId, new TemplateRequest(name, goal, null));
         return TemplateResponse.from(template,
@@ -338,7 +340,7 @@ public class CoachTools {
             @ToolParam(description = "Seconds per set (SECONDS exercises)", required = false) Integer seconds,
             @ToolParam(description = "Rest between sets, seconds", required = false) Integer restSec,
             @ToolParam(description = "% of estimated 1RM", required = false) Integer intensityPct,
-            @ToolParam(description = "Note (tempo…), French", required = false) String note) {
+            @ToolParam(description = "Note (tempo…), athlete's language", required = false) String note) {
         return TemplateExerciseResponse.from(gymTemplateService.addExercise(currentUserId(),
                 UUID.fromString(variantId), new TemplateExerciseRequest(UUID.fromString(exerciseId),
                         sets, reps, seconds, restSec, intensityPct, note)), List.of());

@@ -5,6 +5,7 @@ import java.time.LocalDate;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Past;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
@@ -34,5 +35,9 @@ public record UpdateProfileRequest(
         Integer restingHr,
 
         /** null = unchanged; false hides the strength side in the UI. */
-        Boolean gymEnabled) {
+        Boolean gymEnabled,
+
+        /** null = unchanged; UI and coach-generated content language. */
+        @Pattern(regexp = "fr|en", message = "Language must be 'fr' or 'en'")
+        String preferredLanguage) {
 }

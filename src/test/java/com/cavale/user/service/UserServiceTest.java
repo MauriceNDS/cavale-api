@@ -97,20 +97,35 @@ class UserServiceTest {
         when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
 
         userService().updateProfile(id, new UpdateProfileRequest("  Alice B ",
-                new java.math.BigDecimal("62.5"), 168, java.time.LocalDate.of(1995, 3, 14), 192, 48, null));
+                new java.math.BigDecimal("62.5"), 168, java.time.LocalDate.of(1995, 3, 14), 192, 48, null, null));
 
         assertThat(user.getDisplayName()).isEqualTo("Alice B");
         assertThat(user.getWeightKg()).isEqualByComparingTo("62.5");
         assertThat(user.getHeightCm()).isEqualTo(168);
         assertThat(user.getMaxHr()).isEqualTo(192);
         assertThat(user.getRestingHr()).isEqualTo(48);
+        // untouched when the request leaves them null
+        assertThat(user.isGymEnabled()).isTrue();
+        assertThat(user.getPreferredLanguage()).isEqualTo("fr");
     }
 
     @Test
     void updateProfile_rejectsRestingHrAboveMaxHr() {
         assertThatThrownBy(() -> userService().updateProfile(java.util.UUID.randomUUID(),
-                new UpdateProfileRequest("Alice", null, null, null, 180, 185, null)))
+                new UpdateProfileRequest("Alice", null, null, null, 180, 185, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void updateProfile_switchesPreferredLanguage() {
+        User user = new User("alice@cavale.run", "$2a$hashed", "Alice");
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
+
+        userService().updateProfile(id, new UpdateProfileRequest("Alice",
+                null, null, null, null, null, null, "en"));
+
+        assertThat(user.getPreferredLanguage()).isEqualTo("en");
     }
 
     @Test

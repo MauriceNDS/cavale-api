@@ -161,7 +161,8 @@ public class AthleteContextService {
                 ? (int) ChronoUnit.YEARS.between(user.getBirthDate(), today)
                 : null;
         return new AthleteContextResponse.Profile(user.getDisplayName(), age, user.getWeightKg(),
-                user.getHeightCm(), user.getMaxHr(), user.getRestingHr());
+                user.getHeightCm(), user.getMaxHr(), user.getRestingHr(),
+                user.getPreferredLanguage());
     }
 
     private static Status status(User user, LocalDate today) {

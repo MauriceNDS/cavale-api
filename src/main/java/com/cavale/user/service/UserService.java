@@ -73,6 +73,9 @@ public class UserService {
         if (request.gymEnabled() != null) {
             user.updateGymEnabled(request.gymEnabled());
         }
+        if (request.preferredLanguage() != null) {
+            user.updatePreferredLanguage(request.preferredLanguage());
+        }
         return user;
     }
 }

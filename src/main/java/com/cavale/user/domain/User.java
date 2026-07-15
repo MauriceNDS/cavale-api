@@ -69,6 +69,10 @@ public class User extends Auditable {
     @Column(name = "gym_enabled", nullable = false)
     private boolean gymEnabled = true;
 
+    /** UI language AND the language of coach-generated content ('fr' | 'en'). */
+    @Column(name = "preferred_language", nullable = false, length = 2)
+    private String preferredLanguage = "fr";
+
     protected User() {}
 
     public User(String email, String passwordHash, String displayName) {
@@ -131,6 +135,14 @@ public class User extends Auditable {
 
     public boolean isGymEnabled() {
         return gymEnabled;
+    }
+
+    public void updatePreferredLanguage(String preferredLanguage) {
+        this.preferredLanguage = preferredLanguage;
+    }
+
+    public String getPreferredLanguage() {
+        return preferredLanguage;
     }
 
     public void updateStatus(AthleteStatus status, String note, LocalDate today) {

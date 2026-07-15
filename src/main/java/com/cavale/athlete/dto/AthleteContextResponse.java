@@ -34,8 +34,11 @@ public record AthleteContextResponse(
         List<DistanceRecord> records,
         List<Prediction> predictions) {
 
+    /** preferredLanguage ('fr' | 'en') is the language ALL generated content
+     *  (plan names, week focus, session titles and instructions) must use. */
     public record Profile(String displayName, Integer age, BigDecimal weightKg,
-                          Integer heightCm, Integer maxHr, Integer restingHr) {
+                          Integer heightCm, Integer maxHr, Integer restingHr,
+                          String preferredLanguage) {
     }
 
     public record Status(AthleteStatus status, String note, LocalDate since, Long daysSince) {
