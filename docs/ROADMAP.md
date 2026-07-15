@@ -169,3 +169,13 @@ No Anthropic API key, no per-token cost.*
 3. **You write the code.**
 4. Claude reviews against the Definition of Done in [../CLAUDE.md](../CLAUDE.md).
 5. Tests green → move on.
+
+---
+
+## Beyond the core — feature backlog
+
+Phases 0–11 build the platform. The **post-core feature backlog** (readiness &
+load metrics, objective model v2, trail GPX race tooling, intelligent MCP
+coaching, …) lives in [FEATURE-ROADMAP.md](FEATURE-ROADMAP.md) as fifteen
+independently-pickup-able work packages (P1–P15), from the 2026-07 competitive
+analysis.
