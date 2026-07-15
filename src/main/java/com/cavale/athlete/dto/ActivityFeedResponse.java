@@ -14,7 +14,7 @@ import com.cavale.training.domain.PerceivedEffort;
  */
 public record ActivityFeedResponse(List<FeedItem> items, int page, boolean hasMore, long total) {
 
-    public enum FeedType { RUN, GYM }
+    public enum FeedType { RUN, BIKE, GYM }
 
     public record FeedItem(
             UUID id,

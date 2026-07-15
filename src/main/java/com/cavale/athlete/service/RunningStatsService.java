@@ -125,30 +125,33 @@ public class RunningStatsService {
 
     @Transactional(readOnly = true)
     public RunningStatsResponse getStats(UUID userId, LocalDate today) {
-        List<Activity> activities = activityRepository.findByUserId(userId).stream()
+        // The load curves count every activity (a bike ride is real fatigue);
+        // the run-only metrics — volume, pace, predictions — see runs alone.
+        List<Activity> all = activityRepository.findByUserId(userId).stream()
                 .sorted(Comparator.comparing(Activity::getDate))
                 .toList();
+        List<Activity> runs = all.stream().filter(Activity::isRun).toList();
         List<ActivityBestEffort> efforts = bestEffortRepository.findByUserId(userId);
         List<Objective> objectives = objectiveRepository.findByUserId(userId);
         User user = userService.getById(userId);
 
-        double weeklyKm = recentWeeklyKm(activities, today);
-        List<DayForm> form = form(activities, today);
-        Acwr acwr = acwr(activities, today);
+        double weeklyKm = recentWeeklyKm(runs, today);
+        List<DayForm> form = form(all, today);
+        Acwr acwr = acwr(all, today);
         return new RunningStatsResponse(
                 form,
-                weeklyEffort(activities, today),
+                weeklyEffort(all, today),
                 acwr,
-                weeklyVolume(activities, today),
-                efficiency(activities, today),
-                checkpoints(activities),
+                weeklyVolume(runs, today),
+                efficiency(runs, today),
+                checkpoints(runs),
                 roadPredictions(AthleteStatsService.roadRecords(efforts), weeklyKm),
-                trailEstimates(activities, objectives, today),
-                monotony(activities, today),
+                trailEstimates(runs, objectives, today),
+                monotony(all, today),
                 trainingStatus(form, acwr),
-                vo2maxTrend(activities, user, today),
+                vo2maxTrend(runs, user, today),
                 criticalPace(efforts),
-                durability(activities, today));
+                durability(runs, today));
     }
 
     /* ── Training load (Banister / Strava F&F) ─────────────────────────── */

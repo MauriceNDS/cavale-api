@@ -168,6 +168,7 @@ public class AthleteContextService {
     private static AthleteContextResponse.LongRunGuard longRunGuard(List<Activity> activities,
                                                                     LocalDate today) {
         Activity longest = activities.stream()
+                .filter(Activity::isRun)
                 .filter(a -> a.getDistanceKm() != null)
                 .filter(a -> !a.getDate().isBefore(today.minusDays(30)) && !a.getDate().isAfter(today))
                 .max(Comparator.comparing(Activity::getDistanceKm))
@@ -178,6 +179,7 @@ public class AthleteContextService {
         double longestKm = longest.getDistanceKm().doubleValue();
 
         Activity lastRun = activities.stream()
+                .filter(Activity::isRun)
                 .filter(a -> a.getDistanceKm() != null && !a.getDate().isAfter(today))
                 .max(Comparator.comparing(Activity::getDate)
                         .thenComparing(a -> a.getDistanceKm()))
@@ -187,6 +189,7 @@ public class AthleteContextService {
         if (lastRun != null) {
             LocalDate priorFrom = lastRun.getDate().minusDays(30);
             double priorMax = activities.stream()
+                    .filter(Activity::isRun)
                     .filter(a -> a.getDistanceKm() != null)
                     .filter(a -> a.getDate().isBefore(lastRun.getDate())
                             && !a.getDate().isBefore(priorFrom))
@@ -310,6 +313,7 @@ public class AthleteContextService {
                     .filter(s -> s.getDiscipline() != Discipline.REST)
                     .toList();
             List<Activity> runs = activities.stream()
+                    .filter(Activity::isRun)
                     .filter(a -> !a.getDate().isBefore(weekStart) && !a.getDate().isAfter(weekEnd))
                     .toList();
 

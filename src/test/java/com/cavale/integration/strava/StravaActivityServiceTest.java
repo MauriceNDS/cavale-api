@@ -57,9 +57,12 @@ class StravaActivityServiceTest {
     @Mock
     private ActivityBestEffortRepository bestEffortRepository;
 
+    @Mock
+    private com.cavale.training.service.ShoeService shoeService;
+
     private StravaActivityService service() {
         return new StravaActivityService(authService, stravaClient, sessionRepository,
-                activityRepository, bestEffortRepository);
+                activityRepository, bestEffortRepository, shoeService);
     }
 
     private static StravaConnection connection() {
@@ -127,7 +130,7 @@ class StravaActivityServiceTest {
                 .thenReturn(List.of(run(7L, date, 62, "Run")));
         when(activityRepository.save(any(Activity.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service().importToSession(USER, session.getId(), 7L, null, null, false);
+        service().importToSession(USER, session.getId(), 7L, null, null, false, null);
 
         assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
         ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
@@ -144,7 +147,7 @@ class StravaActivityServiceTest {
         when(activityRepository.findBySessionId(session.getId()))
                 .thenReturn(Optional.of(mock(Activity.class)));
 
-        assertThatThrownBy(() -> service().importToSession(USER, session.getId(), 7L, null, null, false))
+        assertThatThrownBy(() -> service().importToSession(USER, session.getId(), 7L, null, null, false, null))
                 .isInstanceOf(StravaException.class)
                 .hasMessageContaining("already has measures");
     }
@@ -158,7 +161,7 @@ class StravaActivityServiceTest {
         when(attached.getSession()).thenReturn(mock(PlannedSession.class));
         when(activityRepository.findByExternalId(7L)).thenReturn(Optional.of(attached));
 
-        assertThatThrownBy(() -> service().importToSession(USER, session.getId(), 7L, null, null, false))
+        assertThatThrownBy(() -> service().importToSession(USER, session.getId(), 7L, null, null, false, null))
                 .isInstanceOf(StravaException.class)
                 .hasMessageContaining("already attached");
     }
@@ -174,7 +177,7 @@ class StravaActivityServiceTest {
         when(activityRepository.findByExternalId(7L)).thenReturn(Optional.of(history));
         when(authService.freshConnection(USER)).thenReturn(connection());
 
-        Activity result = service().importToSession(USER, session.getId(), 7L, null, "belle sortie", true);
+        Activity result = service().importToSession(USER, session.getId(), 7L, null, "belle sortie", true, null);
 
         assertThat(result).isSameAs(history);
         assertThat(result.getSession()).isSameAs(session);
@@ -197,7 +200,7 @@ class StravaActivityServiceTest {
                 .thenReturn(StravaSyncServiceTest.detail(7L, "Sortie 7", 84.0, 175.0, 63.0,
                         List.of(new StravaDtos.BestEffort("1k", 1000, 250))));
 
-        service().importToSession(USER, session.getId(), 7L, null, null, false);
+        service().importToSession(USER, session.getId(), 7L, null, null, false, null);
 
         assertThat(history.isRecordsAnalyzed()).isTrue();
         assertThat(history.getRelativeEffort()).isEqualTo(63);
@@ -219,7 +222,7 @@ class StravaActivityServiceTest {
         when(stravaClient.getActivity(anyString(), org.mockito.ArgumentMatchers.eq(7L)))
                 .thenThrow(new RuntimeException("429 Too Many Requests"));
 
-        service().importToSession(USER, session.getId(), 7L, null, null, false);
+        service().importToSession(USER, session.getId(), 7L, null, null, false, null);
 
         assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
         assertThat(history.isRecordsAnalyzed()).isFalse(); // next analyze batch picks it up

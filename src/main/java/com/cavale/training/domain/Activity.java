@@ -45,6 +45,11 @@ public class Activity extends Auditable {
     @Column(nullable = false, length = 10)
     private ActivitySource source;
 
+    /** RUN or CROSS (bike): cross-training feeds load but not run-only stats. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private Discipline discipline = Discipline.RUN;
+
     @Column(nullable = false)
     private LocalDate date;
 
@@ -97,6 +102,10 @@ public class Activity extends Auditable {
     /** Pain/niggle reported at validation — the injury early-warning trail. */
     @Column(name = "pain_flag", nullable = false)
     private boolean painFlag;
+
+    /** The shoe worn (asked at validation) — accrues that shoe's mileage. */
+    @Column(name = "shoe_id")
+    private UUID shoeId;
 
     protected Activity() {
     }
@@ -169,6 +178,21 @@ public class Activity extends Auditable {
         this.recordsAnalyzed = true;
     }
 
+    /** Tag this activity's discipline (RUN or CROSS) — set from its session. */
+    public void markDiscipline(Discipline discipline) {
+        this.discipline = discipline;
+    }
+
+    /** Cross-training (a bike) is excluded from every run-only statistic. */
+    public boolean isRun() {
+        return discipline == Discipline.RUN;
+    }
+
+    /** Link the shoe worn on this activity (or clear it with null). */
+    public void assignShoe(UUID shoeId) {
+        this.shoeId = shoeId;
+    }
+
     public void recordFeedback(PerceivedEffort perceivedEffort, String comment, boolean painFlag) {
         this.perceivedEffort = perceivedEffort;
         this.comment = comment;
@@ -212,6 +236,10 @@ public class Activity extends Auditable {
 
     public ActivitySource getSource() {
         return source;
+    }
+
+    public Discipline getDiscipline() {
+        return discipline;
     }
 
     public LocalDate getDate() {
@@ -272,6 +300,10 @@ public class Activity extends Auditable {
 
     public boolean isPainFlag() {
         return painFlag;
+    }
+
+    public UUID getShoeId() {
+        return shoeId;
     }
 
     @Override

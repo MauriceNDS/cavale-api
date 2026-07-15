@@ -119,7 +119,9 @@ public class AthleteStatsService {
     @Transactional(readOnly = true)
     public AthleteHubResponse getHub(UUID userId, LocalDate today) {
         User user = userService.getById(userId);
-        List<Activity> activities = activityRepository.findByUserId(userId);
+        // The hub is the running dashboard — cross-training bikes stay out of it.
+        List<Activity> activities = activityRepository.findByUserId(userId).stream()
+                .filter(Activity::isRun).toList();
         List<ActivityBestEffort> efforts = bestEffortRepository.findByUserId(userId);
         List<DistanceRecord> records = records(efforts);
 

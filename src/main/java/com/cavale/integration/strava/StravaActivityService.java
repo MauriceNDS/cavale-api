@@ -41,15 +41,19 @@ public class StravaActivityService {
     private final ActivityRepository activityRepository;
     private final ActivityBestEffortRepository bestEffortRepository;
 
+    private final com.cavale.training.service.ShoeService shoeService;
+
     public StravaActivityService(StravaAuthService authService, StravaClient stravaClient,
                                  PlannedSessionRepository sessionRepository,
                                  ActivityRepository activityRepository,
-                                 ActivityBestEffortRepository bestEffortRepository) {
+                                 ActivityBestEffortRepository bestEffortRepository,
+                                 com.cavale.training.service.ShoeService shoeService) {
         this.authService = authService;
         this.stravaClient = stravaClient;
         this.sessionRepository = sessionRepository;
         this.activityRepository = activityRepository;
         this.bestEffortRepository = bestEffortRepository;
+        this.shoeService = shoeService;
     }
 
     public record StravaActivityOption(long id, String name, LocalDate date, int durationMin,
@@ -77,7 +81,8 @@ public class StravaActivityService {
 
     @Transactional
     public Activity importToSession(UUID userId, UUID sessionId, long stravaActivityId,
-                                    PerceivedEffort perceivedEffort, String comment, boolean painFlag) {
+                                    PerceivedEffort perceivedEffort, String comment, boolean painFlag,
+                                    UUID shoeId) {
         PlannedSession session = sessionRepository.findById(sessionId)
                 .filter(s -> s.getUserId().equals(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
@@ -87,6 +92,7 @@ public class StravaActivityService {
         if (activityRepository.findBySessionId(session.getId()).isPresent()) {
             throw new StravaException("This session already has measures — reset it first");
         }
+        UUID ownedShoe = shoeService.requireOwned(userId, shoeId);
 
         // Already imported as history? Adopt it as this session's validation.
         Activity known = activityRepository.findByExternalId(stravaActivityId).orElse(null);
@@ -98,6 +104,7 @@ public class StravaActivityService {
                 throw new StravaException("Strava activity not found in the recent window");
             }
             known.attachToSession(session);
+            known.assignShoe(ownedShoe);
             known.recordFeedback(perceivedEffort != null ? perceivedEffort : PerceivedEffort.COMME_PREVU,
                     comment, painFlag);
             attachStreamsQuietly(userId, known);
@@ -118,6 +125,7 @@ public class StravaActivityService {
                 (int) Math.round(run.totalElevationGain()),
                 run.averageHeartrate() != null ? (int) Math.round(run.averageHeartrate()) : null,
                 run.name(), run.id());
+        activity.assignShoe(ownedShoe);
         activity.recordFeedback(perceivedEffort != null ? perceivedEffort : PerceivedEffort.COMME_PREVU,
                 comment, painFlag);
 

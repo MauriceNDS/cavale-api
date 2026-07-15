@@ -52,19 +52,22 @@ public class TrainingPlanService {
     private final ActivityRepository activityRepository;
     private final ObjectiveRepository objectiveRepository;
     private final GymTemplateService gymTemplateService;
+    private final ShoeService shoeService;
 
     public TrainingPlanService(TrainingPlanRepository planRepository,
                                PlanWeekRepository weekRepository,
                                PlannedSessionRepository sessionRepository,
                                ActivityRepository activityRepository,
                                ObjectiveRepository objectiveRepository,
-                               GymTemplateService gymTemplateService) {
+                               GymTemplateService gymTemplateService,
+                               ShoeService shoeService) {
         this.planRepository = planRepository;
         this.weekRepository = weekRepository;
         this.sessionRepository = sessionRepository;
         this.activityRepository = activityRepository;
         this.objectiveRepository = objectiveRepository;
         this.gymTemplateService = gymTemplateService;
+        this.shoeService = shoeService;
     }
 
     /**
@@ -240,9 +243,10 @@ public class TrainingPlanService {
                 .filter(s -> s.getUserId().equals(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
 
-        if (session.getDiscipline() != Discipline.RUN) {
+        if (session.getDiscipline() != Discipline.RUN && session.getDiscipline() != Discipline.CROSS) {
             throw new IllegalArgumentException(
-                    "Only running sessions take validation measures; use the status update instead");
+                    "Only running and cross-training sessions take validation measures; "
+                            + "use the status update instead");
         }
 
         Activity activity = activityRepository.findBySessionId(session.getId())
@@ -254,6 +258,8 @@ public class TrainingPlanService {
                 .orElseGet(() -> activityRepository.save(new Activity(session, ActivitySource.MANUAL,
                         session.getDate(), request.durationMin(), request.distanceKm(),
                         request.elevationM(), request.avgHr(), request.comment())));
+        activity.markDiscipline(session.getDiscipline());
+        activity.assignShoe(shoeService.requireOwned(userId, request.shoeId()));
         activity.recordFeedback(
                 request.perceivedEffort() != null ? request.perceivedEffort() : PerceivedEffort.COMME_PREVU,
                 request.comment(), request.pain());

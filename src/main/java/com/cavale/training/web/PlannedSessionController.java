@@ -55,6 +55,7 @@ public class PlannedSessionController {
     public record ImportStravaRequest(long stravaActivityId,
                                       com.cavale.training.domain.PerceivedEffort perceivedEffort,
                                       Boolean painFlag,
+                                      UUID shoeId,
                                       String comment) {
     }
 
@@ -116,7 +117,7 @@ public class PlannedSessionController {
         UUID userId = UUID.fromString(jwt.getSubject());
         Activity activity = stravaActivityService.importToSession(userId, sessionId,
                 request.stravaActivityId(), request.perceivedEffort(), request.comment(),
-                Boolean.TRUE.equals(request.painFlag()));
+                Boolean.TRUE.equals(request.painFlag()), request.shoeId());
         return SessionResponse.from(activity.getSession(), activity);
     }
 

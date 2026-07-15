@@ -1,0 +1,89 @@
+package com.cavale.training.service;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.cavale.common.exception.ResourceNotFoundException;
+import com.cavale.training.domain.Shoe;
+import com.cavale.training.dto.ShoeRequest;
+import com.cavale.training.dto.ShoeResponse;
+import com.cavale.training.repository.ActivityRepository;
+import com.cavale.training.repository.ShoeRepository;
+
+/**
+ * The athlete's shoe rotation. Mileage is never stored — every read sums the
+ * distance of the activities linked to each pair, so it stays correct through
+ * edits and re-validations.
+ */
+@Service
+public class ShoeService {
+
+    private final ShoeRepository shoeRepository;
+    private final ActivityRepository activityRepository;
+
+    public ShoeService(ShoeRepository shoeRepository, ActivityRepository activityRepository) {
+        this.shoeRepository = shoeRepository;
+        this.activityRepository = activityRepository;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ShoeResponse> list(UUID userId) {
+        Map<UUID, BigDecimal> mileage = mileageByShoe(userId);
+        return shoeRepository.findByUserIdOrderByRetiredAscCreatedAtDesc(userId).stream()
+                .map(shoe -> ShoeResponse.from(shoe, mileage.get(shoe.getId())))
+                .toList();
+    }
+
+    @Transactional
+    public ShoeResponse create(UUID userId, ShoeRequest request) {
+        Shoe shoe = new Shoe(userId, request.name().trim());
+        shoe.update(request.name().trim(), trimmed(request.brand()), request.purpose(),
+                request.retirementKm(), request.isRetired());
+        return ShoeResponse.from(shoeRepository.save(shoe), BigDecimal.ZERO);
+    }
+
+    @Transactional
+    public ShoeResponse update(UUID userId, UUID shoeId, ShoeRequest request) {
+        Shoe shoe = getOwned(userId, shoeId);
+        shoe.update(request.name().trim(), trimmed(request.brand()), request.purpose(),
+                request.retirementKm(), request.isRetired());
+        return ShoeResponse.from(shoe, mileageByShoe(userId).get(shoeId));
+    }
+
+    @Transactional
+    public void delete(UUID userId, UUID shoeId) {
+        shoeRepository.delete(getOwned(userId, shoeId));
+    }
+
+    /** Returns the shoe id only if it belongs to the athlete (null passes through). */
+    @Transactional(readOnly = true)
+    public UUID requireOwned(UUID userId, UUID shoeId) {
+        if (shoeId == null) {
+            return null;
+        }
+        getOwned(userId, shoeId);
+        return shoeId;
+    }
+
+    private Shoe getOwned(UUID userId, UUID shoeId) {
+        return shoeRepository.findById(shoeId)
+                .filter(s -> s.getUserId().equals(userId))
+                .orElseThrow(() -> new ResourceNotFoundException("Shoe", shoeId));
+    }
+
+    private Map<UUID, BigDecimal> mileageByShoe(UUID userId) {
+        return activityRepository.mileageByShoe(userId).stream()
+                .collect(Collectors.toMap(ActivityRepository.ShoeMileage::getShoeId,
+                        ActivityRepository.ShoeMileage::getTotalKm));
+    }
+
+    private static String trimmed(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+}

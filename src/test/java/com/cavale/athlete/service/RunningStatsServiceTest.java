@@ -18,6 +18,7 @@ import com.cavale.athlete.dto.RunningStatsResponse.DayForm;
 import com.cavale.athlete.dto.RunningStatsResponse.TrainingStatusLabel;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivityBestEffort;
+import com.cavale.training.domain.Discipline;
 import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.ObjectiveRepository;
@@ -65,6 +66,14 @@ class RunningStatsServiceTest {
         Activity activity = Activity.stravaHistory(USER, date, durationMin, new BigDecimal(km),
                 elevationM, avgHr, "Sortie", externalId);
         activity.enrich(null, relativeEffort, null);
+        return activity;
+    }
+
+    /** A cross-training bike ride: no HR, no relative effort (duration-based load). */
+    private static Activity bike(LocalDate date, int durationMin, String km, long externalId) {
+        Activity activity = Activity.stravaHistory(USER, date, durationMin, new BigDecimal(km),
+                null, null, "Vélo", externalId);
+        activity.markDiscipline(Discipline.CROSS);
         return activity;
     }
 
@@ -208,6 +217,22 @@ class RunningStatsServiceTest {
         assertThat(sainteLyon.midSec()).isBetween(30000, 36000);
         assertThat(sainteLyon.lowSec()).isLessThanOrEqualTo(sainteLyon.midSec());
         assertThat(sainteLyon.highSec()).isGreaterThanOrEqualTo(sainteLyon.midSec());
+    }
+
+    /* ── Cross-training (bike) ─────────────────────────────────────────── */
+
+    @Test
+    void crossTraining_feedsLoadButIsExcludedFromRunVolume() {
+        // a 60-min bike ride (no HR/RE) alongside a run in the same week
+        RunningStatsResponse stats = stats(List.of(
+                run(TODAY, 45, "9.0", 100, 145, 40, 1L),
+                bike(TODAY.plusDays(1), 60, "25.0", 2L)));
+
+        // load counts the bike: 40 (run) + 60×0.7 (bike estimate) = 82
+        assertThat(stats.weeklyEffort().getLast().effort()).isEqualTo(82);
+        // run volume ignores the bike: only the 9 km run counts
+        assertThat(stats.weeklyVolume().getLast().distanceKm()).isEqualByComparingTo("9.0");
+        assertThat(stats.weeklyVolume().getLast().runs()).isEqualTo(1);
     }
 
     /* ── Monotony & strain (Foster) ────────────────────────────────────── */

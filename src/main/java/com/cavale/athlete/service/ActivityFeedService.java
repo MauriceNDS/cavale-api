@@ -58,7 +58,7 @@ public class ActivityFeedService {
         LocalDate toDate = to != null ? to : LocalDate.of(9999, 12, 31);
 
         var runPage = type == FeedType.GYM ? null
-                : activityRepository.search(userId, pattern, fromDate, toDate,
+                : activityRepository.search(userId, pattern, fromDate, toDate, type == FeedType.RUN,
                         PageRequest.of(0, fetch, Sort.by(Sort.Direction.DESC, "date")
                                 .and(Sort.by(Sort.Direction.DESC, "createdAt"))));
         var workoutPage = type == FeedType.RUN ? null
@@ -90,7 +90,8 @@ public class ActivityFeedService {
             pace = (int) Math.round(activity.getDurationMin() * 60
                     / activity.getDistanceKm().doubleValue());
         }
-        return new FeedItem(activity.getId(), FeedType.RUN, activity.getDate(),
+        return new FeedItem(activity.getId(),
+                activity.isRun() ? FeedType.RUN : FeedType.BIKE, activity.getDate(),
                 activity.getSession() != null ? activity.getSession().getTitle() : activity.getName(),
                 activity.getDurationMin(), activity.getPerceivedEffort(), activity.isPainFlag(),
                 activity.getDistanceKm(), activity.getElevationM(), activity.getAvgHr(), pace,

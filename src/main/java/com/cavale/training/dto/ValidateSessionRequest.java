@@ -28,6 +28,9 @@ public record ValidateSessionRequest(
         /** Pain or niggle felt during the run — feeds the injury early-warning trail. */
         Boolean painFlag,
 
+        /** The shoe worn — asked at validation, accrues that pair's mileage. */
+        java.util.UUID shoeId,
+
         @Size(max = 2000, message = "Comment must not exceed 2000 characters")
         String comment) {
 

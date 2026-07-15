@@ -59,9 +59,12 @@ class TrainingPlanServiceTest {
     @Mock
     private com.cavale.gym.service.GymTemplateService gymTemplateService;
 
+    @Mock
+    private ShoeService shoeService;
+
     private TrainingPlanService service() {
         return new TrainingPlanService(planRepository, weekRepository, sessionRepository,
-                activityRepository, objectiveRepository, gymTemplateService);
+                activityRepository, objectiveRepository, gymTemplateService, shoeService);
     }
 
     private static final UUID OWNER = UUID.randomUUID();
@@ -218,12 +221,33 @@ class TrainingPlanServiceTest {
         when(activityRepository.save(any(Activity.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Activity activity = service().validateSession(OWNER, session.getId(),
-                new ValidateSessionRequest(245, new java.math.BigDecimal("38.50"), 1520, 151, null, true, "Bonne SL"));
+                new ValidateSessionRequest(245, new java.math.BigDecimal("38.50"), 1520, 151, null, true, null, "Bonne SL"));
 
         assertThat(activity.getSource()).isEqualTo(ActivitySource.MANUAL);
         assertThat(activity.getDurationMin()).isEqualTo(245);
         assertThat(activity.getDistanceKm()).isEqualByComparingTo("38.50");
         assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
+    }
+
+    @Test
+    void validateSession_acceptsCrossTrainingAndTagsItAsBike() {
+        TrainingPlan plan = planOwnedBy(OWNER);
+        PlanWeek week = new PlanWeek(plan, 3, LocalDate.of(2026, 8, 3), null,
+                WeekType.BUILD, null, null, null, null);
+        PlannedSession bike = new PlannedSession(week, OWNER, LocalDate.of(2026, 8, 3), 0,
+                Discipline.CROSS, "Vélo home-trainer", null, null, 60, null, null, null);
+        ReflectionTestUtils.setField(bike, "id", UUID.randomUUID());
+        when(sessionRepository.findById(bike.getId())).thenReturn(Optional.of(bike));
+        when(activityRepository.findBySessionId(bike.getId())).thenReturn(Optional.empty());
+        when(activityRepository.save(any(Activity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Activity activity = service().validateSession(OWNER, bike.getId(),
+                new ValidateSessionRequest(60, new java.math.BigDecimal("25.00"), null, null, null, null, null, null));
+
+        assertThat(activity.getDiscipline()).isEqualTo(Discipline.CROSS);
+        assertThat(activity.isRun()).isFalse();
+        assertThat(activity.getDurationMin()).isEqualTo(60);
+        assertThat(bike.getStatus()).isEqualTo(SessionStatus.DONE);
     }
 
     @Test
@@ -237,7 +261,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(gym.getId())).thenReturn(Optional.of(gym));
 
         assertThatThrownBy(() -> service().validateSession(OWNER, gym.getId(),
-                new ValidateSessionRequest(55, new java.math.BigDecimal("1"), null, null, null, null, null)))
+                new ValidateSessionRequest(55, new java.math.BigDecimal("1"), null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
