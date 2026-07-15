@@ -360,7 +360,8 @@ public class AthleteContextService {
                 .sorted(Comparator.comparing(Objective::getDate))
                 .map(o -> new UpcomingObjective(o.getName(), o.getDate(),
                         DAYS.between(today, o.getDate()), o.getType(), o.getRole(),
-                        o.getDistanceKm(), o.getTargetTimeMin()))
+                        o.getKind(), o.getIntensity(), o.getDistanceKm(), o.getElevationGainM(),
+                        o.getTargetTimeMin()))
                 .toList();
     }
 }

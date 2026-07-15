@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import com.cavale.training.domain.Objective;
+import com.cavale.training.domain.ObjectiveIntensity;
+import com.cavale.training.domain.ObjectiveKind;
 import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.ObjectiveType;
 
@@ -13,6 +15,8 @@ public record ObjectiveResponse(
         UUID planId,
         ObjectiveRole role,
         ObjectiveType type,
+        ObjectiveKind kind,
+        ObjectiveIntensity intensity,
         String name,
         LocalDate date,
         BigDecimal distanceKm,
@@ -24,8 +28,9 @@ public record ObjectiveResponse(
 
     public static ObjectiveResponse from(Objective objective) {
         return new ObjectiveResponse(objective.getId(), objective.getPlan().getId(), objective.getRole(),
-                objective.getType(), objective.getName(), objective.getDate(), objective.getDistanceKm(),
-                objective.getElevationGainM(), objective.getTargetTimeMin(), objective.getResultTimeMin(),
+                objective.getType(), objective.getKind(), objective.getIntensity(), objective.getName(),
+                objective.getDate(), objective.getDistanceKm(), objective.getElevationGainM(),
+                objective.getTargetTimeMin(), objective.getResultTimeMin(),
                 objective.getLocation(), objective.getNotes());
     }
 }

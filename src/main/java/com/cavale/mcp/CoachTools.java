@@ -32,6 +32,8 @@ import com.cavale.gym.dto.TemplateDtos.VariantSummary;
 import com.cavale.gym.service.ExerciseService;
 import com.cavale.gym.service.GymTemplateService;
 import com.cavale.training.domain.Discipline;
+import com.cavale.training.domain.ObjectiveIntensity;
+import com.cavale.training.domain.ObjectiveKind;
 import com.cavale.training.domain.ObjectiveType;
 import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.domain.WeekType;
@@ -82,7 +84,10 @@ public class CoachTools {
             sessions when INJURED or SICK), current season position, last 6 weeks \
             of load with pain flags, recent perceived-effort feedback, the last \
             race with days since (less than 28 days ago => start with recovery \
-            weeks), upcoming objectives, distance records and race-time estimates. \
+            weeks), upcoming objectives (each carries kind ROAD/TRAIL — express \
+            road targets as paces, trail as time + km-effort + D+ — and intensity \
+            BALANCE/PERFORMANCE that sets ramp aggressiveness), distance records \
+            and race-time estimates. \
             trainingLoad also carries the fused trainingStatus verdict \
             (PRODUCTIVE/MAINTAINING/OVERREACHING/RECOVERY/DETRAINING), Foster \
             monotony/strain with monotonyFlag (>=2.0 => vary hard vs easy days, \
@@ -218,12 +223,18 @@ public class CoachTools {
     }
 
     @Tool(name = "update_objective", description = """
-            Refine an objective: race profile (distance, D+, location), date, \
-            target time, result time once raced, notes. All fields are replaced — \
-            read list_objectives first and resend unchanged values.""")
+            Refine an objective: kind (ROAD sets targets as paces, TRAIL as \
+            time + km-effort + D+), intensity (BALANCE = smoother/safer ramp, \
+            PERFORMANCE = most aggressive within the guardrails), race profile \
+            (distance, D+, location), date, target time, result time once raced, \
+            notes. All fields are replaced except kind/intensity, where null \
+            keeps the current value — read list_objectives first and resend \
+            unchanged values.""")
     public ObjectiveResponse updateObjective(
             @ToolParam(description = "Objective UUID") String objectiveId,
             @ToolParam(description = "Objective type") ObjectiveType type,
+            @ToolParam(description = "ROAD or TRAIL", required = false) ObjectiveKind kind,
+            @ToolParam(description = "BALANCE or PERFORMANCE", required = false) ObjectiveIntensity intensity,
             @ToolParam(description = "Name") String name,
             @ToolParam(description = "Event date, ISO date", required = false) String date,
             @ToolParam(description = "Race distance in km", required = false) Double distanceKm,
@@ -233,7 +244,7 @@ public class CoachTools {
             @ToolParam(description = "Location", required = false) String location,
             @ToolParam(description = "Notes, athlete's language", required = false) String notes) {
         return ObjectiveResponse.from(objectiveService.update(currentUserId(), UUID.fromString(objectiveId),
-                new UpdateObjectiveRequest(type, name,
+                new UpdateObjectiveRequest(type, kind, intensity, name,
                         date != null ? LocalDate.parse(date) : null,
                         distanceKm != null ? BigDecimal.valueOf(distanceKm) : null,
                         elevationGainM, targetTimeMin, resultTimeMin, location, notes)));
@@ -241,10 +252,13 @@ public class CoachTools {
 
     @Tool(name = "add_secondary_objective", description = """
             Add an intermediate goal to a plan (a prep race the program accounts \
-            for). The MAIN objective already exists — one per plan.""")
+            for). The MAIN objective already exists — one per plan. kind defaults \
+            to TRAIL, intensity to BALANCE when omitted.""")
     public ObjectiveResponse addSecondaryObjective(
             @ToolParam(description = "Plan UUID") String planId,
             @ToolParam(description = "Objective type") ObjectiveType type,
+            @ToolParam(description = "ROAD or TRAIL (default TRAIL)", required = false) ObjectiveKind kind,
+            @ToolParam(description = "BALANCE or PERFORMANCE (default BALANCE)", required = false) ObjectiveIntensity intensity,
             @ToolParam(description = "Name") String name,
             @ToolParam(description = "Event date, ISO date", required = false) String date,
             @ToolParam(description = "Race distance in km", required = false) Double distanceKm,
@@ -253,7 +267,7 @@ public class CoachTools {
             @ToolParam(description = "Location", required = false) String location,
             @ToolParam(description = "Notes, athlete's language", required = false) String notes) {
         return ObjectiveResponse.from(objectiveService.addSecondary(currentUserId(), UUID.fromString(planId),
-                new CreateObjectiveRequest(type, name,
+                new CreateObjectiveRequest(type, kind, intensity, name,
                         date != null ? LocalDate.parse(date) : null,
                         distanceKm != null ? BigDecimal.valueOf(distanceKm) : null,
                         elevationGainM, targetTimeMin, location, notes)));

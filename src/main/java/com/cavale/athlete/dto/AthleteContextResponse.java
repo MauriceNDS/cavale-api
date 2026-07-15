@@ -8,6 +8,8 @@ import java.util.UUID;
 import com.cavale.athlete.dto.AthleteHubResponse.DistanceRecord;
 import com.cavale.athlete.dto.AthleteHubResponse.Prediction;
 import com.cavale.athlete.dto.AthleteHubResponse.TrailIndex;
+import com.cavale.training.domain.ObjectiveIntensity;
+import com.cavale.training.domain.ObjectiveKind;
 import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.ObjectiveType;
 import com.cavale.training.domain.PerceivedEffort;
@@ -121,7 +123,14 @@ public record AthleteContextResponse(
                            Integer elevationGainM, Integer resultTimeMin, Integer targetTimeMin) {
     }
 
+    /**
+     * kind decides the target representation: for ROAD read targetTimeMin as a
+     * pace over distanceKm; for TRAIL read it as a finish time over the
+     * km-effort (distanceKm + elevationGainM/100). intensity (BALANCE vs
+     * PERFORMANCE) sets how aggressive the ramp toward it should be.
+     */
     public record UpcomingObjective(String name, LocalDate date, long daysUntil, ObjectiveType type,
-                                    ObjectiveRole role, BigDecimal distanceKm, Integer targetTimeMin) {
+                                    ObjectiveRole role, ObjectiveKind kind, ObjectiveIntensity intensity,
+                                    BigDecimal distanceKm, Integer elevationGainM, Integer targetTimeMin) {
     }
 }

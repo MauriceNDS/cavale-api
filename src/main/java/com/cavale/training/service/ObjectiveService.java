@@ -42,6 +42,12 @@ public class ObjectiveService {
         TrainingPlan plan = planService.getOwnedPlan(userId, planId);
         Objective objective = new Objective(plan, ObjectiveRole.SECONDARY, request.type(),
                 request.name().trim(), request.date());
+        if (request.kind() != null) {
+            objective.updateKind(request.kind());
+        }
+        if (request.intensity() != null) {
+            objective.updateIntensity(request.intensity());
+        }
         objective.updateRaceProfile(request.distanceKm(), request.elevationGainM(), trimmed(request.location()));
         objective.updateTargetTimeMin(request.targetTimeMin());
         objective.updateNotes(trimmed(request.notes()));
@@ -52,6 +58,12 @@ public class ObjectiveService {
     public Objective update(UUID userId, UUID objectiveId, UpdateObjectiveRequest request) {
         Objective objective = getOwned(userId, objectiveId);
         objective.updateType(request.type());
+        if (request.kind() != null) {
+            objective.updateKind(request.kind());
+        }
+        if (request.intensity() != null) {
+            objective.updateIntensity(request.intensity());
+        }
         objective.rename(request.name().trim());
         objective.updateDate(request.date());
         objective.updateRaceProfile(request.distanceKm(), request.elevationGainM(), trimmed(request.location()));

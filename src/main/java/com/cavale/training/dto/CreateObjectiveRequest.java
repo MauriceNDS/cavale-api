@@ -3,6 +3,8 @@ package com.cavale.training.dto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+import com.cavale.training.domain.ObjectiveIntensity;
+import com.cavale.training.domain.ObjectiveKind;
 import com.cavale.training.domain.ObjectiveType;
 
 import jakarta.validation.constraints.NotBlank;
@@ -15,6 +17,12 @@ public record CreateObjectiveRequest(
 
         @NotNull(message = "Type is required")
         ObjectiveType type,
+
+        /** Road or trail; defaults to trail when omitted. */
+        ObjectiveKind kind,
+
+        /** Balance or performance; defaults to balance when omitted. */
+        ObjectiveIntensity intensity,
 
         @NotBlank(message = "Name is required")
         @Size(max = 150, message = "Name must not exceed 150 characters")

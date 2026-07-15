@@ -14,6 +14,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Objective;
+import com.cavale.training.domain.ObjectiveIntensity;
+import com.cavale.training.domain.ObjectiveKind;
 import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.ObjectiveType;
 import com.cavale.training.domain.TrainingPlan;
@@ -64,16 +66,33 @@ class ObjectiveServiceTest {
         when(objectiveRepository.save(any(Objective.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Objective saved = service().addSecondary(OWNER, plan.getId(), new CreateObjectiveRequest(
-                ObjectiveType.RACE, "  Trail des Coursières 26 km ", LocalDate.of(2026, 9, 20),
+                ObjectiveType.RACE, ObjectiveKind.TRAIL, ObjectiveIntensity.PERFORMANCE,
+                "  Trail des Coursières 26 km ", LocalDate.of(2026, 9, 20),
                 new BigDecimal("26.00"), 1100, 190, " Yzeron ", null));
 
         assertThat(saved.getRole()).isEqualTo(ObjectiveRole.SECONDARY);
         assertThat(saved.getName()).isEqualTo("Trail des Coursières 26 km");
+        assertThat(saved.getKind()).isEqualTo(ObjectiveKind.TRAIL);
+        assertThat(saved.getIntensity()).isEqualTo(ObjectiveIntensity.PERFORMANCE);
         assertThat(saved.getDistanceKm()).isEqualByComparingTo("26.00");
         assertThat(saved.getElevationGainM()).isEqualTo(1100);
         assertThat(saved.getTargetTimeMin()).isEqualTo(190);
         assertThat(saved.getLocation()).isEqualTo("Yzeron");
         assertThat(saved.getUserId()).isEqualTo(OWNER);
+    }
+
+    @Test
+    void addSecondary_defaultsKindTrailAndIntensityBalanceWhenOmitted() {
+        TrainingPlan plan = plan();
+        when(planService.getOwnedPlan(OWNER, plan.getId())).thenReturn(plan);
+        when(objectiveRepository.save(any(Objective.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Objective saved = service().addSecondary(OWNER, plan.getId(), new CreateObjectiveRequest(
+                ObjectiveType.RACE, null, null, "10 km de Lyon", LocalDate.of(2026, 5, 1),
+                new BigDecimal("10.00"), null, 42, null, null));
+
+        assertThat(saved.getKind()).isEqualTo(ObjectiveKind.TRAIL);
+        assertThat(saved.getIntensity()).isEqualTo(ObjectiveIntensity.BALANCE);
     }
 
     @Test
@@ -83,14 +102,31 @@ class ObjectiveServiceTest {
         when(objectiveRepository.findById(objective.getId())).thenReturn(Optional.of(objective));
 
         service().update(OWNER, objective.getId(), new UpdateObjectiveRequest(
-                ObjectiveType.RACE, "SaintéLyon 80 km 2026", LocalDate.of(2026, 11, 28),
+                ObjectiveType.RACE, ObjectiveKind.TRAIL, ObjectiveIntensity.PERFORMANCE,
+                "SaintéLyon 80 km 2026", LocalDate.of(2026, 11, 28),
                 new BigDecimal("78.00"), 2100, null, null, "Saint-Étienne → Lyon", "Objectif finisher"));
 
         assertThat(objective.getName()).isEqualTo("SaintéLyon 80 km 2026");
         assertThat(objective.getDate()).isEqualTo(LocalDate.of(2026, 11, 28));
         assertThat(objective.getDistanceKm()).isEqualByComparingTo("78.00");
         assertThat(objective.getTargetTimeMin()).isNull();
+        assertThat(objective.getIntensity()).isEqualTo(ObjectiveIntensity.PERFORMANCE);
         assertThat(objective.getNotes()).isEqualTo("Objectif finisher");
+    }
+
+    @Test
+    void update_keepsKindAndIntensityWhenOmitted() {
+        Objective objective = objective(plan(), ObjectiveRole.MAIN, "SaintéLyon 80 km", LocalDate.of(2026, 11, 29));
+        objective.updateKind(ObjectiveKind.ROAD);
+        objective.updateIntensity(ObjectiveIntensity.PERFORMANCE);
+        when(objectiveRepository.findById(objective.getId())).thenReturn(Optional.of(objective));
+
+        service().update(OWNER, objective.getId(), new UpdateObjectiveRequest(
+                ObjectiveType.RACE, null, null, "Marathon de Lyon", null,
+                new BigDecimal("42.20"), null, 210, null, null, null));
+
+        assertThat(objective.getKind()).isEqualTo(ObjectiveKind.ROAD);
+        assertThat(objective.getIntensity()).isEqualTo(ObjectiveIntensity.PERFORMANCE);
     }
 
     @Test
@@ -99,7 +135,7 @@ class ObjectiveServiceTest {
         when(objectiveRepository.findById(objective.getId())).thenReturn(Optional.of(objective));
 
         assertThatThrownBy(() -> service().update(STRANGER, objective.getId(), new UpdateObjectiveRequest(
-                ObjectiveType.RACE, "X", null, null, null, null, null, null, null)))
+                ObjectiveType.RACE, null, null, "X", null, null, null, null, null, null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 

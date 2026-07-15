@@ -51,6 +51,16 @@ public class Objective extends Auditable {
     @Column(nullable = false, length = 10)
     private ObjectiveType type;
 
+    /** Road or trail — decides how targets and predictions are expressed. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 12)
+    private ObjectiveKind kind = ObjectiveKind.TRAIL;
+
+    /** How aggressively to chase it — read by plan generation and guardrails. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 12)
+    private ObjectiveIntensity intensity = ObjectiveIntensity.BALANCE;
+
     @Column(nullable = false, length = 150)
     private String name;
 
@@ -97,6 +107,14 @@ public class Objective extends Auditable {
         this.type = type;
     }
 
+    public void updateKind(ObjectiveKind kind) {
+        this.kind = kind;
+    }
+
+    public void updateIntensity(ObjectiveIntensity intensity) {
+        this.intensity = intensity;
+    }
+
     public void updateDate(LocalDate date) {
         this.date = date;
     }
@@ -137,6 +155,14 @@ public class Objective extends Auditable {
 
     public ObjectiveType getType() {
         return type;
+    }
+
+    public ObjectiveKind getKind() {
+        return kind;
+    }
+
+    public ObjectiveIntensity getIntensity() {
+        return intensity;
     }
 
     public String getName() {
