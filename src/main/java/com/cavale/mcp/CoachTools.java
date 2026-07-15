@@ -31,6 +31,7 @@ import com.cavale.gym.dto.TemplateDtos.VariantRequest;
 import com.cavale.gym.dto.TemplateDtos.VariantSummary;
 import com.cavale.gym.service.ExerciseService;
 import com.cavale.gym.service.GymTemplateService;
+import com.cavale.training.course.CourseService;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.ObjectiveIntensity;
 import com.cavale.training.domain.ObjectiveKind;
@@ -41,6 +42,7 @@ import com.cavale.training.dto.CreateObjectiveRequest;
 import com.cavale.training.dto.CreatePlanRequest;
 import com.cavale.training.dto.CreateSessionRequest;
 import com.cavale.training.dto.CreateWeekRequest;
+import com.cavale.training.dto.CourseResponse;
 import com.cavale.training.dto.ObjectiveResponse;
 import com.cavale.training.dto.PlanResponse;
 import com.cavale.training.dto.SessionResponse;
@@ -65,15 +67,17 @@ public class CoachTools {
     private final ObjectiveService objectiveService;
     private final ExerciseService exerciseService;
     private final GymTemplateService gymTemplateService;
+    private final CourseService courseService;
 
     public CoachTools(AthleteContextService contextService, TrainingPlanService planService,
                       ObjectiveService objectiveService, ExerciseService exerciseService,
-                      GymTemplateService gymTemplateService) {
+                      GymTemplateService gymTemplateService, CourseService courseService) {
         this.contextService = contextService;
         this.planService = planService;
         this.objectiveService = objectiveService;
         this.exerciseService = exerciseService;
         this.gymTemplateService = gymTemplateService;
+        this.courseService = courseService;
     }
 
     /* ── Read ──────────────────────────────────────────────────────────── */
@@ -134,6 +138,18 @@ public class CoachTools {
     public List<ObjectiveResponse> listObjectives(@ToolParam(description = "Plan UUID") String planId) {
         return objectiveService.listForPlan(currentUserId(), UUID.fromString(planId)).stream()
                 .map(ObjectiveResponse::from).toList();
+    }
+
+    @Tool(name = "get_course", description = """
+            The GPX race course of an objective, when one is uploaded (404 if \
+            not): elevation profile, grade-adjusted per-segment splits and \
+            aid-station arrivals, all timed from the athlete's own sec/km-effort. \
+            Use it for course-specific pacing and fueling advice. finishMidSec is \
+            the projected finish; each split carries its climb and segment time, \
+            each waypoint a low/mid/high arrival range. Time fields are null when \
+            the athlete has too little trail history to derive a pace.""")
+    public CourseResponse getCourse(@ToolParam(description = "Objective UUID") String objectiveId) {
+        return courseService.getCourse(currentUserId(), UUID.fromString(objectiveId), LocalDate.now());
     }
 
     /* ── Write ─────────────────────────────────────────────────────────── */

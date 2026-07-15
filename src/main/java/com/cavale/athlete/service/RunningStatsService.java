@@ -734,13 +734,32 @@ public class RunningStatsService {
     }
 
     /**
-     * Trail objectives, timed from the athlete's own trail pacing: median
-     * seconds per km-effort over recent hilly long runs, scaled to the
-     * objective's km-effort with a Riegel-style fatigue exponent.
+     * The athlete's trail pacing: seconds per km-effort (km + D+/100) at the
+     * 25th/50th/75th percentile of recent hilly long runs, the median km-effort
+     * they came from, and the ultra-fatigue exponent. The objective estimates
+     * and the GPX course pacing (P12) both scale from this.
      */
-    private List<TrailEstimate> trailEstimates(List<Activity> activities,
-                                               List<Objective> objectives, LocalDate today) {
-        List<Activity> trailRuns = activities.stream()
+    public record TrailPace(double q1SecPerKmEffort, double medianSecPerKmEffort,
+                            double q3SecPerKmEffort, double baseKmEffort, double fatigueK,
+                            int sampleRuns) {
+
+        /** Riegel-style scale-up for an effort bigger than the athlete's usual. */
+        public double fatigueFor(double kmEffort) {
+            return Math.pow(kmEffort / baseKmEffort, fatigueK - 1);
+        }
+    }
+
+    /** The trail pacing model for one athlete — null under 3 qualifying runs. */
+    @Transactional(readOnly = true)
+    public TrailPace trailPace(UUID userId, LocalDate today) {
+        List<Activity> runs = activityRepository.findByUserId(userId).stream()
+                .filter(Activity::isRun)
+                .toList();
+        return trailPace(runs, today);
+    }
+
+    static TrailPace trailPace(List<Activity> runs, LocalDate today) {
+        List<Activity> trailRuns = runs.stream()
                 .filter(a -> !a.getDate().isBefore(today.minusMonths(6)))
                 .filter(a -> a.getDistanceKm() != null && a.getDistanceKm().doubleValue() >= 8)
                 .filter(a -> a.getElevationM() != null
@@ -748,21 +767,30 @@ public class RunningStatsService {
                 .filter(a -> a.getDurationMin() >= 60)
                 .toList();
         if (trailRuns.size() < 3) {
-            return List.of();
+            return null;
         }
-
         List<Double> paces = trailRuns.stream()
                 .map(a -> a.getDurationMin() * 60.0
                         / (a.getDistanceKm().doubleValue() + a.getElevationM() / 100.0))
                 .sorted()
                 .toList();
-        double medianPace = median(paces);
-        double q1 = paces.get(paces.size() / 4);
-        double q3 = paces.get(paces.size() * 3 / 4);
         double baseKmEffort = median(trailRuns.stream()
                 .map(a -> a.getDistanceKm().doubleValue() + a.getElevationM() / 100.0)
                 .toList());
+        return new TrailPace(paces.get(paces.size() / 4), median(paces), paces.get(paces.size() * 3 / 4),
+                baseKmEffort, TRAIL_K, trailRuns.size());
+    }
 
+    /**
+     * Trail objectives, timed from the athlete's own trail pacing scaled to the
+     * objective's km-effort with a Riegel-style fatigue exponent.
+     */
+    private List<TrailEstimate> trailEstimates(List<Activity> activities,
+                                               List<Objective> objectives, LocalDate today) {
+        TrailPace pace = trailPace(activities, today);
+        if (pace == null) {
+            return List.of();
+        }
         return objectives.stream()
                 .filter(o -> o.getDate() != null && !o.getDate().isBefore(today))
                 .filter(o -> o.getDistanceKm() != null)
@@ -770,14 +798,14 @@ public class RunningStatsService {
                 .map(o -> {
                     double kmEffort = o.getDistanceKm().doubleValue()
                             + (o.getElevationGainM() != null ? o.getElevationGainM() / 100.0 : 0);
-                    double fatigue = Math.pow(kmEffort / baseKmEffort, TRAIL_K - 1);
+                    double fatigue = pace.fatigueFor(kmEffort);
                     return new TrailEstimate(o.getName(), o.getDate(), o.getDistanceKm(),
                             o.getElevationGainM(),
                             BigDecimal.valueOf(kmEffort).setScale(0, RoundingMode.HALF_UP),
-                            (int) Math.round(q1 * kmEffort * fatigue),
-                            (int) Math.round(medianPace * kmEffort * fatigue),
-                            (int) Math.round(q3 * kmEffort * fatigue),
-                            trailRuns.size());
+                            (int) Math.round(pace.q1SecPerKmEffort() * kmEffort * fatigue),
+                            (int) Math.round(pace.medianSecPerKmEffort() * kmEffort * fatigue),
+                            (int) Math.round(pace.q3SecPerKmEffort() * kmEffort * fatigue),
+                            pace.sampleRuns());
                 })
                 .toList();
     }
