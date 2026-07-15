@@ -90,7 +90,8 @@ class AthleteContextServiceTest {
                         new com.cavale.athlete.dto.RunningStatsResponse.Acwr(0, 0, 0,
                                 com.cavale.athlete.dto.RunningStatsResponse.AcwrZone.UNDER),
                         java.util.List.of(), java.util.List.of(), java.util.List.of(),
-                        java.util.List.of(), java.util.List.of()));
+                        java.util.List.of(), java.util.List.of(),
+                        java.util.List.of(), null));
         return new AthleteContextService(userService, planRepository, weekRepository,
                 sessionRepository, activityRepository, bestEffortRepository, objectiveRepository,
                 gymStatsService, workoutLogRepository, runningStatsService);
@@ -115,6 +116,35 @@ class AthleteContextServiceTest {
         assertThat(context.season()).isNull();
         assertThat(context.lastRace()).isNull();
         assertThat(context.recentWeeks()).hasSize(6);
+        assertThat(context.longRunGuard()).isNull(); // no runs to measure against
+    }
+
+    @Test
+    void context_bandsTheNextLongRunAgainstTheTrailingLongest() {
+        when(userService.getById(USER)).thenReturn(user());
+        when(objectiveRepository.findByUserId(USER)).thenReturn(List.of());
+        when(planRepository.findByUserIdOrderByStartDateDesc(USER)).thenReturn(List.of());
+        when(bestEffortRepository.findByUserId(USER)).thenReturn(List.of());
+        when(sessionRepository.findByUserIdAndDateBetweenOrderByDateAscOrderInDayAsc(
+                eq(USER), any(), any())).thenReturn(List.of());
+
+        Activity base = Activity.stravaHistory(USER, TODAY.minusDays(20), 90,
+                new BigDecimal("12.00"), 200, 145, "EF", 1L);
+        Activity longest = Activity.stravaHistory(USER, TODAY.minusDays(10), 150,
+                new BigDecimal("20.00"), 400, 148, "SL", 2L);
+        Activity lastSpike = Activity.stravaHistory(USER, TODAY.minusDays(1), 240,
+                new BigDecimal("32.00"), 800, 150, "Sortie longue", 3L);
+        when(activityRepository.findByUserId(USER)).thenReturn(List.of(base, longest, lastSpike));
+
+        AthleteContextResponse.LongRunGuard guard = service().getContext(USER, TODAY).longRunGuard();
+
+        assertThat(guard.recentLongestKm()).isEqualByComparingTo("32.0"); // trailing-30d longest
+        assertThat(guard.longestOn()).isEqualTo(TODAY.minusDays(1));
+        assertThat(guard.elevatedFromKm()).isEqualByComparingTo("41.6"); // 32 × 1.3
+        assertThat(guard.highFromKm()).isEqualByComparingTo("64.0");     // 32 × 2.0
+        // the last run (32 km) vs the longest of the 30 days BEFORE it (20 km) → 1.6× → elevated
+        assertThat(guard.lastRunKm()).isEqualByComparingTo("32.0");
+        assertThat(guard.lastRunBand()).isEqualTo("ELEVATED");
     }
 
     @Test

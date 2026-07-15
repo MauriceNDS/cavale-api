@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +25,10 @@ import com.cavale.athlete.dto.RunningStatsResponse.DurationCheckpoint;
 import com.cavale.athlete.dto.RunningStatsResponse.MonthEfficiency;
 import com.cavale.athlete.dto.RunningStatsResponse.RoadPrediction;
 import com.cavale.athlete.dto.RunningStatsResponse.TrailEstimate;
+import com.cavale.athlete.dto.RunningStatsResponse.TrainingStatus;
+import com.cavale.athlete.dto.RunningStatsResponse.TrainingStatusLabel;
 import com.cavale.athlete.dto.RunningStatsResponse.WeekEffort;
+import com.cavale.athlete.dto.RunningStatsResponse.WeekMonotony;
 import com.cavale.athlete.dto.RunningStatsResponse.WeekVolume;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.Objective;
@@ -56,6 +60,10 @@ public class RunningStatsService {
     static final int FORM_DAYS = 365;
     private static final int WEEKS = 52;
     private static final int EFFICIENCY_MONTHS = 12;
+    /** Foster monotony at or above this flags illness / overtraining risk. */
+    static final double MONOTONY_FLAG = 2.0;
+    /** Window the training-status verdict measures the fitness trend over. */
+    static final int FITNESS_LOOKBACK_DAYS = 28;
     private static final double FITNESS_TAU = 42.0;
     private static final double FATIGUE_TAU = 7.0;
     /** Duration-based RE estimate for HR-less runs: ~0.7 point per minute. */
@@ -100,20 +108,24 @@ public class RunningStatsService {
         List<Activity> activities = activityRepository.findByUserId(userId).stream()
                 .sorted(Comparator.comparing(Activity::getDate))
                 .toList();
-        List<DistanceRecord> records = AthleteStatsService
-                .records(bestEffortRepository.findByUserId(userId));
+        List<DistanceRecord> roadRecords = AthleteStatsService
+                .roadRecords(bestEffortRepository.findByUserId(userId));
         List<Objective> objectives = objectiveRepository.findByUserId(userId);
 
         double weeklyKm = recentWeeklyKm(activities, today);
+        List<DayForm> form = form(activities, today);
+        Acwr acwr = acwr(activities, today);
         return new RunningStatsResponse(
-                form(activities, today),
+                form,
                 weeklyEffort(activities, today),
-                acwr(activities, today),
+                acwr,
                 weeklyVolume(activities, today),
                 efficiency(activities, today),
                 checkpoints(activities),
-                roadPredictions(records, weeklyKm),
-                trailEstimates(activities, objectives, today));
+                roadPredictions(roadRecords, weeklyKm),
+                trailEstimates(activities, objectives, today),
+                monotony(activities, today),
+                trainingStatus(form, acwr));
     }
 
     /* ── Training load (Banister / Strava F&F) ─────────────────────────── */
@@ -205,6 +217,100 @@ public class RunningStatsService {
                 : ratio >= 0.8 ? AcwrZone.OPTIMAL
                 : AcwrZone.UNDER;
         return new Acwr(Math.round(ratio * 100) / 100.0, acute, (int) Math.round(chronicWeekly), zone);
+    }
+
+    /* ── Load distribution & training-status verdict ───────────────────── */
+
+    /**
+     * Foster's monotony &amp; strain over the {@value #WEEKS} ISO weeks.
+     * Monotony is the mean of a week's seven daily loads over their
+     * (population) standard deviation: a sky-high value means every day
+     * looked the same, the pattern that precedes illness and overtraining —
+     * flagged at {@value #MONOTONY_FLAG}. Strain is the week's total load
+     * times its monotony. Rest days count as zero, so real hard/easy contrast
+     * scores low (healthy); both are null when a week has no training, or no
+     * day-to-day variance at all (standard deviation zero).
+     */
+    private static List<WeekMonotony> monotony(List<Activity> activities, LocalDate today) {
+        Map<LocalDate, Integer> effortByDay = new HashMap<>();
+        for (Activity activity : activities) {
+            effortByDay.merge(activity.getDate(), dailyEffort(activity), Integer::sum);
+        }
+        LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
+        List<WeekMonotony> series = new ArrayList<>(WEEKS);
+        for (int i = WEEKS - 1; i >= 0; i--) {
+            LocalDate weekStart = currentWeekStart.minusWeeks(i);
+            int total = 0;
+            double[] daily = new double[7];
+            for (int d = 0; d < 7; d++) {
+                int load = effortByDay.getOrDefault(weekStart.plusDays(d), 0);
+                daily[d] = load;
+                total += load;
+            }
+            double mean = total / 7.0;
+            double variance = 0;
+            for (double load : daily) {
+                variance += (load - mean) * (load - mean);
+            }
+            double sd = Math.sqrt(variance / 7);
+            if (total == 0 || sd == 0) {
+                series.add(new WeekMonotony(weekStart, null, null, false));
+                continue;
+            }
+            double monotony = Math.round(mean / sd * 100) / 100.0;
+            series.add(new WeekMonotony(weekStart, monotony, (int) Math.round(total * monotony),
+                    monotony >= MONOTONY_FLAG));
+        }
+        return series;
+    }
+
+    /**
+     * The single fused verdict, from three already-computed dials — the
+     * {@value #FITNESS_LOOKBACK_DAYS}-day fitness trend, the current form
+     * (fitness − fatigue) and the ACWR — collapsed to one label by a
+     * documented, deterministic ladder (first match wins):
+     *
+     * <ol>
+     *   <li>OVERREACHING — ACWR ≥ 1.5, or ≥ 1.3 with already-negative form:
+     *       acute load is outrunning the base.</li>
+     *   <li>RECOVERY — under-loading (ACWR &lt; 0.8) while fresh (form ≥ 0):
+     *       a deliberate lighter / taper stretch.</li>
+     *   <li>DETRAINING — under-loading with fitness falling more than 3 %:
+     *       the base is eroding.</li>
+     *   <li>PRODUCTIVE — fitness rising more than 3 %: building safely.</li>
+     *   <li>MAINTAINING — everything else: steady state.</li>
+     * </ol>
+     */
+    static TrainingStatus trainingStatus(List<DayForm> form, Acwr acwr) {
+        if (form.isEmpty()) {
+            return null;
+        }
+        DayForm current = form.getLast();
+        if (current.fitness() < 1 && acwr.ratio() == 0) {
+            return null; // no measurable load history yet — nothing to verdict
+        }
+        DayForm past = form.size() > FITNESS_LOOKBACK_DAYS
+                ? form.get(form.size() - 1 - FITNESS_LOOKBACK_DAYS)
+                : form.getFirst();
+        double trendPct = past.fitness() > 1
+                ? Math.round((current.fitness() - past.fitness()) / past.fitness() * 1000) / 10.0
+                : 0;
+        double formScore = current.formScore();
+        double ratio = acwr.ratio();
+
+        TrainingStatusLabel label;
+        if (ratio >= 1.5 || (ratio >= 1.3 && formScore < 0)) {
+            label = TrainingStatusLabel.OVERREACHING;
+        } else if (ratio < 0.8 && formScore >= 0) {
+            label = TrainingStatusLabel.RECOVERY;
+        } else if (ratio < 0.8 && trendPct < -3) {
+            label = TrainingStatusLabel.DETRAINING;
+        } else if (trendPct > 3) {
+            label = TrainingStatusLabel.PRODUCTIVE;
+        } else {
+            label = TrainingStatusLabel.MAINTAINING;
+        }
+        return new TrainingStatus(label, trendPct, round1(formScore), ratio);
     }
 
     /* ── Volume & efficiency ───────────────────────────────────────────── */

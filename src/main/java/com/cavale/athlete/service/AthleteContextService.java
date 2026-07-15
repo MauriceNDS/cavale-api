@@ -1,5 +1,7 @@
 package com.cavale.athlete.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -20,6 +22,7 @@ import com.cavale.athlete.dto.AthleteContextResponse.UpcomingObjective;
 import com.cavale.athlete.dto.AthleteContextResponse.WeekLoad;
 import com.cavale.athlete.dto.AthleteHubResponse.DistanceRecord;
 import com.cavale.training.domain.Activity;
+import com.cavale.training.domain.ActivityBestEffort;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.Objective;
 import com.cavale.training.domain.ObjectiveRole;
@@ -95,8 +98,8 @@ public class AthleteContextService {
         User user = userService.getById(userId);
         List<Activity> activities = activityRepository.findByUserId(userId);
         List<Objective> objectives = objectiveRepository.findByUserId(userId);
-        List<DistanceRecord> records = AthleteStatsService
-                .records(bestEffortRepository.findByUserId(userId));
+        List<ActivityBestEffort> efforts = bestEffortRepository.findByUserId(userId);
+        List<DistanceRecord> records = AthleteStatsService.records(efforts);
 
         return new AthleteContextResponse(
                 profile(user, today),
@@ -108,8 +111,9 @@ public class AthleteContextService {
                 recentFeedback(activities),
                 lastRace(objectives, today),
                 upcoming(objectives, today),
+                longRunGuard(activities, today),
                 records,
-                AthleteStatsService.predictions(records));
+                AthleteStatsService.predictions(AthleteStatsService.roadRecords(efforts)));
     }
 
     /** The load dials, condensed from the running stats read model. */
@@ -120,12 +124,76 @@ public class AthleteContextService {
         }
         var currentForm = stats.form().getLast();
         var currentWeek = stats.weeklyEffort().isEmpty() ? null : stats.weeklyEffort().getLast();
+        var currentMonotony = stats.monotony().isEmpty() ? null : stats.monotony().getLast();
         return new AthleteContextResponse.TrainingLoadSummary(
                 currentForm.fitness(), currentForm.fatigue(), currentForm.formScore(),
                 stats.acwr().ratio(), stats.acwr().zone().name(),
                 currentWeek != null ? currentWeek.effort() : 0,
                 currentWeek != null ? currentWeek.bandLow() : null,
-                currentWeek != null ? currentWeek.bandHigh() : null);
+                currentWeek != null ? currentWeek.bandHigh() : null,
+                currentMonotony != null ? currentMonotony.monotony() : null,
+                currentMonotony != null ? currentMonotony.strain() : null,
+                currentMonotony != null && currentMonotony.flagged(),
+                stats.trainingStatus() != null ? stats.trainingStatus().label().name() : null);
+    }
+
+    /**
+     * The RUNSAFE per-run guardrail: the athlete's trailing-30-day longest run
+     * bands the next long one (BJSM 2025, N=5,205). Up to 1.3× that longest is
+     * normal; 1.3–2.0× is elevated (+52% hazard); beyond 2.0× is high (+128%).
+     * The most recent run is classified against the longest run in the 30 days
+     * BEFORE it, so a spike shows even though today's window contains it.
+     * Null until there is a run to measure. ACWR stays the chronic view.
+     */
+    private static AthleteContextResponse.LongRunGuard longRunGuard(List<Activity> activities,
+                                                                    LocalDate today) {
+        Activity longest = activities.stream()
+                .filter(a -> a.getDistanceKm() != null)
+                .filter(a -> !a.getDate().isBefore(today.minusDays(30)) && !a.getDate().isAfter(today))
+                .max(Comparator.comparing(Activity::getDistanceKm))
+                .orElse(null);
+        if (longest == null) {
+            return null;
+        }
+        double longestKm = longest.getDistanceKm().doubleValue();
+
+        Activity lastRun = activities.stream()
+                .filter(a -> a.getDistanceKm() != null && !a.getDate().isAfter(today))
+                .max(Comparator.comparing(Activity::getDate)
+                        .thenComparing(a -> a.getDistanceKm()))
+                .orElse(null);
+        BigDecimal lastKm = null;
+        String lastBand = null;
+        if (lastRun != null) {
+            LocalDate priorFrom = lastRun.getDate().minusDays(30);
+            double priorMax = activities.stream()
+                    .filter(a -> a.getDistanceKm() != null)
+                    .filter(a -> a.getDate().isBefore(lastRun.getDate())
+                            && !a.getDate().isBefore(priorFrom))
+                    .mapToDouble(a -> a.getDistanceKm().doubleValue())
+                    .max().orElse(0);
+            lastKm = lastRun.getDistanceKm().setScale(1, RoundingMode.HALF_UP);
+            lastBand = priorMax > 0 ? band(lastRun.getDistanceKm().doubleValue(), priorMax) : null;
+        }
+
+        return new AthleteContextResponse.LongRunGuard(
+                longest.getDistanceKm().setScale(1, RoundingMode.HALF_UP), longest.getDate(),
+                scale1(longestKm * 1.3), scale1(longestKm * 2.0), lastKm, lastBand);
+    }
+
+    /** Where a run sits against a trailing longest: NORMAL ≤ 1.3× &lt; ELEVATED ≤ 2× &lt; HIGH. */
+    private static String band(double km, double trailingLongest) {
+        if (km > trailingLongest * 2.0) {
+            return "HIGH";
+        }
+        if (km > trailingLongest * 1.3) {
+            return "ELEVATED";
+        }
+        return "NORMAL";
+    }
+
+    private static BigDecimal scale1(double value) {
+        return BigDecimal.valueOf(value).setScale(1, RoundingMode.HALF_UP);
     }
 
     /** The strength side, condensed from the gym stats read model. */

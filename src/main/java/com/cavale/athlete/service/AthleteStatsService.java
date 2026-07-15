@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,6 +70,10 @@ public class AthleteStatsService {
     /** Riegel endurance exponent: t2 = t1 × (d2/d1)^1.06. */
     private static final double RIEGEL_EXPONENT = 1.06;
 
+    /** A run climbing less than this (m of D+ per km) is road-like — the base
+     *  the road predictors use, so trail D+ stops deflating them. */
+    private static final int ROAD_DPLUS_PER_KM_MAX = 20;
+
     private static final int MONTHS_BACK = 12;
     private static final int WEEKS_BACK = 16;
 
@@ -102,14 +107,15 @@ public class AthleteStatsService {
     public AthleteHubResponse getHub(UUID userId, LocalDate today) {
         User user = userService.getById(userId);
         List<Activity> activities = activityRepository.findByUserId(userId);
-        List<DistanceRecord> records = records(bestEffortRepository.findByUserId(userId));
+        List<ActivityBestEffort> efforts = bestEffortRepository.findByUserId(userId);
+        List<DistanceRecord> records = records(efforts);
 
         return new AthleteHubResponse(
                 profile(user),
                 seasons(userId, today),
                 records,
                 longestRuns(activities),
-                predictions(records),
+                predictions(roadRecords(efforts)),
                 new Totals(
                         totals(activities.stream()
                                 .filter(a -> a.getDate().getYear() == today.getYear()).toList()),
@@ -148,9 +154,27 @@ public class AthleteStatsService {
 
     /** Best time per canonical distance (±1 % tolerance on Strava's metres). */
     static List<DistanceRecord> records(List<ActivityBestEffort> efforts) {
+        return records(efforts, effort -> true);
+    }
+
+    /**
+     * Records restricted to road-like efforts — the base the road predictors
+     * (Riegel / Cameron / Vickers-Vertosick) must use. A best-effort split run
+     * on a hilly trail understates road ability, so a split whose PARENT run
+     * climbs {@value #ROAD_DPLUS_PER_KM_MAX} m or more per km is excluded (we
+     * only have the whole run's D+/km, not the split's). The trail time
+     * estimates keep their own hilly-long-run set and are unaffected.
+     */
+    static List<DistanceRecord> roadRecords(List<ActivityBestEffort> efforts) {
+        return records(efforts, AthleteStatsService::isRoadLike);
+    }
+
+    private static List<DistanceRecord> records(List<ActivityBestEffort> efforts,
+                                                Predicate<ActivityBestEffort> filter) {
         List<DistanceRecord> records = new ArrayList<>();
         for (Map.Entry<Integer, String> target : RECORD_DISTANCES.entrySet()) {
             efforts.stream()
+                    .filter(filter)
                     .filter(e -> Math.abs(e.getDistanceM() - target.getKey()) <= target.getKey() * 0.01)
                     .min(Comparator.comparingInt(ActivityBestEffort::getElapsedSec))
                     .ifPresent(best -> records.add(new DistanceRecord(target.getValue(),
@@ -158,6 +182,17 @@ public class AthleteStatsService {
                             best.getActivity().getName())));
         }
         return records;
+    }
+
+    /** A split counts as road-like when its parent run stays under the trail D+/km. */
+    private static boolean isRoadLike(ActivityBestEffort effort) {
+        Activity activity = effort.getActivity();
+        BigDecimal km = activity.getDistanceKm();
+        if (km == null || km.signum() <= 0) {
+            return true; // terrain unknown → keep the record rather than drop it
+        }
+        int elevation = activity.getElevationM() != null ? activity.getElevationM() : 0;
+        return elevation / km.doubleValue() < ROAD_DPLUS_PER_KM_MAX;
     }
 
     /**

@@ -2,6 +2,7 @@ package com.cavale.athlete.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -11,7 +12,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.cavale.athlete.dto.RunningStatsResponse;
+import com.cavale.athlete.dto.RunningStatsResponse.Acwr;
 import com.cavale.athlete.dto.RunningStatsResponse.AcwrZone;
+import com.cavale.athlete.dto.RunningStatsResponse.DayForm;
+import com.cavale.athlete.dto.RunningStatsResponse.TrainingStatusLabel;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
@@ -189,5 +193,93 @@ class RunningStatsServiceTest {
         assertThat(sainteLyon.midSec()).isBetween(30000, 36000);
         assertThat(sainteLyon.lowSec()).isLessThanOrEqualTo(sainteLyon.midSec());
         assertThat(sainteLyon.highSec()).isGreaterThanOrEqualTo(sainteLyon.midSec());
+    }
+
+    /* ── Monotony & strain (Foster) ────────────────────────────────────── */
+
+    @Test
+    void monotony_flagsAGrindingWeekAndSparesAVariedOne() {
+        LocalDate thisMonday = TODAY; // TODAY is a Monday
+        LocalDate prevMonday = thisMonday.minusWeeks(1);
+        List<Activity> activities = new ArrayList<>();
+        // last week: the same easy run every single day → near-flat load, high monotony
+        for (int d = 0; d < 7; d++) {
+            activities.add(run(prevMonday.plusDays(d), 45, "8.0", 100, 140, 45 + d % 2, 10L + d));
+        }
+        // this week: one hard day, one easy day, the rest off → strong contrast
+        activities.add(run(thisMonday, 90, "18.0", 500, 155, 150, 1L));
+        activities.add(run(thisMonday.plusDays(3), 30, "6.0", 50, 130, 30, 2L));
+
+        List<RunningStatsResponse.WeekMonotony> series = stats(activities).monotony();
+        assertThat(series).hasSize(52);
+
+        var grindWeek = series.stream().filter(w -> w.weekStart().equals(prevMonday))
+                .findFirst().orElseThrow();
+        assertThat(grindWeek.monotony()).isGreaterThanOrEqualTo(2.0);
+        assertThat(grindWeek.flagged()).isTrue();
+        assertThat(grindWeek.strain()).isNotNull();
+
+        var variedWeek = series.stream().filter(w -> w.weekStart().equals(thisMonday))
+                .findFirst().orElseThrow();
+        assertThat(variedWeek.monotony()).isLessThan(2.0);
+        assertThat(variedWeek.flagged()).isFalse();
+    }
+
+    @Test
+    void monotony_isNullForARestWeek() {
+        // a lone run five weeks ago — this week has no training at all
+        List<RunningStatsResponse.WeekMonotony> series = stats(List.of(
+                run(TODAY.minusWeeks(5).plusDays(1), 60, "10.0", 100, 140, 50, 1L))).monotony();
+
+        assertThat(series.getLast().weekStart()).isEqualTo(TODAY);
+        assertThat(series.getLast().monotony()).isNull();
+        assertThat(series.getLast().strain()).isNull();
+        assertThat(series.getLast().flagged()).isFalse();
+    }
+
+    /* ── Training-status verdict ────────────────────────────────────────── */
+
+    @Test
+    void trainingStatus_ladderIsDeterministic() {
+        assertThat(RunningStatsService.trainingStatus(form(100, 110, 5),
+                acwr(1.0, AcwrZone.OPTIMAL)).label()).isEqualTo(TrainingStatusLabel.PRODUCTIVE);
+        assertThat(RunningStatsService.trainingStatus(form(100, 100, 5),
+                acwr(1.6, AcwrZone.DANGER)).label()).isEqualTo(TrainingStatusLabel.OVERREACHING);
+        assertThat(RunningStatsService.trainingStatus(form(100, 100, -5),
+                acwr(1.35, AcwrZone.CAUTION)).label()).isEqualTo(TrainingStatusLabel.OVERREACHING);
+        assertThat(RunningStatsService.trainingStatus(form(100, 90, 10),
+                acwr(0.6, AcwrZone.UNDER)).label()).isEqualTo(TrainingStatusLabel.RECOVERY);
+        assertThat(RunningStatsService.trainingStatus(form(100, 90, -5),
+                acwr(0.6, AcwrZone.UNDER)).label()).isEqualTo(TrainingStatusLabel.DETRAINING);
+        assertThat(RunningStatsService.trainingStatus(form(100, 100, -2),
+                acwr(1.0, AcwrZone.OPTIMAL)).label()).isEqualTo(TrainingStatusLabel.MAINTAINING);
+    }
+
+    @Test
+    void trainingStatus_flagsOverreachingFromTheRealCurves() {
+        RunningStatsResponse stats = stats(List.of(
+                run(TODAY.minusDays(25), 60, "10.0", 100, 150, 50, 1L),
+                run(TODAY.minusDays(18), 60, "10.0", 100, 150, 50, 2L),
+                run(TODAY.minusDays(11), 60, "10.0", 100, 150, 50, 3L),
+                run(TODAY.minusDays(2), 120, "24.0", 600, 155, 200, 4L),
+                run(TODAY.minusDays(1), 90, "16.0", 500, 155, 150, 5L)));
+
+        assertThat(stats.trainingStatus().label()).isEqualTo(TrainingStatusLabel.OVERREACHING);
+        assertThat(stats.trainingStatus().acwr()).isEqualTo(stats.acwr().ratio());
+    }
+
+    /** A 30-day form window with a controlled fitness trend and current form. */
+    private static List<DayForm> form(double pastFitness, double nowFitness, double nowForm) {
+        List<DayForm> series = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            series.add(new DayForm(TODAY.minusDays(29L - i), 0, 0, 0));
+        }
+        series.set(1, new DayForm(TODAY.minusDays(28), pastFitness, 0, 0));
+        series.set(29, new DayForm(TODAY, nowFitness, nowFitness - nowForm, nowForm));
+        return series;
+    }
+
+    private static Acwr acwr(double ratio, AcwrZone zone) {
+        return new Acwr(ratio, 0, 0, zone);
     }
 }

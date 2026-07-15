@@ -31,6 +31,7 @@ public record AthleteContextResponse(
         List<SessionFeedback> recentFeedback,
         LastRace lastRace,
         List<UpcomingObjective> upcoming,
+        LongRunGuard longRunGuard,
         List<DistanceRecord> records,
         List<Prediction> predictions) {
 
@@ -65,13 +66,30 @@ public record AthleteContextResponse(
 
     /**
      * The load dials a coach reads first: Banister fitness/fatigue/form,
-     * the acute:chronic ratio (sweet spot 0.8–1.3, danger above 1.5) and
-     * this week's effort against its progressive target band.
+     * the acute:chronic ratio (sweet spot 0.8–1.3, danger above 1.5),
+     * this week's effort against its progressive target band, Foster's
+     * monotony/strain (monotonyFlag = monotony ≥ 2.0, an overtraining
+     * early-warning) and the single fused training-status verdict.
      */
     public record TrainingLoadSummary(double fitness, double fatigue, double formScore,
                                       double acwr, String acwrZone,
                                       int currentWeekEffort, Integer weekBandLow,
-                                      Integer weekBandHigh) {
+                                      Integer weekBandHigh,
+                                      Double monotony, Integer strain, boolean monotonyFlag,
+                                      String trainingStatus) {
+    }
+
+    /**
+     * The per-run injury guardrail (RUNSAFE): the next long run measured
+     * against the athlete's trailing-30-day longest. A run up to
+     * {@code elevatedFromKm} (1.3× the longest) is normal; from there to
+     * {@code highFromKm} (2.0×) it is elevated risk (+52% hazard, BJSM 2025);
+     * beyond it, high (+128%). lastRunKm/lastRunBand classify the most recent
+     * run. This guards individual long runs; ACWR remains the chronic view.
+     */
+    public record LongRunGuard(BigDecimal recentLongestKm, LocalDate longestOn,
+                               BigDecimal elevatedFromKm, BigDecimal highFromKm,
+                               BigDecimal lastRunKm, String lastRunBand) {
     }
 
     /** The strength side of the load: weekly tonnage and fresh records. */

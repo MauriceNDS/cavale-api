@@ -7,7 +7,8 @@ import java.util.List;
 /**
  * The deep running-statistics read model: training load (Banister),
  * weekly effort with its target band, ACWR, trail volume, aerobic
- * efficiency, duration checkpoints and race predictions.
+ * efficiency, duration checkpoints, race predictions, Foster
+ * monotony/strain and the fused training-status verdict.
  */
 public record RunningStatsResponse(
         List<DayForm> form,
@@ -17,7 +18,9 @@ public record RunningStatsResponse(
         List<MonthEfficiency> efficiency,
         List<DurationCheckpoint> checkpoints,
         List<RoadPrediction> roadPredictions,
-        List<TrailEstimate> trailEstimates) {
+        List<TrailEstimate> trailEstimates,
+        List<WeekMonotony> monotony,
+        TrainingStatus trainingStatus) {
 
     /** One day of the impulse-response model (fitness 42 d, fatigue 7 d). */
     public record DayForm(LocalDate date, double fitness, double fatigue, double formScore) {
@@ -61,5 +64,26 @@ public record RunningStatsResponse(
     public record TrailEstimate(String objectiveName, LocalDate date, BigDecimal distanceKm,
                                 Integer elevationM, BigDecimal kmEffort, Integer lowSec,
                                 Integer midSec, Integer highSec, int sampleRuns) {
+    }
+
+    /**
+     * One ISO week of Foster's load-distribution metrics: monotony =
+     * mean ÷ SD of the seven daily loads, strain = weekly load × monotony.
+     * monotony/strain are null for a week with no training (or no day-to-day
+     * variance); flagged marks monotony ≥ 2.0 — the illness / overtraining
+     * early-warning even Garmin skips.
+     */
+    public record WeekMonotony(LocalDate weekStart, Double monotony, Integer strain,
+                               boolean flagged) {
+    }
+
+    public enum TrainingStatusLabel { PRODUCTIVE, MAINTAINING, OVERREACHING, RECOVERY, DETRAINING }
+
+    /**
+     * One plain-language verdict fusing the fitness trend, the ACWR and the
+     * current form, with the numbers that drove it so the UI can explain it.
+     */
+    public record TrainingStatus(TrainingStatusLabel label, double fitnessTrendPct,
+                                 double form, double acwr) {
     }
 }

@@ -97,6 +97,32 @@ class AthleteStatsServiceTest {
         assertThat(fiveK.date()).isEqualTo(LocalDate.of(2026, 3, 2));
     }
 
+    @Test
+    void roadRecords_excludeHillyEffortsSoTrailDoesNotDeflateRoadEstimates() {
+        // a quick 10k split run on 700 m of D+, and a slower one on flat road
+        Activity hilly = run(LocalDate.of(2026, 4, 5), 45, "10.00", 700, 150, 90, null); // 70 m/km → trail
+        Activity flat = run(LocalDate.of(2026, 3, 2), 48, "10.00", 60, 150, 40, null);   // 6 m/km → road
+        List<ActivityBestEffort> efforts = List.of(
+                effort(hilly, "10k", 10000, 2700),
+                effort(flat, "10k", 10000, 2880));
+
+        // the records wall keeps the athlete's actual best — the hilly one
+        assertThat(AthleteStatsService.records(efforts))
+                .extracting(DistanceRecord::seconds).containsExactly(2700);
+        // but the road predictors ignore the hilly split and fall back to the flat one
+        assertThat(AthleteStatsService.roadRecords(efforts))
+                .extracting(DistanceRecord::seconds).containsExactly(2880);
+    }
+
+    @Test
+    void roadRecords_emptyWhenEverySplitIsTrail() {
+        Activity hilly = run(LocalDate.of(2026, 4, 5), 60, "10.00", 900, 150, 90, null);
+        List<ActivityBestEffort> efforts = List.of(effort(hilly, "10k", 10000, 3000));
+
+        assertThat(AthleteStatsService.roadRecords(efforts)).isEmpty();
+        assertThat(AthleteStatsService.records(efforts)).hasSize(1); // a record is still a record
+    }
+
     /* ── Predictions (Riegel) ──────────────────────────────────────────── */
 
     @Test

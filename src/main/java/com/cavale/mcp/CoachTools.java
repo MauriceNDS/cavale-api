@@ -83,6 +83,12 @@ public class CoachTools {
             of load with pain flags, recent perceived-effort feedback, the last \
             race with days since (less than 28 days ago => start with recovery \
             weeks), upcoming objectives, distance records and race-time estimates. \
+            trainingLoad also carries the fused trainingStatus verdict \
+            (PRODUCTIVE/MAINTAINING/OVERREACHING/RECOVERY/DETRAINING), Foster \
+            monotony/strain with monotonyFlag (>=2.0 => vary hard vs easy days, \
+            overtraining risk). longRunGuard bands the next long run against the \
+            trailing-30-day longest: keep it under elevatedFromKm (normal), \
+            highFromKm is already high injury risk — do not prescribe beyond it. \
             profile.preferredLanguage ('fr'|'en') is the language to write ALL \
             generated content in: plan names, focus, titles, details, notes.""")
     public AthleteContextResponse getAthleteContext() {
