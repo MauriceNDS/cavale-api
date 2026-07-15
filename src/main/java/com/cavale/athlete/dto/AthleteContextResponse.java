@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.cavale.athlete.dto.AthleteHubResponse.DistanceRecord;
 import com.cavale.athlete.dto.AthleteHubResponse.Prediction;
+import com.cavale.athlete.dto.AthleteHubResponse.TrailIndex;
 import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.ObjectiveType;
 import com.cavale.training.domain.PerceivedEffort;
@@ -32,6 +33,8 @@ public record AthleteContextResponse(
         LastRace lastRace,
         List<UpcomingObjective> upcoming,
         LongRunGuard longRunGuard,
+        AerobicProfile aerobic,
+        TrailIndex trailIndex,
         List<DistanceRecord> records,
         List<Prediction> predictions) {
 
@@ -90,6 +93,18 @@ public record AthleteContextResponse(
     public record LongRunGuard(BigDecimal recentLongestKm, LocalDate longestOn,
                                BigDecimal elevatedFromKm, BigDecimal highFromKm,
                                BigDecimal lastRunKm, String lastRunBand) {
+    }
+
+    /**
+     * The deeper aerobic signals a coach reads: the current effective VO2max
+     * estimate (ml/kg/min, from road-like runs' HR↔pace), critical pace
+     * (sec/km, the highest sustainable pace from the best-effort curve), and
+     * the recent aerobic decoupling on long runs (percent — under ~5 % means
+     * durable, higher means the athlete fades). Any field is null when the
+     * data to compute it is missing.
+     */
+    public record AerobicProfile(Integer effectiveVo2max, Integer criticalPaceSecPerKm,
+                                 Double durabilityDecoupling) {
     }
 
     /** The strength side of the load: weekly tonnage and fresh records. */

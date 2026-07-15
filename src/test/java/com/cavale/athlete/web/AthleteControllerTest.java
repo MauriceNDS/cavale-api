@@ -65,6 +65,7 @@ class AthleteControllerTest {
                 List.of(new DistanceRecord("10 km", 10000, 2700, LocalDate.of(2026, 3, 2), "Course")),
                 new LongestRuns(null, null),
                 List.of(),
+                null,
                 new Totals(new PeriodTotals(1, new BigDecimal("10.0"), 60, 100),
                         new PeriodTotals(2, new BigDecimal("30.0"), 150, 800)),
                 List.of(),

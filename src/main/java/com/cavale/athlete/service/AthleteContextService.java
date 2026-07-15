@@ -21,6 +21,7 @@ import com.cavale.athlete.dto.AthleteContextResponse.Status;
 import com.cavale.athlete.dto.AthleteContextResponse.UpcomingObjective;
 import com.cavale.athlete.dto.AthleteContextResponse.WeekLoad;
 import com.cavale.athlete.dto.AthleteHubResponse.DistanceRecord;
+import com.cavale.athlete.dto.RunningStatsResponse;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivityBestEffort;
 import com.cavale.training.domain.Discipline;
@@ -100,25 +101,27 @@ public class AthleteContextService {
         List<Objective> objectives = objectiveRepository.findByUserId(userId);
         List<ActivityBestEffort> efforts = bestEffortRepository.findByUserId(userId);
         List<DistanceRecord> records = AthleteStatsService.records(efforts);
+        RunningStatsResponse stats = runningStatsService.getStats(userId, today);
 
         return new AthleteContextResponse(
                 profile(user, today),
                 status(user, today),
                 season(userId, today),
-                trainingLoad(userId, today),
+                trainingLoad(stats),
                 recentWeeks(userId, activities, today),
                 gymLoad(userId, today),
                 recentFeedback(activities),
                 lastRace(objectives, today),
                 upcoming(objectives, today),
                 longRunGuard(activities, today),
+                aerobic(stats),
+                AthleteStatsService.trailIndex(activities, today),
                 records,
                 AthleteStatsService.predictions(AthleteStatsService.roadRecords(efforts)));
     }
 
     /** The load dials, condensed from the running stats read model. */
-    private AthleteContextResponse.TrainingLoadSummary trainingLoad(UUID userId, LocalDate today) {
-        var stats = runningStatsService.getStats(userId, today);
+    private static AthleteContextResponse.TrainingLoadSummary trainingLoad(RunningStatsResponse stats) {
         if (stats.form().isEmpty()) {
             return null;
         }
@@ -135,6 +138,23 @@ public class AthleteContextService {
                 currentMonotony != null ? currentMonotony.strain() : null,
                 currentMonotony != null && currentMonotony.flagged(),
                 stats.trainingStatus() != null ? stats.trainingStatus().label().name() : null);
+    }
+
+    /** The deeper aerobic signals (VO2max, critical pace, durability), condensed. */
+    private static AthleteContextResponse.AerobicProfile aerobic(RunningStatsResponse stats) {
+        Integer vo2max = stats.vo2maxTrend().stream()
+                .map(RunningStatsResponse.Vo2maxPoint::vo2max)
+                .filter(value -> value != null)
+                .reduce((first, second) -> second) // the latest month with an estimate
+                .orElse(null);
+        Integer criticalPace = stats.criticalPace() != null
+                ? stats.criticalPace().criticalPaceSecPerKm() : null;
+        Double durability = stats.durability().isEmpty() ? null
+                : stats.durability().getLast().decouplingPct();
+        if (vo2max == null && criticalPace == null && durability == null) {
+            return null;
+        }
+        return new AthleteContextResponse.AerobicProfile(vo2max, criticalPace, durability);
     }
 
     /**

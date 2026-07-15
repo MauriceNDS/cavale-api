@@ -89,6 +89,11 @@ public class CoachTools {
             overtraining risk). longRunGuard bands the next long run against the \
             trailing-30-day longest: keep it under elevatedFromKm (normal), \
             highFromKm is already high injury risk — do not prescribe beyond it. \
+            aerobic gives the effective VO2max, critical pace (sec/km, the \
+            highest sustainable pace) and recent long-run durability decoupling \
+            (under ~5% is durable, higher means the athlete fades late). \
+            trailIndex is the athlete's personal trail performance index on the \
+            km-effort scale — a number that should climb as they get fitter. \
             profile.preferredLanguage ('fr'|'en') is the language to write ALL \
             generated content in: plan names, focus, titles, details, notes.""")
     public AthleteContextResponse getAthleteContext() {

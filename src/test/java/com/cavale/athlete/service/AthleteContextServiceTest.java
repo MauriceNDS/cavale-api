@@ -91,7 +91,8 @@ class AthleteContextServiceTest {
                                 com.cavale.athlete.dto.RunningStatsResponse.AcwrZone.UNDER),
                         java.util.List.of(), java.util.List.of(), java.util.List.of(),
                         java.util.List.of(), java.util.List.of(),
-                        java.util.List.of(), null));
+                        java.util.List.of(), null,
+                        java.util.List.of(), null, java.util.List.of()));
         return new AthleteContextService(userService, planRepository, weekRepository,
                 sessionRepository, activityRepository, bestEffortRepository, objectiveRepository,
                 gymStatsService, workoutLogRepository, runningStatsService);

@@ -27,14 +27,20 @@ import com.cavale.athlete.dto.RunningStatsResponse.RoadPrediction;
 import com.cavale.athlete.dto.RunningStatsResponse.TrailEstimate;
 import com.cavale.athlete.dto.RunningStatsResponse.TrainingStatus;
 import com.cavale.athlete.dto.RunningStatsResponse.TrainingStatusLabel;
+import com.cavale.athlete.dto.RunningStatsResponse.CriticalPace;
+import com.cavale.athlete.dto.RunningStatsResponse.DurabilityPoint;
+import com.cavale.athlete.dto.RunningStatsResponse.Vo2maxPoint;
 import com.cavale.athlete.dto.RunningStatsResponse.WeekEffort;
 import com.cavale.athlete.dto.RunningStatsResponse.WeekMonotony;
 import com.cavale.athlete.dto.RunningStatsResponse.WeekVolume;
 import com.cavale.training.domain.Activity;
+import com.cavale.training.domain.ActivityBestEffort;
 import com.cavale.training.domain.Objective;
 import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.ObjectiveRepository;
+import com.cavale.user.domain.User;
+import com.cavale.user.service.UserService;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -74,6 +80,17 @@ public class RunningStatsService {
     private static final double TRAIL_K = 1.07;
     /** Runs steeper than this (m of D+ per km) count as trail for pacing. */
     private static final int TRAIL_DPLUS_PER_KM = 25;
+    /** A run climbing less than this (m of D+ per km) is flat enough for
+     *  Daniels' VO2 cost to hold, so grade doesn't distort the estimate. */
+    private static final int ROAD_DPLUS_PER_KM_MAX = 20;
+    private static final int VO2MAX_MONTHS = 12;
+    private static final int VO2MAX_MIN_MIN = 20;           // a steady effort, not a sprint
+    private static final double VO2MAX_MIN_INTENSITY = 0.5; // ignore easy recovery shuffles
+    /** VO2 at rest (ml/kg/min) — the floor the VO2-reserve scaling builds from. */
+    private static final double VO2_REST = 3.5;
+    private static final int CRITICAL_PACE_MIN_POINTS = 3;
+    private static final int DURABILITY_MONTHS = 12;
+    private static final int DURABILITY_MIN_MIN = 90;       // long runs only
 
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
@@ -89,13 +106,16 @@ public class RunningStatsService {
     private final ActivityRepository activityRepository;
     private final ActivityBestEffortRepository bestEffortRepository;
     private final ObjectiveRepository objectiveRepository;
+    private final UserService userService;
 
     public RunningStatsService(ActivityRepository activityRepository,
                                ActivityBestEffortRepository bestEffortRepository,
-                               ObjectiveRepository objectiveRepository) {
+                               ObjectiveRepository objectiveRepository,
+                               UserService userService) {
         this.activityRepository = activityRepository;
         this.bestEffortRepository = bestEffortRepository;
         this.objectiveRepository = objectiveRepository;
+        this.userService = userService;
     }
 
     @Transactional(readOnly = true)
@@ -108,9 +128,9 @@ public class RunningStatsService {
         List<Activity> activities = activityRepository.findByUserId(userId).stream()
                 .sorted(Comparator.comparing(Activity::getDate))
                 .toList();
-        List<DistanceRecord> roadRecords = AthleteStatsService
-                .roadRecords(bestEffortRepository.findByUserId(userId));
+        List<ActivityBestEffort> efforts = bestEffortRepository.findByUserId(userId);
         List<Objective> objectives = objectiveRepository.findByUserId(userId);
+        User user = userService.getById(userId);
 
         double weeklyKm = recentWeeklyKm(activities, today);
         List<DayForm> form = form(activities, today);
@@ -122,10 +142,13 @@ public class RunningStatsService {
                 weeklyVolume(activities, today),
                 efficiency(activities, today),
                 checkpoints(activities),
-                roadPredictions(roadRecords, weeklyKm),
+                roadPredictions(AthleteStatsService.roadRecords(efforts), weeklyKm),
                 trailEstimates(activities, objectives, today),
                 monotony(activities, today),
-                trainingStatus(form, acwr));
+                trainingStatus(form, acwr),
+                vo2maxTrend(activities, user, today),
+                criticalPace(efforts),
+                durability(activities, today));
     }
 
     /* ── Training load (Banister / Strava F&F) ─────────────────────────── */
@@ -311,6 +334,194 @@ public class RunningStatsService {
             label = TrainingStatusLabel.MAINTAINING;
         }
         return new TrainingStatus(label, trendPct, round1(formScore), ratio);
+    }
+
+    /* ── Effective VO2max & critical pace (P5) ─────────────────────────── */
+
+    /**
+     * A {@value #VO2MAX_MONTHS}-month effective-VO2max trend. For each road-like
+     * run with heart rate, Daniels' oxygen cost at the run's average speed is
+     * scaled up by the fraction of heart-rate reserve it used — %HRR ≈ %VO2R,
+     * the standard ACSM relationship — into an estimated VO2max; each month
+     * reports the median of its runs. Needs the athlete's max HR (resting HR
+     * sharpens it); without max HR the trend is empty.
+     */
+    private static List<Vo2maxPoint> vo2maxTrend(List<Activity> activities, User user,
+                                                 LocalDate today) {
+        Integer maxHr = user != null ? user.getMaxHr() : null;
+        if (maxHr == null || maxHr <= 0) {
+            return List.of();
+        }
+        Integer restingHr = user.getRestingHr();
+        Map<YearMonth, List<Double>> byMonth = new LinkedHashMap<>();
+        YearMonth current = YearMonth.from(today);
+        for (int i = VO2MAX_MONTHS - 1; i >= 0; i--) {
+            byMonth.put(current.minusMonths(i), new ArrayList<>());
+        }
+        for (Activity activity : activities) {
+            Double estimate = effectiveVo2max(activity, maxHr, restingHr);
+            if (estimate == null) {
+                continue;
+            }
+            List<Double> bucket = byMonth.get(YearMonth.from(activity.getDate()));
+            if (bucket != null) {
+                bucket.add(estimate);
+            }
+        }
+        return byMonth.entrySet().stream()
+                .map(entry -> entry.getValue().isEmpty()
+                        ? new Vo2maxPoint(entry.getKey().toString(), null, 0)
+                        : new Vo2maxPoint(entry.getKey().toString(),
+                                (int) Math.round(median(entry.getValue())), entry.getValue().size()))
+                .toList();
+    }
+
+    /** Estimated VO2max from one steady road-like run's speed and HR, or null. */
+    static Double effectiveVo2max(Activity activity, int maxHr, Integer restingHr) {
+        if (activity.getAvgHr() == null || activity.getAvgHr() <= 0 || activity.getDistanceKm() == null
+                || activity.getDistanceKm().signum() <= 0 || activity.getDurationMin() < VO2MAX_MIN_MIN) {
+            return null;
+        }
+        if (activity.getElevationM() != null
+                && activity.getElevationM() / activity.getDistanceKm().doubleValue() >= ROAD_DPLUS_PER_KM_MAX) {
+            return null; // too hilly for a flat-ground VO2 cost
+        }
+        double vMetersPerMin = activity.getDistanceKm().doubleValue() * 1000 / activity.getDurationMin();
+        // Daniels' running oxygen cost (ml/kg/min) at velocity v (m/min)
+        double vo2 = -4.60 + 0.182258 * vMetersPerMin + 0.000104 * vMetersPerMin * vMetersPerMin;
+        boolean hasReserve = restingHr != null && restingHr > 0 && maxHr > restingHr;
+        double fraction = hasReserve
+                ? (activity.getAvgHr() - (double) restingHr) / (maxHr - restingHr) // %HRR ≈ %VO2R
+                : (double) activity.getAvgHr() / maxHr;                            // fallback %HRmax
+        if (fraction < VO2MAX_MIN_INTENSITY || fraction > 1.0) {
+            return null;
+        }
+        double vo2max = hasReserve
+                ? VO2_REST + (vo2 - VO2_REST) / fraction // VO2-reserve scaling from the resting floor
+                : vo2 / fraction;                        // %HRmax ≈ %VO2max
+        return vo2max > 0 && vo2max < 100 ? vo2max : null;
+    }
+
+    /**
+     * Critical speed from the best-effort curve. Fits distance = CS·t + D' by
+     * least squares over the fastest road-like effort at each distance: the
+     * slope is the critical speed (the highest sustainable pace), the intercept
+     * the anaerobic distance reserve D'. Needs at least
+     * {@value #CRITICAL_PACE_MIN_POINTS} distinct distances; null otherwise.
+     */
+    private static CriticalPace criticalPace(List<ActivityBestEffort> efforts) {
+        Map<Integer, Integer> bestByDistance = new HashMap<>();
+        for (ActivityBestEffort effort : efforts) {
+            if (AthleteStatsService.isRoadLike(effort)) {
+                bestByDistance.merge(effort.getDistanceM(), effort.getElapsedSec(), Math::min);
+            }
+        }
+        if (bestByDistance.size() < CRITICAL_PACE_MIN_POINTS) {
+            return null;
+        }
+        int n = bestByDistance.size();
+        double sumT = 0, sumD = 0, sumTT = 0, sumTD = 0;
+        for (Map.Entry<Integer, Integer> entry : bestByDistance.entrySet()) {
+            double t = entry.getValue();
+            double d = entry.getKey();
+            sumT += t;
+            sumD += d;
+            sumTT += t * t;
+            sumTD += t * d;
+        }
+        double denom = n * sumTT - sumT * sumT;
+        if (denom <= 0) {
+            return null;
+        }
+        double criticalSpeed = (n * sumTD - sumT * sumD) / denom; // slope, m/s
+        double dPrime = (sumD - criticalSpeed * sumT) / n;        // intercept, m
+        if (criticalSpeed <= 0) {
+            return null;
+        }
+        double meanD = sumD / n;
+        double ssTot = 0, ssRes = 0;
+        for (Map.Entry<Integer, Integer> entry : bestByDistance.entrySet()) {
+            double d = entry.getKey();
+            double predicted = criticalSpeed * entry.getValue() + dPrime;
+            ssTot += (d - meanD) * (d - meanD);
+            ssRes += (d - predicted) * (d - predicted);
+        }
+        double rSquared = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+        return new CriticalPace((int) Math.round(1000 / criticalSpeed),
+                Math.round(criticalSpeed * 100) / 100.0, (int) Math.round(dPrime), n,
+                Math.round(rSquared * 100) / 100.0);
+    }
+
+    /* ── Aerobic durability / late-run fade (P6) ───────────────────────── */
+
+    /**
+     * Aerobic decoupling on the long runs of the last {@value #DURABILITY_MONTHS}
+     * months, oldest first. Each point is how much efficiency (speed ÷ HR)
+     * dropped from the first half to the second; positive means the athlete
+     * faded, under ~5 % is durable.
+     */
+    private static List<DurabilityPoint> durability(List<Activity> activities, LocalDate today) {
+        LocalDate from = today.minusMonths(DURABILITY_MONTHS);
+        return activities.stream()
+                .filter(a -> !a.getDate().isBefore(from) && !a.getDate().isAfter(today))
+                .filter(a -> a.getDurationMin() >= DURABILITY_MIN_MIN && a.getStreamsJson() != null)
+                .sorted(Comparator.comparing(Activity::getDate))
+                .map(a -> {
+                    Double decoupling = decoupling(a.getStreamsJson());
+                    return decoupling == null ? null : new DurabilityPoint(a.getDate(), decoupling,
+                            a.getDistanceKm() != null
+                                    ? a.getDistanceKm().setScale(1, RoundingMode.HALF_UP) : null,
+                            a.getDurationMin());
+                })
+                .filter(point -> point != null)
+                .toList();
+    }
+
+    /** First-half vs second-half efficiency (speed ÷ HR) drop, in percent, or null. */
+    static Double decoupling(String streamsJson) {
+        try {
+            JsonNode root = MAPPER.readTree(streamsJson);
+            JsonNode time = root.path("time");
+            JsonNode distance = root.path("distance");
+            JsonNode hr = root.path("hr");
+            int n = time.size();
+            if (!time.isArray() || !distance.isArray() || !hr.isArray()
+                    || n < 4 || distance.size() != n || hr.size() != n) {
+                return null;
+            }
+            double midTime = time.get(n - 1).asDouble() / 2;
+            int split = 1;
+            while (split < n - 1 && time.get(split).asDouble() < midTime) {
+                split++;
+            }
+            double t1 = time.get(split).asDouble() - time.get(0).asDouble();
+            double t2 = time.get(n - 1).asDouble() - time.get(split).asDouble();
+            double d1 = distance.get(split).asDouble() - distance.get(0).asDouble();
+            double d2 = distance.get(n - 1).asDouble() - distance.get(split).asDouble();
+            double hr1 = meanHr(hr, 0, split + 1);
+            double hr2 = meanHr(hr, split, n);
+            if (t1 <= 0 || t2 <= 0 || d1 <= 0 || d2 <= 0 || hr1 <= 0 || hr2 <= 0) {
+                return null;
+            }
+            double eff1 = (d1 / t1) / hr1;
+            double eff2 = (d2 / t2) / hr2;
+            return eff1 <= 0 ? null : Math.round((eff1 - eff2) / eff1 * 1000) / 10.0;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static double meanHr(JsonNode hr, int fromInclusive, int toExclusive) {
+        double sum = 0;
+        int count = 0;
+        for (int i = fromInclusive; i < toExclusive && i < hr.size(); i++) {
+            double value = hr.get(i).asDouble();
+            if (value > 0) {
+                sum += value;
+                count++;
+            }
+        }
+        return count > 0 ? sum / count : 0;
     }
 
     /* ── Volume & efficiency ───────────────────────────────────────────── */

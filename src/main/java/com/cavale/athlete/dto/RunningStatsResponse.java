@@ -20,7 +20,10 @@ public record RunningStatsResponse(
         List<RoadPrediction> roadPredictions,
         List<TrailEstimate> trailEstimates,
         List<WeekMonotony> monotony,
-        TrainingStatus trainingStatus) {
+        TrainingStatus trainingStatus,
+        List<Vo2maxPoint> vo2maxTrend,
+        CriticalPace criticalPace,
+        List<DurabilityPoint> durability) {
 
     /** One day of the impulse-response model (fitness 42 d, fatigue 7 d). */
     public record DayForm(LocalDate date, double fitness, double fatigue, double formScore) {
@@ -85,5 +88,33 @@ public record RunningStatsResponse(
      */
     public record TrainingStatus(TrainingStatusLabel label, double fitnessTrendPct,
                                  double form, double acwr) {
+    }
+
+    /**
+     * One month's effective VO2max estimate (ml/kg/min): the median over that
+     * month's road-like runs of each run's VO2 demand scaled by the fraction
+     * of heart-rate reserve it used (%HRR ≈ %VO2R). Null months have no
+     * qualifying HR run.
+     */
+    public record Vo2maxPoint(String month, Integer vo2max, int runs) {
+    }
+
+    /**
+     * The critical-speed fit from the best-effort curve (distance = CS·t + D'):
+     * the highest sustainable pace (sec/km), the critical speed (m/s), the
+     * anaerobic distance reserve D' (m), how many best-effort points fed the
+     * regression and its R² fit quality.
+     */
+    public record CriticalPace(int criticalPaceSecPerKm, double criticalSpeedMps,
+                               int anaerobicCapacityM, int samples, double fitQuality) {
+    }
+
+    /**
+     * Aerobic decoupling on one long run: the percent drop in efficiency
+     * (speed ÷ heart rate) from the first half to the second. Under ~5 % is
+     * durable; more means the athlete fades late — what decides ultra outcomes.
+     */
+    public record DurabilityPoint(LocalDate date, double decouplingPct, BigDecimal distanceKm,
+                                  int durationMin) {
     }
 }

@@ -16,6 +16,7 @@ public record AthleteHubResponse(
         List<DistanceRecord> records,
         LongestRuns longestRuns,
         List<Prediction> predictions,
+        TrailIndex trailIndex,
         Totals totals,
         List<MonthlyStat> monthly,
         List<WeeklyEffort> weeklyEffort,
@@ -67,6 +68,19 @@ public record AthleteHubResponse(
             int seconds,
             int paceSecPerKm,
             String basedOn) {
+    }
+
+    /**
+     * The personal trail performance index (ITRA/UTMB-style): a single
+     * climbing number from the athlete's best trail efforts over the last
+     * 36 months on the km-effort scale, recent efforts weighted higher.
+     */
+    public record TrailIndex(
+            int index,
+            int sampleEfforts,
+            String bestEffortName,
+            LocalDate bestEffortDate,
+            BigDecimal bestKmEffort) {
     }
 
     public record PeriodTotals(int runs, BigDecimal distanceKm, int durationMin, int elevationM) {

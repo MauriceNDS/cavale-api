@@ -16,6 +16,7 @@ import com.cavale.athlete.dto.AthleteHubResponse.DistanceRecord;
 import com.cavale.athlete.dto.AthleteHubResponse.MonthlyStat;
 import com.cavale.athlete.dto.AthleteHubResponse.Prediction;
 import com.cavale.athlete.dto.AthleteHubResponse.Timeframe;
+import com.cavale.athlete.dto.AthleteHubResponse.TrailIndex;
 import com.cavale.athlete.dto.AthleteHubResponse.WeeklyEffort;
 import com.cavale.integration.strava.StravaConnectionRepository;
 import com.cavale.training.domain.Activity;
@@ -121,6 +122,33 @@ class AthleteStatsServiceTest {
 
         assertThat(AthleteStatsService.roadRecords(efforts)).isEmpty();
         assertThat(AthleteStatsService.records(efforts)).hasSize(1); // a record is still a record
+    }
+
+    /* ── Trail performance index (P7) ──────────────────────────────────── */
+
+    @Test
+    void trailIndex_rewardsBiggerFasterTrailEffortsRecencyWeighted() {
+        List<Activity> activities = List.of(
+                run(TODAY.minusMonths(2), 90, "15.00", 800, 145, 60, null),   // 23 km-effort
+                run(TODAY.minusMonths(6), 240, "42.00", 2400, 150, 200, null), // 66 km-effort — best
+                run(TODAY.minusMonths(20), 120, "20.00", 1000, 148, 90, null), // 30 km-effort
+                run(TODAY.minusDays(5), 30, "6.00", 400, 140, 30, null));      // too short/short → skipped
+
+        TrailIndex index = AthleteStatsService.trailIndex(activities, TODAY);
+
+        assertThat(index).isNotNull();
+        assertThat(index.sampleEfforts()).isEqualTo(3);
+        assertThat(index.index()).isPositive();
+        // the 42 km / 2400 m D+ run scores highest → it is the reference effort
+        assertThat(index.bestKmEffort()).isEqualByComparingTo("66"); // 42 + 2400/100
+        assertThat(index.bestEffortDate()).isEqualTo(TODAY.minusMonths(6));
+    }
+
+    @Test
+    void trailIndex_nullWithoutEnoughTrailEfforts() {
+        // a flat road run is not a trail effort — under the minimum
+        assertThat(AthleteStatsService.trailIndex(List.of(
+                run(TODAY.minusDays(3), 90, "15.00", 100, 145, 60, null)), TODAY)).isNull();
     }
 
     /* ── Predictions (Riegel) ──────────────────────────────────────────── */

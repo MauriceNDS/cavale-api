@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -29,6 +30,7 @@ import com.cavale.athlete.dto.AthleteHubResponse.Season;
 import com.cavale.athlete.dto.AthleteHubResponse.SyncState;
 import com.cavale.athlete.dto.AthleteHubResponse.Timeframe;
 import com.cavale.athlete.dto.AthleteHubResponse.Totals;
+import com.cavale.athlete.dto.AthleteHubResponse.TrailIndex;
 import com.cavale.athlete.dto.AthleteHubResponse.WeeklyEffort;
 import com.cavale.integration.strava.StravaConnectionRepository;
 import com.cavale.training.domain.Activity;
@@ -74,6 +76,17 @@ public class AthleteStatsService {
      *  the road predictors use, so trail D+ stops deflating them. */
     private static final int ROAD_DPLUS_PER_KM_MAX = 20;
 
+    /* ── Personal trail performance index (P7) ─────────────────────────── */
+    private static final int TRAIL_INDEX_MONTHS = 36;
+    private static final int TRAIL_INDEX_BEST_N = 5;
+    private static final int TRAIL_INDEX_MIN_EFFORTS = 3;
+    /** A run climbing this much (m of D+ per km) or more counts as trail. */
+    private static final int TRAIL_DPLUS_PER_KM = 25;
+    private static final double TRAIL_INDEX_MIN_KM = 8;
+    private static final int TRAIL_INDEX_MIN_MIN = 45;
+    /** Recency half-weight horizon: an effort N months old weighs e^(-N/12). */
+    private static final double TRAIL_INDEX_RECENCY_MONTHS = 12.0;
+
     private static final int MONTHS_BACK = 12;
     private static final int WEEKS_BACK = 16;
 
@@ -116,6 +129,7 @@ public class AthleteStatsService {
                 records,
                 longestRuns(activities),
                 predictions(roadRecords(efforts)),
+                trailIndex(activities, today),
                 new Totals(
                         totals(activities.stream()
                                 .filter(a -> a.getDate().getYear() == today.getYear()).toList()),
@@ -185,7 +199,7 @@ public class AthleteStatsService {
     }
 
     /** A split counts as road-like when its parent run stays under the trail D+/km. */
-    private static boolean isRoadLike(ActivityBestEffort effort) {
+    static boolean isRoadLike(ActivityBestEffort effort) {
         Activity activity = effort.getActivity();
         BigDecimal km = activity.getDistanceKm();
         if (km == null || km.signum() <= 0) {
@@ -223,6 +237,53 @@ public class AthleteStatsService {
                     Math.round(seconds * 1000f / target), base.label()));
         }
         return predictions;
+    }
+
+    /**
+     * The personal trail performance index (P7). Scores every substantial
+     * trail effort of the last {@value #TRAIL_INDEX_MONTHS} months by
+     * <em>km-effort per hour × √(km-effort)</em> — rewarding both covering the
+     * km-effort scale fast (fitness) and taking on bigger mountain efforts
+     * (endurance) — then takes a recency-weighted mean of the best
+     * {@value #TRAIL_INDEX_BEST_N}, so recent form leads without erasing
+     * history. One number the athlete watches climb. Null under
+     * {@value #TRAIL_INDEX_MIN_EFFORTS} qualifying efforts.
+     */
+    static TrailIndex trailIndex(List<Activity> activities, LocalDate today) {
+        LocalDate from = today.minusMonths(TRAIL_INDEX_MONTHS);
+        record Scored(Activity activity, double kmEffort, double score) {
+        }
+        List<Scored> scored = activities.stream()
+                .filter(a -> a.getDistanceKm() != null && a.getElevationM() != null)
+                .filter(a -> !a.getDate().isBefore(from) && !a.getDate().isAfter(today))
+                .filter(a -> a.getDistanceKm().doubleValue() >= TRAIL_INDEX_MIN_KM)
+                .filter(a -> a.getDurationMin() >= TRAIL_INDEX_MIN_MIN)
+                .filter(a -> a.getElevationM() / a.getDistanceKm().doubleValue() >= TRAIL_DPLUS_PER_KM)
+                .map(a -> {
+                    double kmEffort = a.getDistanceKm().doubleValue() + a.getElevationM() / 100.0;
+                    double kmEffortPerHour = kmEffort / (a.getDurationMin() / 60.0);
+                    return new Scored(a, kmEffort, kmEffortPerHour * Math.sqrt(kmEffort));
+                })
+                .sorted(Comparator.comparingDouble(Scored::score).reversed())
+                .limit(TRAIL_INDEX_BEST_N)
+                .toList();
+        if (scored.size() < TRAIL_INDEX_MIN_EFFORTS) {
+            return null;
+        }
+
+        double weighted = 0;
+        double weightSum = 0;
+        for (Scored s : scored) {
+            long monthsAgo = ChronoUnit.MONTHS.between(YearMonth.from(s.activity().getDate()),
+                    YearMonth.from(today));
+            double weight = Math.exp(-monthsAgo / TRAIL_INDEX_RECENCY_MONTHS);
+            weighted += s.score() * weight;
+            weightSum += weight;
+        }
+        Scored best = scored.getFirst();
+        return new TrailIndex((int) Math.round(weighted / weightSum), scored.size(),
+                best.activity().getName(), best.activity().getDate(),
+                BigDecimal.valueOf(best.kmEffort()).setScale(0, RoundingMode.HALF_UP));
     }
 
     private static LongestRuns longestRuns(List<Activity> activities) {
