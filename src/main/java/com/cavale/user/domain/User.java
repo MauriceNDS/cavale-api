@@ -73,6 +73,17 @@ public class User extends Auditable {
     @Column(name = "preferred_language", nullable = false, length = 2)
     private String preferredLanguage = "fr";
 
+    /* Account access — an admin gate, separate from athlete availability. A
+     * new account starts life locked (PENDING) with no admin powers (USER). */
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_status", nullable = false, length = 10)
+    private AccountStatus accountStatus = AccountStatus.PENDING;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, length = 10)
+    private UserRole role = UserRole.USER;
+
     protected User() {}
 
     public User(String email, String passwordHash, String displayName) {
@@ -163,6 +174,38 @@ public class User extends Auditable {
 
     public LocalDate getStatusSince() {
         return statusSince;
+    }
+
+    /* Account access — admin-controlled. */
+
+    /** Grant access: PENDING/DISABLED → ACTIVE. */
+    public void activate() {
+        this.accountStatus = AccountStatus.ACTIVE;
+    }
+
+    /** Revoke access: → DISABLED. */
+    public void deactivate() {
+        this.accountStatus = AccountStatus.DISABLED;
+    }
+
+    public void promoteToAdmin() {
+        this.role = UserRole.ADMIN;
+    }
+
+    public boolean isActive() {
+        return accountStatus == AccountStatus.ACTIVE;
+    }
+
+    public boolean isAdmin() {
+        return role == UserRole.ADMIN;
+    }
+
+    public AccountStatus getAccountStatus() {
+        return accountStatus;
+    }
+
+    public UserRole getRole() {
+        return role;
     }
 
     @Override

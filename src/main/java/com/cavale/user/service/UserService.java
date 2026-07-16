@@ -1,6 +1,7 @@
 package com.cavale.user.service;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -8,6 +9,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cavale.user.config.AdminProperties;
+import com.cavale.user.domain.AccountStatus;
 import com.cavale.user.domain.User;
 import com.cavale.user.dto.UpdateProfileRequest;
 import com.cavale.user.dto.UpdateStatusRequest;
@@ -18,10 +21,13 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AdminProperties adminProperties;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                       AdminProperties adminProperties) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.adminProperties = adminProperties;
     }
 
     @Transactional
@@ -33,7 +39,15 @@ public class UserService {
         }
 
         String passwordHash = passwordEncoder.encode(rawPassword);
-        return userRepository.save(new User(normalizedEmail, passwordHash, displayName.trim()));
+        User user = new User(normalizedEmail, passwordHash, displayName.trim());
+        // Configured admins are trusted from the first sign-up: admin + active
+        // right away, so a fresh install always has someone who can approve the
+        // rest. Everyone else starts PENDING and waits for an admin.
+        if (adminProperties.contains(normalizedEmail)) {
+            user.promoteToAdmin();
+            user.activate();
+        }
+        return userRepository.save(user);
     }
 
     @Transactional(readOnly = true)
@@ -76,6 +90,34 @@ public class UserService {
         if (request.preferredLanguage() != null) {
             user.updatePreferredLanguage(request.preferredLanguage());
         }
+        return user;
+    }
+
+    /* ── Admin: account access ─────────────────────────────────────────── */
+
+    /** All accounts (newest first), optionally narrowed to one access status. */
+    @Transactional(readOnly = true)
+    public List<User> listUsers(AccountStatus filter) {
+        return filter == null
+                ? userRepository.findAllByOrderByCreatedAtDesc()
+                : userRepository.findByAccountStatusOrderByCreatedAtDesc(filter);
+    }
+
+    @Transactional
+    public User activate(UUID id) {
+        User user = getById(id);
+        user.activate();
+        return user;
+    }
+
+    @Transactional
+    public User deactivate(UUID id) {
+        User user = getById(id);
+        // An admin must never lock the console's own keepers out.
+        if (user.isAdmin()) {
+            throw new IllegalArgumentException("Admin accounts cannot be deactivated");
+        }
+        user.deactivate();
         return user;
     }
 }

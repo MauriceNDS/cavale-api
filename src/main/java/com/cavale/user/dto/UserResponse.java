@@ -5,8 +5,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import com.cavale.user.domain.AccountStatus;
 import com.cavale.user.domain.AthleteStatus;
 import com.cavale.user.domain.User;
+import com.cavale.user.domain.UserRole;
 
 public record UserResponse(
         UUID id,
@@ -22,6 +24,8 @@ public record UserResponse(
         AthleteStatus athleteStatus,
         String statusNote,
         LocalDate statusSince,
+        AccountStatus accountStatus,
+        UserRole role,
         Instant createdAt) {
 
     public static UserResponse from(User user) {
@@ -29,6 +33,7 @@ public record UserResponse(
                 user.getWeightKg(), user.getHeightCm(), user.getBirthDate(),
                 user.getMaxHr(), user.getRestingHr(), user.isGymEnabled(),
                 user.getPreferredLanguage(), user.getAthleteStatus(),
-                user.getStatusNote(), user.getStatusSince(), user.getCreatedAt());
+                user.getStatusNote(), user.getStatusSince(),
+                user.getAccountStatus(), user.getRole(), user.getCreatedAt());
     }
 }

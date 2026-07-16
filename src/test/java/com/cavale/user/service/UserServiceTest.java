@@ -7,6 +7,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import com.cavale.user.config.AdminProperties;
+import com.cavale.user.domain.AccountStatus;
 import com.cavale.user.domain.User;
 import com.cavale.user.dto.UpdateProfileRequest;
 import com.cavale.user.repository.UserRepository;
@@ -28,7 +30,11 @@ class UserServiceTest {
     private PasswordEncoder passwordEncoder;
 
     private UserService userService() {
-        return new UserService(userRepository, passwordEncoder);
+        return userService(new AdminProperties(java.util.List.of()));
+    }
+
+    private UserService userService(AdminProperties adminProperties) {
+        return new UserService(userRepository, passwordEncoder, adminProperties);
     }
 
     @Test
@@ -126,6 +132,77 @@ class UserServiceTest {
                 null, null, null, null, null, null, "en"));
 
         assertThat(user.getPreferredLanguage()).isEqualTo("en");
+    }
+
+    @Test
+    void register_newAccountStartsPendingAndPlainUser() {
+        when(userRepository.existsByEmail("bob@cavale.run")).thenReturn(false);
+        when(passwordEncoder.encode(any())).thenReturn("$2a$hashed");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User saved = userService().register("bob@cavale.run", "s3cret-pass", "Bob");
+
+        assertThat(saved.getAccountStatus()).isEqualTo(AccountStatus.PENDING);
+        assertThat(saved.isActive()).isFalse();
+        assertThat(saved.isAdmin()).isFalse();
+    }
+
+    @Test
+    void register_configuredAdminEmailIsAdminAndActiveImmediately() {
+        AdminProperties admins = new AdminProperties(java.util.List.of("Owner@Cavale.RUN"));
+        when(userRepository.existsByEmail("owner@cavale.run")).thenReturn(false);
+        when(passwordEncoder.encode(any())).thenReturn("$2a$hashed");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User saved = userService(admins).register(" owner@cavale.run ", "s3cret-pass", "Owner");
+
+        assertThat(saved.isAdmin()).isTrue();
+        assertThat(saved.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
+    }
+
+    @Test
+    void activate_grantsAccess() {
+        User user = new User("bob@cavale.run", "$2a$hashed", "Bob");
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
+
+        userService().activate(id);
+
+        assertThat(user.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
+    }
+
+    @Test
+    void deactivate_revokesAccessForRegularUser() {
+        User user = new User("bob@cavale.run", "$2a$hashed", "Bob");
+        user.activate();
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
+
+        userService().deactivate(id);
+
+        assertThat(user.getAccountStatus()).isEqualTo(AccountStatus.DISABLED);
+    }
+
+    @Test
+    void deactivate_refusesToLockOutAnAdmin() {
+        User admin = new User("owner@cavale.run", "$2a$hashed", "Owner");
+        admin.promoteToAdmin();
+        admin.activate();
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(java.util.Optional.of(admin));
+
+        assertThatThrownBy(() -> userService().deactivate(id))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(admin.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
+    }
+
+    @Test
+    void listUsers_appliesStatusFilterWhenGiven() {
+        userService().listUsers(AccountStatus.PENDING);
+        verify(userRepository).findByAccountStatusOrderByCreatedAtDesc(AccountStatus.PENDING);
+
+        userService().listUsers(null);
+        verify(userRepository).findAllByOrderByCreatedAtDesc();
     }
 
     @Test
