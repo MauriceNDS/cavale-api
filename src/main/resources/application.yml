@@ -106,6 +106,15 @@ cavale:
     # Accounts promoted to ADMIN + ACTIVE (comma-separated), at registration and
     # on startup. Admins see the user console and activate/deactivate accounts.
     emails: ${CAVALE_ADMIN_EMAILS:ds.arsen25@gmail.com}
+  demo:
+    # Public portfolio demo: one click provisions a private, seeded, throwaway
+    # sandbox that auto-deletes after account-ttl. Guardrails: token-ttl bounds
+    # the session, max-live caps concurrent sandboxes.
+    enabled: ${CAVALE_DEMO_ENABLED:true}
+    account-ttl: ${CAVALE_DEMO_ACCOUNT_TTL:PT24H}
+    token-ttl: ${CAVALE_DEMO_TOKEN_TTL:PT6H}
+    max-live: ${CAVALE_DEMO_MAX_LIVE:40}
+    reap-interval: ${CAVALE_DEMO_REAP_INTERVAL:PT30M}
   security:
     jwt:
       # HS256 secret, >= 32 bytes. The default is DEV-ONLY — set CAVALE_JWT_SECRET in any real environment.

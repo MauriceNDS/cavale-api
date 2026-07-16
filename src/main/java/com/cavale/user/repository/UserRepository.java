@@ -1,5 +1,6 @@
 package com.cavale.user.repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,4 +23,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findAllByOrderByCreatedAtDesc();
 
     List<User> findByAccountStatusOrderByCreatedAtDesc(AccountStatus accountStatus);
+
+    /* ── Demo sandbox ──────────────────────────────────────────────────── */
+
+    long countByDemoTrue();
+
+    /** Reaper: demo accounts past their TTL (deleting one cascades all its data). */
+    List<User> findByDemoTrueAndCreatedAtBefore(Instant cutoff);
 }

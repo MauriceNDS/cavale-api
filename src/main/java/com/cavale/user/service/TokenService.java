@@ -40,6 +40,11 @@ public class TokenService {
     public record IssuedToken(String token, Instant expiresAt) {
     }
 
+    /** Short-lived token for an ephemeral demo session. */
+    public String issueDemoToken(User user, java.time.Duration ttl) {
+        return issue(user, ttl, "demo");
+    }
+
     private String issue(User user, java.time.Duration ttl, String purpose) {
         Instant now = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder()

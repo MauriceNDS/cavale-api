@@ -100,6 +100,14 @@ public class AccountAccessFilter extends OncePerRequestFilter {
             return;
         }
 
+        // A demo sandbox must never mint a long-lived personal access token
+        // (MCP credential) — it would outlive the throwaway account.
+        if (user.isDemo() && isPatIssue(request)) {
+            writeProblem(response, HttpStatus.FORBIDDEN, "Not available in demo",
+                    "Personal access tokens can't be created from a demo account.");
+            return;
+        }
+
         if (user.getAccountStatus() != AccountStatus.ACTIVE && !isOwnProfileRead(request)) {
             writeProblem(response, HttpStatus.FORBIDDEN, "Account not active",
                     user.getAccountStatus() == AccountStatus.PENDING
@@ -123,6 +131,10 @@ public class AccountAccessFilter extends OncePerRequestFilter {
 
     private static boolean isOwnProfileRead(HttpServletRequest request) {
         return "GET".equals(request.getMethod()) && OWN_PROFILE.equals(request.getRequestURI());
+    }
+
+    private static boolean isPatIssue(HttpServletRequest request) {
+        return "POST".equals(request.getMethod()) && (OWN_PROFILE + "/pat").equals(request.getRequestURI());
     }
 
     /**

@@ -150,6 +150,25 @@ public class Activity extends Auditable {
         return activity;
     }
 
+    /**
+     * A manually-entered run not tied to any session and not from Strava — used
+     * to seed demo history. No external id, so it sidesteps the Strava-dedup
+     * unique index.
+     */
+    public static Activity manual(UUID userId, LocalDate date, int durationMin, BigDecimal distanceKm,
+                                  Integer elevationM, Integer avgHr, String name) {
+        Activity activity = new Activity();
+        activity.userId = userId;
+        activity.source = ActivitySource.MANUAL;
+        activity.date = date;
+        activity.durationMin = durationMin;
+        activity.distanceKm = distanceKm;
+        activity.elevationM = elevationM;
+        activity.avgHr = avgHr;
+        activity.name = name;
+        return activity;
+    }
+
     /** Adopt a history activity as a session's validation. */
     public void attachToSession(PlannedSession session) {
         if (this.session != null) {

@@ -84,6 +84,10 @@ public class User extends Auditable {
     @Column(name = "role", nullable = false, length = 10)
     private UserRole role = UserRole.USER;
 
+    /** Ephemeral portfolio demo account — auto-seeded, auto-reaped, sandboxed. */
+    @Column(name = "is_demo", nullable = false)
+    private boolean demo = false;
+
     protected User() {}
 
     public User(String email, String passwordHash, String displayName) {
@@ -198,6 +202,15 @@ public class User extends Auditable {
 
     public boolean isAdmin() {
         return role == UserRole.ADMIN;
+    }
+
+    /** Flag this account as an ephemeral demo sandbox. */
+    public void markDemo() {
+        this.demo = true;
+    }
+
+    public boolean isDemo() {
+        return demo;
     }
 
     public AccountStatus getAccountStatus() {

@@ -12,4 +12,6 @@ public interface UserAccess {
     AccountStatus getAccountStatus();
 
     UserRole getRole();
+
+    boolean isDemo();
 }
