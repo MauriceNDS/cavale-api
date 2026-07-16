@@ -38,6 +38,10 @@ public class Shoe extends Auditable {
     @Column(length = 60)
     private String brand;
 
+    /** The physical pair's colour, as a hex string (e.g. "#E4002B"). */
+    @Column(length = 20)
+    private String color;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 10)
     private ShoePurpose purpose;
@@ -48,6 +52,10 @@ public class Shoe extends Auditable {
     @Column(nullable = false)
     private boolean retired;
 
+    /** The pair pre-selected when validating a run — at most one per athlete. */
+    @Column(name = "is_default", nullable = false)
+    private boolean defaultPair;
+
     protected Shoe() {
     }
 
@@ -56,13 +64,22 @@ public class Shoe extends Auditable {
         this.name = name;
     }
 
-    public void update(String name, String brand, ShoePurpose purpose, Integer retirementKm,
-                       boolean retired) {
+    public void update(String name, String brand, String color, ShoePurpose purpose,
+                       Integer retirementKm, boolean retired) {
         this.name = name;
         this.brand = brand;
+        this.color = color;
         this.purpose = purpose;
         this.retirementKm = retirementKm;
         this.retired = retired;
+    }
+
+    public void markDefault() {
+        this.defaultPair = true;
+    }
+
+    public void clearDefault() {
+        this.defaultPair = false;
     }
 
     public UUID getId() {
@@ -79,6 +96,14 @@ public class Shoe extends Auditable {
 
     public String getBrand() {
         return brand;
+    }
+
+    public String getColor() {
+        return color;
+    }
+
+    public boolean isDefault() {
+        return defaultPair;
     }
 
     public ShoePurpose getPurpose() {

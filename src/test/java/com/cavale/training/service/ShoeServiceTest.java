@@ -45,19 +45,37 @@ class ShoeServiceTest {
         when(shoeRepository.save(any(Shoe.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ShoeResponse response = service().create(USER,
-                new ShoeRequest("Speedgoat 5", " Hoka ", ShoePurpose.TRAIL, 800, null));
+                new ShoeRequest("Speedgoat 5", " Hoka ", "#14B4C8", ShoePurpose.TRAIL, 800, null, null));
 
         assertThat(response.name()).isEqualTo("Speedgoat 5");
         assertThat(response.brand()).isEqualTo("Hoka");
+        assertThat(response.color()).isEqualTo("#14B4C8");
         assertThat(response.purpose()).isEqualTo(ShoePurpose.TRAIL);
+        assertThat(response.isDefault()).isFalse();
         assertThat(response.mileageKm()).isEqualByComparingTo("0.0");
         assertThat(response.needsRetirement()).isFalse();
     }
 
     @Test
+    void create_asDefault_clearsTheOtherDefault() {
+        Shoe existing = new Shoe(USER, "Old pair");
+        existing.update("Old pair", "Nike", "#111111", ShoePurpose.ROAD, null, false);
+        existing.markDefault();
+        ReflectionTestUtils.setField(existing, "id", UUID.randomUUID());
+        when(shoeRepository.findByUserIdOrderByRetiredAscCreatedAtDesc(USER)).thenReturn(List.of(existing));
+        when(shoeRepository.save(any(Shoe.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ShoeResponse response = service().create(USER,
+                new ShoeRequest("New pair", "Hoka", "#14B4C8", ShoePurpose.TRAIL, 800, null, true));
+
+        assertThat(response.isDefault()).isTrue();
+        assertThat(existing.isDefault()).isFalse(); // the previous default was cleared
+    }
+
+    @Test
     void list_sumsMileageAndFlagsRetirement() {
         Shoe shoe = new Shoe(USER, "Speedgoat 5");
-        shoe.update("Speedgoat 5", "Hoka", ShoePurpose.TRAIL, 800, false);
+        shoe.update("Speedgoat 5", "Hoka", "#14B4C8", ShoePurpose.TRAIL, 800, false);
         UUID shoeId = UUID.randomUUID();
         ReflectionTestUtils.setField(shoe, "id", shoeId);
         when(shoeRepository.findByUserIdOrderByRetiredAscCreatedAtDesc(USER)).thenReturn(List.of(shoe));

@@ -43,17 +43,34 @@ public class ShoeService {
     @Transactional
     public ShoeResponse create(UUID userId, ShoeRequest request) {
         Shoe shoe = new Shoe(userId, request.name().trim());
-        shoe.update(request.name().trim(), trimmed(request.brand()), request.purpose(),
-                request.retirementKm(), request.isRetired());
+        shoe.update(request.name().trim(), trimmed(request.brand()), trimmed(request.color()),
+                request.purpose(), request.retirementKm(), request.isRetired());
+        applyDefault(userId, shoe, request.wantsDefault());
         return ShoeResponse.from(shoeRepository.save(shoe), BigDecimal.ZERO);
     }
 
     @Transactional
     public ShoeResponse update(UUID userId, UUID shoeId, ShoeRequest request) {
         Shoe shoe = getOwned(userId, shoeId);
-        shoe.update(request.name().trim(), trimmed(request.brand()), request.purpose(),
-                request.retirementKm(), request.isRetired());
+        shoe.update(request.name().trim(), trimmed(request.brand()), trimmed(request.color()),
+                request.purpose(), request.retirementKm(), request.isRetired());
+        applyDefault(userId, shoe, request.wantsDefault());
         return ShoeResponse.from(shoe, mileageByShoe(userId).get(shoeId));
+    }
+
+    /**
+     * Enforces "at most one default pair per athlete": making one the default
+     * clears the flag on every other pair. A retired pair can't be the default.
+     */
+    private void applyDefault(UUID userId, Shoe target, boolean makeDefault) {
+        if (makeDefault && !target.isRetired()) {
+            shoeRepository.findByUserIdOrderByRetiredAscCreatedAtDesc(userId).stream()
+                    .filter(s -> !s.equals(target) && s.isDefault())
+                    .forEach(Shoe::clearDefault);
+            target.markDefault();
+        } else {
+            target.clearDefault();
+        }
     }
 
     @Transactional

@@ -20,6 +20,7 @@ import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.PlanWeek;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
+import com.cavale.training.domain.ShoePurpose;
 import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.domain.WeekType;
 import com.cavale.training.dto.CreatePlanRequest;
@@ -59,10 +60,13 @@ public class DemoSeeder {
         this.shoeService = shoeService;
     }
 
+    private record DemoShoes(UUID trail, UUID road) {
+    }
+
     @Transactional
     public void seed(UUID userId, LocalDate today) {
-        seedHistory(userId, today);
-        seedShoes(userId);
+        DemoShoes shoes = seedShoes(userId);
+        seedHistory(userId, today, shoes);
 
         LocalDate start = today.minusWeeks(4).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LocalDate race = today.plusWeeks(8).with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY));
@@ -88,15 +92,17 @@ public class DemoSeeder {
 
     /* ── past activities (drive every stat) ─────────────────────────────── */
 
-    private void seedHistory(UUID userId, LocalDate today) {
+    private void seedHistory(UUID userId, LocalDate today, DemoShoes shoes) {
         List<Activity> activities = new ArrayList<>();
         for (int w = HISTORY_WEEKS; w >= 1; w--) {
             LocalDate monday = today.minusWeeks(w).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
             int longKm = 17 + (HISTORY_WEEKS - w); // progressive: 17 → 24 km
-            activities.add(run(userId, monday.plusDays(1), 55, 9, 120, 138, 48, "Footing"));
-            activities.add(run(userId, monday.plusDays(3), 58, 11, 180, 161, 95, "Séance seuil"));
+            // Road pair for the easy/quality runs, trail pair for the long run — so
+            // both shoes accrue believable mileage.
+            activities.add(run(userId, monday.plusDays(1), 55, 9, 120, 138, 48, "Footing", shoes.road()));
+            activities.add(run(userId, monday.plusDays(3), 58, 11, 180, 161, 95, "Séance seuil", shoes.road()));
             activities.add(run(userId, monday.plusDays(6), longKm * 6, longKm, longKm * 32,
-                    146, longKm * 7, "Sortie longue trail"));
+                    146, longKm * 7, "Sortie longue trail", shoes.trail()));
         }
         activityRepository.saveAll(activities);
         // Flush so the coach's scaffold sees this volume in the same transaction.
@@ -104,11 +110,12 @@ public class DemoSeeder {
     }
 
     private static Activity run(UUID userId, LocalDate date, int durationMin, int distanceKm,
-                                int elevationM, int avgHr, int relativeEffort, String name) {
+                                int elevationM, int avgHr, int relativeEffort, String name, UUID shoeId) {
         Activity activity = Activity.manual(userId, date, durationMin,
                 BigDecimal.valueOf(distanceKm), elevationM, avgHr, name);
         activity.markDiscipline(Discipline.RUN);
         activity.enrich(null, relativeEffort, avgHr + 12);
+        activity.assignShoe(shoeId);
         return activity;
     }
 
@@ -148,8 +155,11 @@ public class DemoSeeder {
 
     /* ── gear ───────────────────────────────────────────────────────────── */
 
-    private void seedShoes(UUID userId) {
-        shoeService.create(userId, new ShoeRequest("Speedgoat 5", "Hoka", null, 800, false));
-        shoeService.create(userId, new ShoeRequest("Pegasus 40", "Nike", null, 700, false));
+    private DemoShoes seedShoes(UUID userId) {
+        UUID trail = shoeService.create(userId,
+                new ShoeRequest("Speedgoat 5", "Hoka", "#14B4C8", ShoePurpose.TRAIL, 800, false, true)).id();
+        UUID road = shoeService.create(userId,
+                new ShoeRequest("Pegasus 40", "Nike", "#111111", ShoePurpose.ROAD, 700, false, false)).id();
+        return new DemoShoes(trail, road);
     }
 }

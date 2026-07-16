@@ -15,9 +15,11 @@ public record ShoeResponse(
         UUID id,
         String name,
         String brand,
+        String color,
         ShoePurpose purpose,
         Integer retirementKm,
         boolean retired,
+        boolean isDefault,
         BigDecimal mileageKm,
         boolean needsRetirement) {
 
@@ -25,7 +27,8 @@ public record ShoeResponse(
         BigDecimal km = (mileageKm != null ? mileageKm : BigDecimal.ZERO).setScale(1, RoundingMode.HALF_UP);
         boolean needsRetirement = !shoe.isRetired() && shoe.getRetirementKm() != null
                 && km.doubleValue() >= shoe.getRetirementKm();
-        return new ShoeResponse(shoe.getId(), shoe.getName(), shoe.getBrand(), shoe.getPurpose(),
-                shoe.getRetirementKm(), shoe.isRetired(), km, needsRetirement);
+        return new ShoeResponse(shoe.getId(), shoe.getName(), shoe.getBrand(), shoe.getColor(),
+                shoe.getPurpose(), shoe.getRetirementKm(), shoe.isRetired(), shoe.isDefault(),
+                km, needsRetirement);
     }
 }
