@@ -1,0 +1,50 @@
+name: deploy
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, cavale]
+    env:
+      JAVA_HOME: /opt/jdk26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select target environment
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "DEPLOY_HOST=192.168.1.102" >> "$GITHUB_ENV"   # production
+          else
+            echo "DEPLOY_HOST=192.168.1.101" >> "$GITHUB_ENV"   # develop
+          fi
+
+      - name: Build
+        # TODO: drop -DskipTests once the test suite's infra needs (DB/containers) are wired into CI
+        run: ./mvnw -B -ntp -DskipTests package
+
+      - name: Deploy
+        run: |
+          JAR=$(ls target/*.jar | head -1)
+          scp -q "$JAR" "root@${DEPLOY_HOST}:/opt/cavale/api.jar.new"
+          ssh "root@${DEPLOY_HOST}" 'mv /opt/cavale/api.jar.new /opt/cavale/api.jar \
+            && chown cavale:cavale /opt/cavale/api.jar \
+            && systemctl restart cavale-api'
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "http://${DEPLOY_HOST}/actuator/health" | grep -q UP; then
+              echo "healthy"; exit 0
+            fi
+            sleep 3
+          done
+          echo "health check failed after 90s"
+          ssh "root@${DEPLOY_HOST}" 'journalctl -u cavale-api -n 50 --no-pager'
+          exit 1
