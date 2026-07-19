@@ -1,5 +1,6 @@
 package com.cavale.training.service;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -9,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Objective;
+import com.cavale.training.domain.ObjectiveIntensity;
+import com.cavale.training.domain.ObjectiveKind;
 import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.dto.CreateObjectiveRequest;
@@ -42,15 +45,8 @@ public class ObjectiveService {
         TrainingPlan plan = planService.getOwnedPlan(userId, planId);
         Objective objective = new Objective(plan, ObjectiveRole.SECONDARY, request.type(),
                 request.name().trim(), request.date());
-        if (request.kind() != null) {
-            objective.updateKind(request.kind());
-        }
-        if (request.intensity() != null) {
-            objective.updateIntensity(request.intensity());
-        }
-        objective.updateRaceProfile(request.distanceKm(), request.elevationGainM(), trimmed(request.location()));
-        objective.updateTargetTimeMin(request.targetTimeMin());
-        objective.updateNotes(trimmed(request.notes()));
+        applyRaceDetails(objective, request.kind(), request.intensity(), request.distanceKm(),
+                request.elevationGainM(), request.targetTimeMin(), request.location(), request.notes());
         return objectiveRepository.save(objective);
     }
 
@@ -58,19 +54,32 @@ public class ObjectiveService {
     public Objective update(UUID userId, UUID objectiveId, UpdateObjectiveRequest request) {
         Objective objective = getOwned(userId, objectiveId);
         objective.updateType(request.type());
-        if (request.kind() != null) {
-            objective.updateKind(request.kind());
-        }
-        if (request.intensity() != null) {
-            objective.updateIntensity(request.intensity());
-        }
         objective.rename(request.name().trim());
         objective.updateDate(request.date());
-        objective.updateRaceProfile(request.distanceKm(), request.elevationGainM(), trimmed(request.location()));
-        objective.updateTargetTimeMin(request.targetTimeMin());
         objective.recordResult(request.resultTimeMin());
-        objective.updateNotes(trimmed(request.notes()));
+        applyRaceDetails(objective, request.kind(), request.intensity(), request.distanceKm(),
+                request.elevationGainM(), request.targetTimeMin(), request.location(), request.notes());
         return objective;
+    }
+
+    /**
+     * Applies the editable race-profile fields shared by every objective write —
+     * secondary creation, edit, and the MAIN objective built with a plan
+     * ({@link TrainingPlanService}). kind/intensity are left untouched when null
+     * (a partial MCP edit never silently resets them); the rest replace.
+     */
+    static void applyRaceDetails(Objective objective, ObjectiveKind kind, ObjectiveIntensity intensity,
+                                 BigDecimal distanceKm, Integer elevationGainM, Integer targetTimeMin,
+                                 String location, String notes) {
+        if (kind != null) {
+            objective.updateKind(kind);
+        }
+        if (intensity != null) {
+            objective.updateIntensity(intensity);
+        }
+        objective.updateRaceProfile(distanceKm, elevationGainM, trimmed(location));
+        objective.updateTargetTimeMin(targetTimeMin);
+        objective.updateNotes(trimmed(notes));
     }
 
     @Transactional

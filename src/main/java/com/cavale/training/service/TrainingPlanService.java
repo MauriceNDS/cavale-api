@@ -108,21 +108,10 @@ public class TrainingPlanService {
         Objective objective = new Objective(plan, ObjectiveRole.MAIN, details.type(),
                 details.name().trim(),
                 details.date() != null ? details.date() : plan.getEndDate());
-        if (details.kind() != null) {
-            objective.updateKind(details.kind());
-        }
-        if (details.intensity() != null) {
-            objective.updateIntensity(details.intensity());
-        }
-        objective.updateRaceProfile(details.distanceKm(), details.elevationGainM(),
-                trimmedOrNull(details.location()));
-        objective.updateTargetTimeMin(details.targetTimeMin());
-        objective.updateNotes(trimmedOrNull(details.notes()));
+        ObjectiveService.applyRaceDetails(objective, details.kind(), details.intensity(),
+                details.distanceKm(), details.elevationGainM(), details.targetTimeMin(),
+                details.location(), details.notes());
         return objective;
-    }
-
-    private static String trimmedOrNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 
     @Transactional(readOnly = true)
