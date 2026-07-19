@@ -34,7 +34,7 @@ import com.garmin.fit.WorkoutStepMesg;
 public class FitWorkoutExporter {
 
     private static final Map<Allure, String> ALLURE_NAME = Map.of(
-            Allure.LENTE, "Allure Lente",
+            Allure.LENTE, "Récup",
             Allure.EF, "Allure EF",
             Allure.COURSE, "Allure Course",
             Allure.SEUIL60, "Allure Seuil 60",
