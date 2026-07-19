@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
@@ -56,7 +57,8 @@ public class StravaAuthService {
                              StravaConnectionRepository connectionRepository,
                              UserRepository userRepository, UserService userService,
                              PasswordEncoder passwordEncoder,
-                             TokenService tokenService, JwtEncoder jwtEncoder, JwtDecoder jwtDecoder,
+                             TokenService tokenService, JwtEncoder jwtEncoder,
+                             @Qualifier("stateTokenDecoder") JwtDecoder jwtDecoder,
                              ApplicationEventPublisher eventPublisher) {
         this.properties = properties;
         this.stravaClient = stravaClient;

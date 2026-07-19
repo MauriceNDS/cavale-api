@@ -4,9 +4,14 @@ import java.time.Instant;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.JwsHeader;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JwtConfigTest {
 
@@ -56,5 +61,35 @@ class JwtConfigTest {
     void rejectsForeignIssuer() {
         Jwt jwt = token().issuer("evil").claim("purpose", "session").build();
         assertThat(validator.validate(jwt).hasErrors()).isTrue();
+    }
+
+    /**
+     * The Strava "state" token (no issuer, purpose=strava-connect) must still
+     * decode via the dedicated lenient decoder — otherwise the OAuth callback
+     * can't validate it — while the strict bearer decoder rejects it.
+     */
+    @Test
+    void stateTokenDecodesLenientlyButNotAsBearer() {
+        JwtProperties props = new JwtProperties("state-decoder-test-secret-0123456789abcdef",
+                java.time.Duration.ofHours(24), java.time.Duration.ofDays(180));
+        JwtConfig config = new JwtConfig(props);
+
+        Instant now = Instant.now();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .subject("019f78cc-40c8-7515-8fc9-ecbb77467fba")
+                .claim("purpose", "strava-connect")
+                .issuedAt(now)
+                .expiresAt(now.plusSeconds(600))
+                .build();
+        String state = config.jwtEncoder()
+                .encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
+                .getTokenValue();
+
+        // Lenient decoder accepts it (signature + expiry only)…
+        assertThat(config.stateTokenDecoder().decode(state).getClaimAsString("purpose"))
+                .isEqualTo("strava-connect");
+        // …but the strict resource-server decoder rejects it.
+        assertThatThrownBy(() -> config.jwtDecoder().decode(state))
+                .isInstanceOf(org.springframework.security.oauth2.jwt.JwtValidationException.class);
     }
 }

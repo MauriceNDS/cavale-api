@@ -8,6 +8,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
@@ -56,13 +57,33 @@ public class JwtConfig {
         return new NimbusJwtEncoder(new ImmutableSecret<>(secretKey()));
     }
 
+    /**
+     * The resource-server decoder: authenticates API calls, so it enforces the
+     * strict bearer rules. Marked {@link Primary} because Spring Security's
+     * {@code oauth2ResourceServer} auto-wires the primary {@code JwtDecoder}.
+     */
     @Bean
+    @Primary
     JwtDecoder jwtDecoder() {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(secretKey())
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
         decoder.setJwtValidator(bearerTokenValidator());
         return decoder;
+    }
+
+    /**
+     * Verifies a token's signature and expiry only — no issuer/purpose gate.
+     * Used for the short-lived Strava OAuth "state" token, which is not a bearer
+     * credential (the caller checks its {@code purpose} itself). Keeping it off
+     * the strict decoder is what lets the Strava connect/login callback still
+     * validate its state after the bearer hardening.
+     */
+    @Bean
+    JwtDecoder stateTokenDecoder() {
+        return NimbusJwtDecoder.withSecretKey(secretKey())
+                .macAlgorithm(MacAlgorithm.HS256)
+                .build();
     }
 
     /**
