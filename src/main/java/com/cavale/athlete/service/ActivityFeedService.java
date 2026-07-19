@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -15,7 +16,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cavale.athlete.dto.ActivityDetailResponse;
 import com.cavale.athlete.dto.ActivityFeedResponse;
+import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.athlete.dto.ActivityFeedResponse.FeedItem;
 import com.cavale.athlete.dto.ActivityFeedResponse.FeedType;
 import com.cavale.gym.domain.SetLog;
@@ -45,6 +48,24 @@ public class ActivityFeedService {
         this.activityRepository = activityRepository;
         this.workoutLogRepository = workoutLogRepository;
         this.setLogRepository = setLogRepository;
+    }
+
+    /** One past run/ride in full, scoped to its owner (404 for anyone else's). */
+    @Transactional(readOnly = true)
+    public ActivityDetailResponse activityDetail(UUID userId, UUID activityId) {
+        return ActivityDetailResponse.from(ownedActivity(userId, activityId));
+    }
+
+    /** The activity's downsampled Strava streams JSON, or empty when it has none. */
+    @Transactional(readOnly = true)
+    public Optional<String> activityStreams(UUID userId, UUID activityId) {
+        return Optional.ofNullable(ownedActivity(userId, activityId).getStreamsJson());
+    }
+
+    private Activity ownedActivity(UUID userId, UUID activityId) {
+        return activityRepository.findById(activityId)
+                .filter(a -> a.getUserId().equals(userId))
+                .orElseThrow(() -> new ResourceNotFoundException("Activity", activityId));
     }
 
     /** Search knobs: q matches the run/session/template name, dates bound the range. */

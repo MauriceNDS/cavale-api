@@ -2,12 +2,16 @@ package com.cavale.athlete.web;
 
 import java.util.UUID;
 
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cavale.athlete.dto.ActivityDetailResponse;
 import com.cavale.athlete.dto.ActivityFeedResponse;
 import com.cavale.athlete.dto.AthleteContextResponse;
 import com.cavale.athlete.dto.AthleteHubResponse;
@@ -75,5 +79,20 @@ public class AthleteController {
                 : "GYM".equalsIgnoreCase(type) ? ActivityFeedResponse.FeedType.GYM : null;
         return feedService.feed(UUID.fromString(jwt.getSubject()), feedType, q, from, to,
                 Math.max(0, page), Math.min(Math.max(1, size), 50));
+    }
+
+    @GetMapping("/activities/{activityId}")
+    @Operation(summary = "Full detail of one past activity (opens from the activities page)")
+    public ActivityDetailResponse activity(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID activityId) {
+        return feedService.activityDetail(UUID.fromString(jwt.getSubject()), activityId);
+    }
+
+    @GetMapping("/activities/{activityId}/streams")
+    @Operation(summary = "Downsampled Strava streams of the activity (for the detail charts); 404 if none")
+    public ResponseEntity<String> activityStreams(@AuthenticationPrincipal Jwt jwt,
+                                                  @PathVariable UUID activityId) {
+        return feedService.activityStreams(UUID.fromString(jwt.getSubject()), activityId)
+                .map(json -> ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(json))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }
