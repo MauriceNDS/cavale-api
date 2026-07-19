@@ -173,9 +173,8 @@ public class GymTemplateController {
     public List<TemplateExerciseResponse> reorder(@AuthenticationPrincipal Jwt jwt,
                                                   @PathVariable UUID variantId,
                                                   @Valid @RequestBody ReorderRequest request) {
-        return templateService.reorderExercises(userId(jwt), variantId, request).stream()
-                .map(te -> TemplateExerciseResponse.from(te, List.of()))
-                .toList();
+        // assembled inside the service transaction — lazy proxies die at its edge
+        return templateService.reorderExercises(userId(jwt), variantId, request);
     }
 
     @PostMapping("/template-exercises/{templateExerciseId}/alternatives")

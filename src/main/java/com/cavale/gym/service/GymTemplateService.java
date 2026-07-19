@@ -184,13 +184,7 @@ public class GymTemplateService {
     @Transactional(readOnly = true)
     public VariantDetailResponse getVariantDetail(UUID userId, UUID variantId) {
         GymTemplateVariant variant = getOwnedVariant(userId, variantId);
-        List<TemplateExerciseResponse> exercises = templateExerciseRepository
-                .findByVariantIdOrderByPositionAsc(variantId).stream()
-                .map(te -> TemplateExerciseResponse.from(te,
-                        alternativeRepository.findByTemplateExerciseIdOrderByPositionAsc(te.getId())
-                                .stream().map(AlternativeResponse::from).toList()))
-                .toList();
-        return VariantDetailResponse.from(variant, exercises);
+        return VariantDetailResponse.from(variant, exerciseResponses(variantId));
     }
 
     @Transactional
@@ -221,8 +215,14 @@ public class GymTemplateService {
         templateExerciseRepository.delete(getOwnedTemplateExercise(userId, templateExerciseId));
     }
 
+    /**
+     * Returns the DTO read model, not entities: each prescription's exercise
+     * is a lazy proxy, so (as in {@link #getVariantDetail}) the mapping has
+     * to happen inside this transaction.
+     */
     @Transactional
-    public List<TemplateExercise> reorderExercises(UUID userId, UUID variantId, ReorderRequest request) {
+    public List<TemplateExerciseResponse> reorderExercises(UUID userId, UUID variantId,
+                                                           ReorderRequest request) {
         getOwnedVariant(userId, variantId);
         List<TemplateExercise> exercises =
                 templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId);
@@ -234,7 +234,7 @@ public class GymTemplateService {
         for (TemplateExercise te : exercises) {
             te.moveTo(request.orderedIds().indexOf(te.getId()));
         }
-        return templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId);
+        return exerciseResponses(variantId);
     }
 
     /* ── Alternatives ─────────────────────────────────────────────────── */
@@ -264,6 +264,15 @@ public class GymTemplateService {
     }
 
     /* ── Internals ────────────────────────────────────────────────────── */
+
+    /** Ordered prescriptions of a variant as DTOs — call inside a transaction. */
+    private List<TemplateExerciseResponse> exerciseResponses(UUID variantId) {
+        return templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId).stream()
+                .map(te -> TemplateExerciseResponse.from(te,
+                        alternativeRepository.findByTemplateExerciseIdOrderByPositionAsc(te.getId())
+                                .stream().map(AlternativeResponse::from).toList()))
+                .toList();
+    }
 
     private TemplateExercise getOwnedTemplateExercise(UUID userId, UUID templateExerciseId) {
         return templateExerciseRepository.findById(templateExerciseId)

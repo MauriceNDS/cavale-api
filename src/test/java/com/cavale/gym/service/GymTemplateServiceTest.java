@@ -21,6 +21,7 @@ import com.cavale.gym.domain.TemplateExercise;
 import com.cavale.gym.domain.TemplateExerciseAlternative;
 import com.cavale.gym.dto.TemplateDtos.ReorderRequest;
 import com.cavale.gym.dto.TemplateDtos.TemplateExerciseRequest;
+import com.cavale.gym.dto.TemplateDtos.TemplateExerciseResponse;
 import com.cavale.gym.dto.TemplateDtos.TemplateRequest;
 import com.cavale.gym.dto.TemplateDtos.VariantRequest;
 import com.cavale.gym.repository.GymTemplateRepository;
@@ -220,10 +221,12 @@ class GymTemplateServiceTest {
                 new ReorderRequest(List.of(first.getId()))))
                 .isInstanceOf(IllegalArgumentException.class);
 
-        service().reorderExercises(USER, a.getId(),
+        List<TemplateExerciseResponse> response = service().reorderExercises(USER, a.getId(),
                 new ReorderRequest(List.of(second.getId(), first.getId())));
         assertThat(second.getPosition()).isZero();
         assertThat(first.getPosition()).isEqualTo(1);
+        assertThat(response).extracting(r -> r.exercise().name())
+                .containsExactly("Squat", "Fentes");
     }
 
     @Test
