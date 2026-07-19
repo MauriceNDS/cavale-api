@@ -185,6 +185,18 @@ public class PlannedSession extends Auditable {
         this.status = status;
     }
 
+    /** Revise what the session prescribes — the caller passes the final merged values. */
+    public void updateContent(String title, String detail, String zone, Integer durationMin,
+                              Integer elevationM, Integer rpeMin, Integer rpeMax) {
+        this.title = title;
+        this.detail = detail;
+        this.zone = zone;
+        this.durationMin = durationMin;
+        this.elevationM = elevationM;
+        this.rpeMin = rpeMin;
+        this.rpeMax = rpeMax;
+    }
+
     public com.cavale.gym.domain.GymTemplateVariant getTemplateVariant() {
         return templateVariant;
     }

@@ -118,6 +118,16 @@ public class PlanWeek extends Auditable {
         this.focus = focus;
     }
 
+    /** Revise the week's coach intent — the caller passes the final merged values. */
+    public void updatePlanning(String phase, WeekType weekType, BigDecimal targetVolumeKm,
+                               Integer targetElevationM, Integer targetLoadUa) {
+        this.phase = phase;
+        this.weekType = weekType;
+        this.targetVolumeKm = targetVolumeKm;
+        this.targetElevationM = targetElevationM;
+        this.targetLoadUa = targetLoadUa;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

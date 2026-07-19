@@ -289,26 +289,96 @@ public class CoachTools {
     }
 
     @Tool(name = "update_session", description = """
-            Move a session to another date, change its status (PLANNED, DONE, \
-            SKIPPED, MOVED) and/or set a coach comment. Only pass the fields to \
-            change. Setting DONE without measures is for GYM/REST sessions; the \
-            athlete validates runs from the app.""")
+            Revise a session: move it to another date, rewrite what it \
+            prescribes (title, detail, zone, duration, elevation, RPE), change \
+            its status (PLANNED, DONE, SKIPPED, MOVED), set a coach comment \
+            and/or re-link a GYM session to another program variant. Only pass \
+            the fields to change; a blank detail/zone clears the value. For RUN \
+            sessions the structured workout is re-derived from the new detail \
+            text (same notation as add_session). Setting DONE without measures \
+            is for GYM/REST sessions; the athlete validates runs from the app.""")
     public SessionResponse updateSession(
             @ToolParam(description = "Session UUID") String sessionId,
             @ToolParam(description = "New date, ISO date", required = false) String date,
+            @ToolParam(description = "New title, athlete's language", required = false) String title,
+            @ToolParam(description = "New workout text, athlete's language (see add_session notation)", required = false) String detail,
+            @ToolParam(description = "New main intensity zone, e.g. 'EF', 'Seuil 60'", required = false) String zone,
+            @ToolParam(description = "New planned duration in minutes", required = false) Integer durationMin,
+            @ToolParam(description = "New planned elevation gain in m", required = false) Integer elevationM,
+            @ToolParam(description = "New RPE range low bound (0-10)", required = false) Integer rpeMin,
+            @ToolParam(description = "New RPE range high bound (0-10)", required = false) Integer rpeMax,
             @ToolParam(description = "New status", required = false) SessionStatus status,
-            @ToolParam(description = "Coach comment, athlete's language", required = false) String comment) {
-        return SessionResponse.from(planService.updateSession(currentUserId(), UUID.fromString(sessionId),
+            @ToolParam(description = "Coach comment, athlete's language", required = false) String comment,
+            @ToolParam(description = "GYM only: re-link to this program variant UUID", required = false) String templateVariantId) {
+        UUID userId = currentUserId();
+        UUID id = UUID.fromString(sessionId);
+        // Guardrail (P15): a revision that makes or moves a hard day must not
+        // land it next to another hard day of the same plan.
+        if (date != null || zone != null || rpeMax != null) {
+            var session = planService.getOwnedSession(userId, id);
+            LocalDate day = date != null ? LocalDate.parse(date) : session.getDate();
+            String mergedZone = zone != null ? (zone.isBlank() ? null : zone) : session.getZone();
+            Integer mergedRpeMax = rpeMax != null ? rpeMax : session.getRpeMax();
+            if (PlanCoachService.isHard(session.getDiscipline(), mergedZone, mergedRpeMax)
+                    && planService.getPlanCalendarForWeek(userId, session.getWeek().getId(),
+                                    day.minusDays(1), day.plusDays(1)).stream()
+                            .filter(s -> !s.getId().equals(id) && !s.getDate().equals(day))
+                            .anyMatch(PlanCoachService::isHard)) {
+                throw new IllegalArgumentException("That schedules two hard days back-to-back — keep an "
+                        + "easy or rest day between hard sessions.");
+            }
+        }
+        return SessionResponse.from(planService.updateSession(userId, id,
                 new UpdateSessionRequest(date != null ? LocalDate.parse(date) : null, null,
-                        status, comment, null, null)));
+                        title, detail, zone, durationMin, elevationM, rpeMin, rpeMax,
+                        status, comment, null,
+                        templateVariantId != null ? UUID.fromString(templateVariantId) : null)));
     }
 
-    @Tool(name = "update_week_focus", description = "Set the one-line focus of a week (athlete's preferred language).")
-    public WeekResponse updateWeekFocus(
+    @Tool(name = "delete_session", description = """
+            Remove one planned session from its week. A validated session's \
+            actuals are not lost: a linked Strava activity is detached back to \
+            the unmatched pool.""")
+    public String deleteSession(@ToolParam(description = "Session UUID") String sessionId) {
+        planService.deleteSession(currentUserId(), UUID.fromString(sessionId));
+        return "deleted";
+    }
+
+    @Tool(name = "update_week", description = """
+            Revise a week's coach intent: type (RECOVERY, TRANSITION, BUILD, \
+            DELOAD, SHOCK, TAPER, RACE), phase label, target volume / elevation \
+            / load, and/or its one-line focus (athlete's preferred language). \
+            Only pass the fields to change; a blank phase/focus clears it.""")
+    public WeekResponse updateWeek(
             @ToolParam(description = "Week UUID") String weekId,
-            @ToolParam(description = "New focus") String focus) {
+            @ToolParam(description = "New week type", required = false) WeekType weekType,
+            @ToolParam(description = "New phase label, e.g. 'Base', 'Spécifique'", required = false) String phase,
+            @ToolParam(description = "New target volume in km", required = false) Double targetVolumeKm,
+            @ToolParam(description = "New target elevation gain in m", required = false) Integer targetElevationM,
+            @ToolParam(description = "New target load in UA", required = false) Integer targetLoadUa,
+            @ToolParam(description = "New focus", required = false) String focus) {
         return WeekResponse.from(planService.updateWeek(currentUserId(), UUID.fromString(weekId),
-                new UpdateWeekRequest(focus)));
+                new UpdateWeekRequest(phase, weekType,
+                        targetVolumeKm != null ? BigDecimal.valueOf(targetVolumeKm) : null,
+                        targetElevationM, targetLoadUa, focus)));
+    }
+
+    @Tool(name = "delete_week", description = """
+            Remove a week AND all its sessions — use when redoing a block \
+            (e.g. delete the week, re-add it, refill it). Strava activities of \
+            validated sessions are detached, not lost.""")
+    public String deleteWeek(@ToolParam(description = "Week UUID") String weekId) {
+        planService.deleteWeek(currentUserId(), UUID.fromString(weekId));
+        return "deleted";
+    }
+
+    @Tool(name = "delete_plan", description = """
+            PERMANENTLY delete a whole plan: its objectives, weeks and sessions. \
+            Irreversible — confirm with the athlete before calling this. To \
+            rework a season, prefer revising weeks/sessions in place.""")
+    public String deletePlan(@ToolParam(description = "Plan UUID") String planId) {
+        planService.deletePlan(currentUserId(), UUID.fromString(planId));
+        return "deleted";
     }
 
     @Tool(name = "update_objective", description = """
@@ -458,6 +528,36 @@ public class CoachTools {
         return TemplateExerciseResponse.from(gymTemplateService.addExercise(currentUserId(),
                 UUID.fromString(variantId), new TemplateExerciseRequest(UUID.fromString(exerciseId),
                         sets, reps, seconds, restSec, intensityPct, note)), List.of());
+    }
+
+    @Tool(name = "update_template_exercise", description = """
+            Rewrite a prescription of a program variant — the way to redo gym \
+            periodization (change sets × reps, rest, %1RM, note, or swap the \
+            movement). FULL REPLACEMENT: read get_template_variant first and \
+            resend the unchanged values, including the exercise UUID (same one \
+            to keep the movement, another to swap it). Alternatives are kept.""")
+    public TemplateExerciseResponse updateTemplateExercise(
+            @ToolParam(description = "Template exercise UUID (from get_template_variant)") String templateExerciseId,
+            @ToolParam(description = "Exercise UUID — current one to keep, another to swap") String exerciseId,
+            @ToolParam(description = "Number of sets") int sets,
+            @ToolParam(description = "Reps per set (rep-based exercises)", required = false) Integer reps,
+            @ToolParam(description = "Seconds per set (SECONDS exercises)", required = false) Integer seconds,
+            @ToolParam(description = "Rest between sets, seconds", required = false) Integer restSec,
+            @ToolParam(description = "% of estimated 1RM", required = false) Integer intensityPct,
+            @ToolParam(description = "Note (tempo…), athlete's language", required = false) String note) {
+        return TemplateExerciseResponse.from(gymTemplateService.updateExercise(currentUserId(),
+                UUID.fromString(templateExerciseId), new TemplateExerciseRequest(
+                        UUID.fromString(exerciseId), sets, reps, seconds, restSec, intensityPct, note)),
+                List.of());
+    }
+
+    @Tool(name = "remove_template_exercise", description = """
+            Remove a prescription (and its alternatives) from a program \
+            variant. The exercise itself stays in the library.""")
+    public String removeTemplateExercise(
+            @ToolParam(description = "Template exercise UUID (from get_template_variant)") String templateExerciseId) {
+        gymTemplateService.removeExercise(currentUserId(), UUID.fromString(templateExerciseId));
+        return "deleted";
     }
 
     @Tool(name = "add_exercise_alternative", description = """

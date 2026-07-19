@@ -231,6 +231,17 @@ public class TrainingPlanService {
     @Transactional
     public PlanWeek updateWeek(UUID userId, UUID weekId, UpdateWeekRequest request) {
         PlanWeek week = getOwnedWeek(userId, weekId);
+        if (request.phase() != null || request.weekType() != null || request.targetVolumeKm() != null
+                || request.targetElevationM() != null || request.targetLoadUa() != null) {
+            String phase = request.phase() != null
+                    ? (request.phase().isBlank() ? null : request.phase().trim())
+                    : week.getPhase();
+            week.updatePlanning(phase,
+                    request.weekType() != null ? request.weekType() : week.getWeekType(),
+                    request.targetVolumeKm() != null ? request.targetVolumeKm() : week.getTargetVolumeKm(),
+                    request.targetElevationM() != null ? request.targetElevationM() : week.getTargetElevationM(),
+                    request.targetLoadUa() != null ? request.targetLoadUa() : week.getTargetLoadUa());
+        }
         if (request.focus() != null) {
             week.updateFocus(request.focus().isBlank() ? null : request.focus().trim());
         }
@@ -257,19 +268,33 @@ public class TrainingPlanService {
                     .filter(w -> !w.getId().equals(session.getWeek().getId()))
                     .ifPresent(session::reassignWeek);
         }
+        if (request.title() != null || request.detail() != null || request.zone() != null
+                || request.durationMin() != null || request.elevationM() != null
+                || request.rpeMin() != null || request.rpeMax() != null) {
+            if (request.title() != null && request.title().isBlank()) {
+                throw new IllegalArgumentException("title must not be blank");
+            }
+            String title = request.title() != null ? request.title().trim() : session.getTitle();
+            String detail = request.detail() != null
+                    ? (request.detail().isBlank() ? null : request.detail().trim())
+                    : session.getDetail();
+            String zone = request.zone() != null
+                    ? (request.zone().isBlank() ? null : request.zone().trim())
+                    : session.getZone();
+            Integer durationMin = request.durationMin() != null ? request.durationMin() : session.getDurationMin();
+            session.updateContent(title, detail, zone, durationMin,
+                    request.elevationM() != null ? request.elevationM() : session.getElevationM(),
+                    request.rpeMin() != null ? request.rpeMin() : session.getRpeMin(),
+                    request.rpeMax() != null ? request.rpeMax() : session.getRpeMax());
+            if (session.getDiscipline() == Discipline.RUN && request.workout() == null) {
+                // the prescription changed — keep the derived workout in sync
+                session.updateWorkoutJson(WorkoutJson.write(
+                        WorkoutParser.parse(detail, zone, durationMin).nodes()));
+            }
+        }
         if (request.status() != null) {
             if (request.status() == SessionStatus.PLANNED) {
-                // Un-validating clears the session's actuals: a manually-entered
-                // measure is discarded; a real Strava run is detached (returned
-                // to the unmatched pool) so it stops counting as this now-planned
-                // session's volume and can be re-proposed elsewhere.
-                activityRepository.findBySessionId(session.getId()).ifPresent(activity -> {
-                    if (activity.getSource() == ActivitySource.MANUAL) {
-                        activityRepository.delete(activity);
-                    } else {
-                        activity.detachFromSession();
-                    }
-                });
+                releaseActivity(session);
             }
             session.updateStatus(request.status());
         }
@@ -339,6 +364,40 @@ public class TrainingPlanService {
     public void deletePlan(UUID userId, UUID planId) {
         TrainingPlan plan = getOwnedPlan(userId, planId);
         planRepository.delete(plan); // weeks and sessions cascade at the DB level
+    }
+
+    /** Remove one planned session; its actuals are released, never lost with it. */
+    @Transactional
+    public void deleteSession(UUID userId, UUID sessionId) {
+        PlannedSession session = sessionRepository.findById(sessionId)
+                .filter(s -> s.getUserId().equals(userId))
+                .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
+        releaseActivity(session);
+        sessionRepository.delete(session);
+    }
+
+    /** Remove a week and its sessions; each session's actuals are released first. */
+    @Transactional
+    public void deleteWeek(UUID userId, UUID weekId) {
+        PlanWeek week = getOwnedWeek(userId, weekId);
+        sessionRepository.findByWeekIdOrderByDateAscOrderInDayAsc(weekId)
+                .forEach(this::releaseActivity);
+        weekRepository.delete(week); // its sessions cascade at the DB level
+    }
+
+    /**
+     * Clears a session's actuals: a manually-entered measure is discarded; a
+     * real Strava run is detached (returned to the unmatched pool) so it stops
+     * counting as this session's volume and can be re-proposed elsewhere.
+     */
+    private void releaseActivity(PlannedSession session) {
+        activityRepository.findBySessionId(session.getId()).ifPresent(activity -> {
+            if (activity.getSource() == ActivitySource.MANUAL) {
+                activityRepository.delete(activity);
+            } else {
+                activity.detachFromSession();
+            }
+        });
     }
 
     private PlanWeek getOwnedWeek(UUID userId, UUID weekId) {

@@ -220,7 +220,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 
         service().updateSession(OWNER, session.getId(),
-                new UpdateSessionRequest(LocalDate.of(2026, 10, 11), null, null, null, null, null));
+                new UpdateSessionRequest(LocalDate.of(2026, 10, 11), null, null, null, null, null, null, null, null, null, null, null, null));
 
         assertThat(session.getDate()).isEqualTo(LocalDate.of(2026, 10, 11));
         assertThat(session.getStatus()).isEqualTo(SessionStatus.MOVED);
@@ -244,7 +244,7 @@ class TrainingPlanServiceTest {
 
         // move into week 2's 7-day span
         service().updateSession(OWNER, session.getId(),
-                new UpdateSessionRequest(LocalDate.of(2026, 10, 15), null, null, null, null, null));
+                new UpdateSessionRequest(LocalDate.of(2026, 10, 15), null, null, null, null, null, null, null, null, null, null, null, null));
 
         assertThat(session.getWeek()).isEqualTo(week2);
     }
@@ -255,7 +255,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 
         service().updateSession(OWNER, session.getId(),
-                new UpdateSessionRequest(null, null, SessionStatus.DONE, null, null, null));
+                new UpdateSessionRequest(null, null, null, null, null, null, null, null, null, SessionStatus.DONE, null, null, null));
 
         assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
         assertThat(session.getDate()).isEqualTo(LocalDate.of(2026, 10, 10));
@@ -267,7 +267,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 
         assertThatThrownBy(() -> service().updateSession(OWNER, session.getId(),
-                new UpdateSessionRequest(LocalDate.of(2027, 1, 1), null, null, null, null, null)))
+                new UpdateSessionRequest(LocalDate.of(2027, 1, 1), null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -277,7 +277,7 @@ class TrainingPlanServiceTest {
         when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 
         assertThatThrownBy(() -> service().updateSession(STRANGER, session.getId(),
-                new UpdateSessionRequest(null, null, SessionStatus.DONE, null, null, null)))
+                new UpdateSessionRequest(null, null, null, null, null, null, null, null, null, SessionStatus.DONE, null, null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -334,6 +334,148 @@ class TrainingPlanServiceTest {
     }
 
     @Test
+    void updateSession_revisesContentAndReparsesWorkout() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(null, null, "  Seuil long ",
+                        "20′ EF + 3×10′ Seuil 60 (récup 3′) + 10′ EF", "Seuil 60",
+                        75, 300, 6, 7, null, null, null, null));
+
+        assertThat(session.getTitle()).isEqualTo("Seuil long");
+        assertThat(session.getDetail()).isEqualTo("20′ EF + 3×10′ Seuil 60 (récup 3′) + 10′ EF");
+        assertThat(session.getZone()).isEqualTo("Seuil 60");
+        assertThat(session.getDurationMin()).isEqualTo(75);
+        assertThat(session.getElevationM()).isEqualTo(300);
+        assertThat(session.getRpeMin()).isEqualTo(6);
+        assertThat(session.getRpeMax()).isEqualTo(7);
+        assertThat(session.getWorkoutJson()).isNotNull();
+        assertThat(session.getDate()).isEqualTo(LocalDate.of(2026, 10, 10));
+    }
+
+    @Test
+    void updateSession_partialContentKeepsOtherFields() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(null, null, null, null, null,
+                        270, null, null, null, null, null, null, null));
+
+        assertThat(session.getDurationMin()).isEqualTo(270);
+        assertThat(session.getTitle()).isEqualTo("SL 4h nocturne");
+        assertThat(session.getZone()).isEqualTo("EF");
+        assertThat(session.getElevationM()).isEqualTo(1500);
+    }
+
+    @Test
+    void updateSession_rejectsBlankTitle() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(null, null, "  ", null, null,
+                        null, null, null, null, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private PlanWeek weekOwnedBy(UUID userId) {
+        PlanWeek week = new PlanWeek(planOwnedBy(userId), 14, LocalDate.of(2026, 10, 5), "Base",
+                WeekType.BUILD, new BigDecimal("55.0"), 1200, null, "Volume");
+        ReflectionTestUtils.setField(week, "id", UUID.randomUUID());
+        return week;
+    }
+
+    @Test
+    void updateWeek_revisesPlanningAndFocus() {
+        PlanWeek week = weekOwnedBy(OWNER);
+        when(weekRepository.findById(week.getId())).thenReturn(Optional.of(week));
+
+        service().updateWeek(OWNER, week.getId(), new com.cavale.training.dto.UpdateWeekRequest(
+                " Spécifique ", WeekType.SHOCK, new BigDecimal("70.0"), 2000, 600, "Bloc choc"));
+
+        assertThat(week.getPhase()).isEqualTo("Spécifique");
+        assertThat(week.getWeekType()).isEqualTo(WeekType.SHOCK);
+        assertThat(week.getTargetVolumeKm()).isEqualByComparingTo("70.0");
+        assertThat(week.getTargetElevationM()).isEqualTo(2000);
+        assertThat(week.getTargetLoadUa()).isEqualTo(600);
+        assertThat(week.getFocus()).isEqualTo("Bloc choc");
+    }
+
+    @Test
+    void updateWeek_partialKeepsUnsentFields() {
+        PlanWeek week = weekOwnedBy(OWNER);
+        when(weekRepository.findById(week.getId())).thenReturn(Optional.of(week));
+
+        service().updateWeek(OWNER, week.getId(), new com.cavale.training.dto.UpdateWeekRequest(
+                null, null, new BigDecimal("60.0"), null, null, null));
+
+        assertThat(week.getTargetVolumeKm()).isEqualByComparingTo("60.0");
+        assertThat(week.getWeekType()).isEqualTo(WeekType.BUILD);
+        assertThat(week.getPhase()).isEqualTo("Base");
+        assertThat(week.getFocus()).isEqualTo("Volume");
+    }
+
+    @Test
+    void deleteSession_deletesManualActivityWithIt() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        Activity activity = new Activity(session, ActivitySource.MANUAL, session.getDate(),
+                240, new java.math.BigDecimal("38.0"), null, null, null);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.of(activity));
+
+        service().deleteSession(OWNER, session.getId());
+
+        verify(activityRepository).delete(activity);
+        verify(sessionRepository).delete(session);
+    }
+
+    @Test
+    void deleteSession_detachesStravaActivity() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        Activity activity = new Activity(session, ActivitySource.STRAVA, session.getDate(),
+                240, new java.math.BigDecimal("38.0"), null, null, null);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.of(activity));
+
+        service().deleteSession(OWNER, session.getId());
+
+        assertThat(activity.getSession()).isNull();
+        verify(activityRepository, never()).delete(any());
+        verify(sessionRepository).delete(session);
+    }
+
+    @Test
+    void deleteSession_hidesForeignSessionAs404() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service().deleteSession(STRANGER, session.getId()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(sessionRepository, never()).delete(any(PlannedSession.class));
+    }
+
+    @Test
+    void deleteWeek_releasesActivitiesThenDeletes() {
+        PlanWeek week = weekOwnedBy(OWNER);
+        PlannedSession session = new PlannedSession(week, OWNER, LocalDate.of(2026, 10, 10), 0,
+                Discipline.RUN, "SL", null, "EF", 240, null, null, null);
+        ReflectionTestUtils.setField(session, "id", UUID.randomUUID());
+        Activity strava = new Activity(session, ActivitySource.STRAVA, session.getDate(),
+                240, new java.math.BigDecimal("38.0"), null, null, null);
+        when(weekRepository.findById(week.getId())).thenReturn(Optional.of(week));
+        when(sessionRepository.findByWeekIdOrderByDateAscOrderInDayAsc(week.getId()))
+                .thenReturn(List.of(session));
+        when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.of(strava));
+
+        service().deleteWeek(OWNER, week.getId());
+
+        assertThat(strava.getSession()).isNull();
+        verify(weekRepository).delete(week);
+    }
+
+    @Test
     void updateSession_resetToPlannedDeletesManualActivity() {
         PlannedSession session = sessionOwnedBy(OWNER);
         session.updateStatus(SessionStatus.DONE);
@@ -343,7 +485,7 @@ class TrainingPlanServiceTest {
         when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.of(activity));
 
         service().updateSession(OWNER, session.getId(),
-                new UpdateSessionRequest(null, null, SessionStatus.PLANNED, null, null, null));
+                new UpdateSessionRequest(null, null, null, null, null, null, null, null, null, SessionStatus.PLANNED, null, null, null));
 
         verify(activityRepository).delete(activity);
         assertThat(session.getStatus()).isEqualTo(SessionStatus.PLANNED);

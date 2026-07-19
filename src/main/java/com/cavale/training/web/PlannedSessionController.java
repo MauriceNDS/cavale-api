@@ -4,16 +4,19 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cavale.integration.strava.StravaActivityService;
@@ -60,11 +63,18 @@ public class PlannedSessionController {
     }
 
     @PatchMapping("/{sessionId}")
-    @Operation(summary = "Move a session (date/order) and/or update its status")
+    @Operation(summary = "Move a session, revise its content (title/detail/zone/targets) and/or update its status")
     public SessionResponse update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId,
                                   @Valid @RequestBody UpdateSessionRequest request) {
         UUID userId = UUID.fromString(jwt.getSubject());
         return SessionResponse.from(planService.updateSession(userId, sessionId, request));
+    }
+
+    @DeleteMapping("/{sessionId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Delete a planned session (its Strava activity, if any, is detached, not lost)")
+    public void delete(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        planService.deleteSession(UUID.fromString(jwt.getSubject()), sessionId);
     }
 
     @PostMapping("/{sessionId}/validate")
