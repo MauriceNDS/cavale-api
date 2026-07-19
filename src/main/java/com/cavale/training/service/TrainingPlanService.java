@@ -23,6 +23,7 @@ import com.cavale.training.domain.PlanWeek;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.domain.TrainingPlan;
+import com.cavale.training.dto.CreateObjectiveRequest;
 import com.cavale.training.dto.CreatePlanRequest;
 import com.cavale.training.dto.CreateSessionRequest;
 import com.cavale.training.dto.CreateWeekRequest;
@@ -72,8 +73,7 @@ public class TrainingPlanService {
 
     /**
      * Creates the plan AND its MAIN objective — a season always has one.
-     * The objective starts as a race named after the goal (or the plan),
-     * dated at the end of the season; the user refines it on the objective page.
+     * See {@link #buildMainObjective} for how the objective is derived.
      */
     @Transactional
     public TrainingPlan createPlan(UUID userId, CreatePlanRequest request) {
@@ -87,12 +87,42 @@ public class TrainingPlanService {
             plan.updateStatus(PlanStatus.DRAFT);
         }
         plan = planRepository.save(plan);
-        String objectiveName = request.goal() == null || request.goal().isBlank()
-                ? plan.getName()
-                : request.goal().trim();
-        objectiveRepository.save(new Objective(plan, ObjectiveRole.MAIN, ObjectiveType.RACE,
-                objectiveName, plan.getEndDate()));
+        objectiveRepository.save(buildMainObjective(plan, request));
         return plan;
+    }
+
+    /**
+     * The season's MAIN objective: fully specified when the request carries
+     * one, otherwise a placeholder race named after the goal (or the plan),
+     * dated at the end of the season.
+     */
+    private static Objective buildMainObjective(TrainingPlan plan, CreatePlanRequest request) {
+        CreateObjectiveRequest details = request.objective();
+        if (details == null) {
+            String objectiveName = request.goal() == null || request.goal().isBlank()
+                    ? plan.getName()
+                    : request.goal().trim();
+            return new Objective(plan, ObjectiveRole.MAIN, ObjectiveType.RACE,
+                    objectiveName, plan.getEndDate());
+        }
+        Objective objective = new Objective(plan, ObjectiveRole.MAIN, details.type(),
+                details.name().trim(),
+                details.date() != null ? details.date() : plan.getEndDate());
+        if (details.kind() != null) {
+            objective.updateKind(details.kind());
+        }
+        if (details.intensity() != null) {
+            objective.updateIntensity(details.intensity());
+        }
+        objective.updateRaceProfile(details.distanceKm(), details.elevationGainM(),
+                trimmedOrNull(details.location()));
+        objective.updateTargetTimeMin(details.targetTimeMin());
+        objective.updateNotes(trimmedOrNull(details.notes()));
+        return objective;
+    }
+
+    private static String trimmedOrNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     @Transactional(readOnly = true)

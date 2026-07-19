@@ -1,5 +1,6 @@
 package com.cavale.training.service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +21,10 @@ import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.domain.WeekType;
+import com.cavale.training.domain.ObjectiveIntensity;
+import com.cavale.training.domain.ObjectiveKind;
+import com.cavale.training.domain.ObjectiveType;
+import com.cavale.training.dto.CreateObjectiveRequest;
 import com.cavale.training.dto.CreatePlanRequest;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivitySource;
@@ -102,6 +107,45 @@ class TrainingPlanServiceTest {
         assertThat(main.getRole()).isEqualTo(ObjectiveRole.MAIN);
         assertThat(main.getName()).isEqualTo("SaintéLyon 80 km");
         assertThat(main.getDate()).isEqualTo(LocalDate.of(2026, 11, 29));
+    }
+
+    @Test
+    void createPlan_usesProvidedObjectiveDetails() {
+        when(planRepository.save(any(TrainingPlan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service().createPlan(OWNER, new CreatePlanRequest(
+                "Saison 2027", null, LocalDate.of(2027, 3, 1), LocalDate.of(2027, 9, 5),
+                new CreateObjectiveRequest(ObjectiveType.RACE, ObjectiveKind.TRAIL,
+                        ObjectiveIntensity.PERFORMANCE, "  UTMB 2027 ", LocalDate.of(2027, 8, 27),
+                        new BigDecimal("171.5"), 10000, 46 * 60, "  Chamonix ", "première 100 miles")));
+
+        ArgumentCaptor<Objective> captor = ArgumentCaptor.forClass(Objective.class);
+        verify(objectiveRepository).save(captor.capture());
+        Objective main = captor.getValue();
+        assertThat(main.getRole()).isEqualTo(ObjectiveRole.MAIN);
+        assertThat(main.getName()).isEqualTo("UTMB 2027");
+        assertThat(main.getDate()).isEqualTo(LocalDate.of(2027, 8, 27));
+        assertThat(main.getKind()).isEqualTo(ObjectiveKind.TRAIL);
+        assertThat(main.getIntensity()).isEqualTo(ObjectiveIntensity.PERFORMANCE);
+        assertThat(main.getDistanceKm()).isEqualByComparingTo("171.5");
+        assertThat(main.getElevationGainM()).isEqualTo(10000);
+        assertThat(main.getTargetTimeMin()).isEqualTo(46 * 60);
+        assertThat(main.getLocation()).isEqualTo("Chamonix");
+        assertThat(main.getNotes()).isEqualTo("première 100 miles");
+    }
+
+    @Test
+    void createPlan_undatedObjectiveDefaultsToSeasonEnd() {
+        when(planRepository.save(any(TrainingPlan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service().createPlan(OWNER, new CreatePlanRequest(
+                "Reprise", null, LocalDate.of(2027, 1, 4), LocalDate.of(2027, 3, 28),
+                new CreateObjectiveRequest(ObjectiveType.FITNESS, null, null,
+                        "Retrouver la forme", null, null, null, null, null, null)));
+
+        ArgumentCaptor<Objective> captor = ArgumentCaptor.forClass(Objective.class);
+        verify(objectiveRepository).save(captor.capture());
+        assertThat(captor.getValue().getDate()).isEqualTo(LocalDate.of(2027, 3, 28));
     }
 
     @Test
