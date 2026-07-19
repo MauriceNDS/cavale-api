@@ -2,6 +2,7 @@ package com.cavale.training.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -223,6 +224,29 @@ class TrainingPlanServiceTest {
 
         assertThat(session.getDate()).isEqualTo(LocalDate.of(2026, 10, 11));
         assertThat(session.getStatus()).isEqualTo(SessionStatus.MOVED);
+    }
+
+    @Test
+    void updateSession_crossWeekMoveReassignsWeek() {
+        TrainingPlan plan = planOwnedBy(OWNER);
+        PlanWeek week1 = new PlanWeek(plan, 1, LocalDate.of(2026, 10, 5), null,
+                WeekType.BUILD, null, null, null, null);
+        PlanWeek week2 = new PlanWeek(plan, 2, LocalDate.of(2026, 10, 12), null,
+                WeekType.BUILD, null, null, null, null);
+        ReflectionTestUtils.setField(week1, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(week2, "id", UUID.randomUUID());
+        PlannedSession session = new PlannedSession(week1, OWNER, LocalDate.of(2026, 10, 8), 0,
+                Discipline.RUN, "EF", null, "EF", 60, null, 3, 4);
+        ReflectionTestUtils.setField(session, "id", UUID.randomUUID());
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        when(weekRepository.findByPlanIdOrderByWeekNumber(plan.getId()))
+                .thenReturn(List.of(week1, week2));
+
+        // move into week 2's 7-day span
+        service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(LocalDate.of(2026, 10, 15), null, null, null, null, null));
+
+        assertThat(session.getWeek()).isEqualTo(week2);
     }
 
     @Test
