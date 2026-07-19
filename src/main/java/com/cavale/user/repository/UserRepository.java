@@ -24,6 +24,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByAccountStatusOrderByCreatedAtDesc(AccountStatus accountStatus);
 
+    /** Bootstrap: how many real accounts exist (demo sandboxes don't count). */
+    long countByDemoFalse();
+
     /* ── Demo sandbox ──────────────────────────────────────────────────── */
 
     long countByDemoTrue();

@@ -22,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.cavale.user.domain.User;
 import com.cavale.user.repository.UserRepository;
 import com.cavale.user.service.TokenService;
+import com.cavale.user.service.UserService;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +50,9 @@ class StravaAuthServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private UserService userService;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -68,7 +72,7 @@ class StravaAuthServiceTest {
 
     private StravaAuthService service() {
         return new StravaAuthService(PROPS, stravaClient, connectionRepository, userRepository,
-                passwordEncoder, tokenService, jwtEncoder, jwtDecoder, eventPublisher);
+                userService, passwordEncoder, tokenService, jwtEncoder, jwtDecoder, eventPublisher);
     }
 
     private static StravaDtos.TokenResponse tokenResponse(long athleteId) {
@@ -102,6 +106,9 @@ class StravaAuthServiceTest {
         assertThat(redirect).isEqualTo("http://localhost:5173/auth/strava#token=cavale-jwt");
         verify(userRepository).save(any(User.class));
         verify(connectionRepository).save(any(StravaConnection.class));
+        // the first-account bootstrap must consider Strava-born accounts too —
+        // the owner of a fresh install may well arrive through this door
+        verify(userService).bootstrapIfFirstAccount(any(User.class));
     }
 
     @Test

@@ -139,12 +139,42 @@ class UserServiceTest {
         when(userRepository.existsByEmail("bob@cavale.run")).thenReturn(false);
         when(passwordEncoder.encode(any())).thenReturn("$2a$hashed");
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        // someone already owns the install — Bob is not the first real account
+        when(userRepository.countByDemoFalse()).thenReturn(1L);
 
         User saved = userService().register("bob@cavale.run", "s3cret-pass", "Bob");
 
         assertThat(saved.getAccountStatus()).isEqualTo(AccountStatus.PENDING);
         assertThat(saved.isActive()).isFalse();
         assertThat(saved.isAdmin()).isFalse();
+    }
+
+    @Test
+    void register_veryFirstRealAccountIsAdminAndActive() {
+        when(userRepository.existsByEmail("owner@cavale.run")).thenReturn(false);
+        when(passwordEncoder.encode(any())).thenReturn("$2a$hashed");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(userRepository.countByDemoFalse()).thenReturn(0L);
+
+        User saved = userService().register("owner@cavale.run", "s3cret-pass", "Owner");
+
+        assertThat(saved.isAdmin()).isTrue();
+        assertThat(saved.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
+    }
+
+    @Test
+    void bootstrapIfFirstAccount_promotesOnlyWhenNoRealAccountExists() {
+        User first = new User("owner@cavale.run", "$2a$hashed", "Owner");
+        when(userRepository.countByDemoFalse()).thenReturn(0L);
+        userService().bootstrapIfFirstAccount(first);
+        assertThat(first.isAdmin()).isTrue();
+        assertThat(first.isActive()).isTrue();
+
+        User second = new User("bob@cavale.run", "$2a$hashed", "Bob");
+        when(userRepository.countByDemoFalse()).thenReturn(1L);
+        userService().bootstrapIfFirstAccount(second);
+        assertThat(second.isAdmin()).isFalse();
+        assertThat(second.getAccountStatus()).isEqualTo(AccountStatus.PENDING);
     }
 
     @Test

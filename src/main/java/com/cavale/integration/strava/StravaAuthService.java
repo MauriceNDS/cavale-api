@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.cavale.user.domain.User;
 import com.cavale.user.repository.UserRepository;
 import com.cavale.user.service.TokenService;
+import com.cavale.user.service.UserService;
 
 /**
  * Strava OAuth, two flavours sharing one callback:
@@ -44,6 +45,7 @@ public class StravaAuthService {
     private final StravaClient stravaClient;
     private final StravaConnectionRepository connectionRepository;
     private final UserRepository userRepository;
+    private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final JwtEncoder jwtEncoder;
@@ -52,13 +54,15 @@ public class StravaAuthService {
 
     public StravaAuthService(StravaProperties properties, StravaClient stravaClient,
                              StravaConnectionRepository connectionRepository,
-                             UserRepository userRepository, PasswordEncoder passwordEncoder,
+                             UserRepository userRepository, UserService userService,
+                             PasswordEncoder passwordEncoder,
                              TokenService tokenService, JwtEncoder jwtEncoder, JwtDecoder jwtDecoder,
                              ApplicationEventPublisher eventPublisher) {
         this.properties = properties;
         this.stravaClient = stravaClient;
         this.connectionRepository = connectionRepository;
         this.userRepository = userRepository;
+        this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.jwtEncoder = jwtEncoder;
@@ -125,7 +129,9 @@ public class StravaAuthService {
     private User createUserForAthlete(StravaDtos.Athlete athlete) {
         String email = "strava-" + athlete.id() + "@users.cavale.local";
         String unusablePassword = passwordEncoder.encode(UUID.randomUUID().toString());
-        return userRepository.save(new User(email, unusablePassword, athlete.displayName()));
+        User user = new User(email, unusablePassword, athlete.displayName());
+        userService.bootstrapIfFirstAccount(user);
+        return userRepository.save(user);
     }
 
     private void upsertConnection(UUID userId, StravaDtos.TokenResponse token) {

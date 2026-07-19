@@ -47,7 +47,23 @@ public class UserService {
             user.promoteToAdmin();
             user.activate();
         }
+        bootstrapIfFirstAccount(user);
         return userRepository.save(user);
+    }
+
+    /**
+     * The very first real account (demo sandboxes don't count) is promoted to
+     * ADMIN + ACTIVE whatever door it came through. {@code cavale.admin.emails}
+     * can never match a Strava-born account — Strava's OAuth exposes no email,
+     * so those get a synthetic address — and without this rule a fresh install
+     * whose owner arrives via Strava has nobody able to approve accounts.
+     * Call on a not-yet-saved user; idempotent with the admin-email promotion.
+     */
+    public void bootstrapIfFirstAccount(User user) {
+        if (userRepository.countByDemoFalse() == 0) {
+            user.promoteToAdmin();
+            user.activate();
+        }
     }
 
     @Transactional(readOnly = true)
