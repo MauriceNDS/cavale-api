@@ -163,16 +163,35 @@ public class CoachTools {
     @Tool(name = "create_training_plan", description = """
             Create a new season built around one goal. Call get_athlete_context \
             FIRST and respect it (recent race => recovery start; INJURED/SICK => \
-            no hard blocks). Also creates the MAIN objective from the goal; refine \
-            it afterwards with update_objective. Then add weeks (add_week) and \
-            sessions (add_session).""")
+            no hard blocks). Also creates the MAIN objective: pass the race \
+            profile fields when you know them (they drive scaffold_plan's target \
+            loads) — otherwise a placeholder is created and you refine it with \
+            update_objective. Then add weeks (add_week) and sessions \
+            (add_session).""")
     public PlanResponse createTrainingPlan(
             @ToolParam(description = "Season name, e.g. 'Saison SaintéLyon 2027'") String name,
             @ToolParam(description = "The goal, e.g. 'SaintéLyon 80 km'", required = false) String goal,
             @ToolParam(description = "Season start, ISO date") String startDate,
-            @ToolParam(description = "Season end (usually race day), ISO date") String endDate) {
+            @ToolParam(description = "Season end (usually race day), ISO date") String endDate,
+            @ToolParam(description = "Objective type: RACE, RECOVERY, FITNESS or GENERAL (default RACE)", required = false) ObjectiveType objectiveType,
+            @ToolParam(description = "ROAD or TRAIL (default TRAIL) — decides how targets are expressed", required = false) ObjectiveKind objectiveKind,
+            @ToolParam(description = "BALANCE or PERFORMANCE (default BALANCE) — how hard to chase it", required = false) ObjectiveIntensity objectiveIntensity,
+            @ToolParam(description = "Race distance in km", required = false) BigDecimal distanceKm,
+            @ToolParam(description = "Race elevation gain in m", required = false) Integer elevationGainM,
+            @ToolParam(description = "Target finish time in minutes", required = false) Integer targetTimeMin) {
+        CreateObjectiveRequest objective = objectiveType == null && objectiveKind == null
+                && objectiveIntensity == null && distanceKm == null && elevationGainM == null
+                && targetTimeMin == null
+                ? null
+                : new CreateObjectiveRequest(
+                        objectiveType != null ? objectiveType : ObjectiveType.RACE,
+                        objectiveKind, objectiveIntensity,
+                        // name the objective after the goal (or the season) — same as the placeholder path
+                        goal != null && !goal.isBlank() ? goal.trim() : name.trim(),
+                        null, distanceKm, elevationGainM, targetTimeMin, null, null);
         return PlanResponse.from(planService.createPlan(currentUserId(),
-                new CreatePlanRequest(name, goal, LocalDate.parse(startDate), LocalDate.parse(endDate))));
+                new CreatePlanRequest(name, goal, LocalDate.parse(startDate), LocalDate.parse(endDate),
+                        objective)));
     }
 
     @Tool(name = "scaffold_plan", description = """
@@ -252,9 +271,12 @@ public class CoachTools {
             @ToolParam(description = "GYM only: program variant UUID", required = false) String templateVariantId) {
         UUID userId = currentUserId();
         LocalDate day = LocalDate.parse(date);
-        // Guardrail: never two hard days back-to-back (P15).
+        // Guardrail: never two hard days back-to-back (P15), scoped to THIS
+        // plan so an overlapping DRAFT next-season plan's neighbour doesn't
+        // trigger a false rejection.
         if (PlanCoachService.isHard(discipline, zone, rpeMax)
-                && planService.getCalendar(userId, day.minusDays(1), day.plusDays(1)).stream()
+                && planService.getPlanCalendarForWeek(userId, UUID.fromString(weekId),
+                                day.minusDays(1), day.plusDays(1)).stream()
                         .filter(s -> !s.getDate().equals(day))
                         .anyMatch(PlanCoachService::isHard)) {
             throw new IllegalArgumentException("That schedules two hard days back-to-back — keep an "

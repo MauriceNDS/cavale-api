@@ -4,7 +4,10 @@ import java.time.Instant;
 import java.util.List;
 
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
 @Component
@@ -22,28 +25,37 @@ public class RestStravaClient implements StravaClient {
 
     @Override
     public StravaDtos.TokenResponse exchangeCode(String code) {
+        MultiValueMap<String, String> form = credentialForm();
+        form.add("code", code);
+        form.add("grant_type", "authorization_code");
         return authClient.post()
-                .uri(uri -> uri.path("/oauth/token")
-                        .queryParam("client_id", properties.clientId())
-                        .queryParam("client_secret", properties.clientSecret())
-                        .queryParam("code", code)
-                        .queryParam("grant_type", "authorization_code")
-                        .build())
+                .uri("/oauth/token")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
                 .retrieve()
                 .body(StravaDtos.TokenResponse.class);
     }
 
     @Override
     public StravaDtos.TokenResponse refreshToken(String refreshToken) {
+        MultiValueMap<String, String> form = credentialForm();
+        form.add("refresh_token", refreshToken);
+        form.add("grant_type", "refresh_token");
         return authClient.post()
-                .uri(uri -> uri.path("/oauth/token")
-                        .queryParam("client_id", properties.clientId())
-                        .queryParam("client_secret", properties.clientSecret())
-                        .queryParam("refresh_token", refreshToken)
-                        .queryParam("grant_type", "refresh_token")
-                        .build())
+                .uri("/oauth/token")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
                 .retrieve()
                 .body(StravaDtos.TokenResponse.class);
+    }
+
+    /** client_id + client_secret in a form body — kept out of the URL so the
+     *  application-wide secret never lands in access/proxy logs. */
+    private MultiValueMap<String, String> credentialForm() {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("client_id", properties.clientId());
+        form.add("client_secret", properties.clientSecret());
+        return form;
     }
 
     @Override
@@ -82,13 +94,13 @@ public class RestStravaClient implements StravaClient {
 
     @Override
     public StravaDtos.PushSubscription createPushSubscription(String callbackUrl, String verifyToken) {
+        MultiValueMap<String, String> form = credentialForm();
+        form.add("callback_url", callbackUrl);
+        form.add("verify_token", verifyToken);
         return apiClient.post()
-                .uri(uri -> uri.path("/push_subscriptions")
-                        .queryParam("client_id", properties.clientId())
-                        .queryParam("client_secret", properties.clientSecret())
-                        .queryParam("callback_url", callbackUrl)
-                        .queryParam("verify_token", verifyToken)
-                        .build())
+                .uri("/push_subscriptions")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
                 .retrieve()
                 .body(StravaDtos.PushSubscription.class);
     }
@@ -116,17 +128,35 @@ public class RestStravaClient implements StravaClient {
                 .toBodilessEntity();
     }
 
+    /** Max pages walked in one window — 200/page over a sync window is a generous
+     *  ceiling that still bounds work if Strava ever returned a non-shrinking page. */
+    private static final int MAX_WINDOW_PAGES = 20;
+    private static final int WINDOW_PAGE_SIZE = 200;
+
     @Override
     public List<StravaDtos.ActivitySummary> listActivities(String accessToken, Instant after, Instant before) {
-        return apiClient.get()
-                .uri(uri -> uri.path("/athlete/activities")
-                        .queryParam("after", after.getEpochSecond())
-                        .queryParam("before", before.getEpochSecond())
-                        .queryParam("per_page", 100)
-                        .build())
-                .header("Authorization", "Bearer " + accessToken)
-                .retrieve()
-                .body(new ParameterizedTypeReference<>() {
-                });
+        List<StravaDtos.ActivitySummary> all = new java.util.ArrayList<>();
+        for (int page = 1; page <= MAX_WINDOW_PAGES; page++) {
+            final int p = page;
+            List<StravaDtos.ActivitySummary> batch = apiClient.get()
+                    .uri(uri -> uri.path("/athlete/activities")
+                            .queryParam("after", after.getEpochSecond())
+                            .queryParam("before", before.getEpochSecond())
+                            .queryParam("page", p)
+                            .queryParam("per_page", WINDOW_PAGE_SIZE)
+                            .build())
+                    .header("Authorization", "Bearer " + accessToken)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {
+                    });
+            if (batch == null || batch.isEmpty()) {
+                break;
+            }
+            all.addAll(batch);
+            if (batch.size() < WINDOW_PAGE_SIZE) {
+                break; // last page
+            }
+        }
+        return all;
     }
 }

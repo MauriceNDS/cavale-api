@@ -61,7 +61,10 @@ public class AccountAccessFilter extends OncePerRequestFilter {
         return path.startsWith("/api/auth/")
                 || path.startsWith("/api/strava/callback")
                 || path.startsWith("/api/strava/webhook")
-                || path.startsWith("/actuator/")
+                // only the health probe is public; any other actuator endpoint
+                // still runs through the gate (defence in depth if more are exposed)
+                || path.equals("/actuator/health")
+                || path.startsWith("/actuator/health/")
                 || path.startsWith("/v3/api-docs")
                 || path.startsWith("/swagger-ui");
     }
@@ -93,6 +96,17 @@ public class AccountAccessFilter extends OncePerRequestFilter {
             return;
         }
         UserAccess user = maybeUser.get();
+
+        // Reject tokens minted before the account's tokens were last revoked.
+        // Absent claim (tokens issued before this feature) reads as 0, matching
+        // the column default, so existing sessions keep working across rollout.
+        Object tvClaim = jwtAuth.getToken().getClaim("tv");
+        int tokenVersion = tvClaim instanceof Number n ? n.intValue() : 0;
+        if (tokenVersion != user.getTokenVersion()) {
+            writeProblem(response, HttpStatus.UNAUTHORIZED, "Session expired",
+                    "This credential has been revoked — sign in again.");
+            return;
+        }
 
         if (isAdminPath(request) && !user.getRole().name().equals("ADMIN")) {
             writeProblem(response, HttpStatus.FORBIDDEN, "Forbidden",

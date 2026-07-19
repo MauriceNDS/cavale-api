@@ -88,6 +88,15 @@ public class User extends Auditable {
     @Column(name = "is_demo", nullable = false)
     private boolean demo = false;
 
+    /**
+     * Bumped to invalidate every token already issued for this account
+     * (sessions AND personal access tokens). Each token carries the value it
+     * was minted at; the access gate rejects any whose value is stale — the
+     * kill switch for a leaked PAT.
+     */
+    @Column(name = "token_version", nullable = false)
+    private int tokenVersion = 0;
+
     protected User() {}
 
     public User(String email, String passwordHash, String displayName) {
@@ -202,6 +211,15 @@ public class User extends Auditable {
 
     public boolean isAdmin() {
         return role == UserRole.ADMIN;
+    }
+
+    public int getTokenVersion() {
+        return tokenVersion;
+    }
+
+    /** Invalidate all previously-issued tokens for this account. */
+    public void revokeTokens() {
+        this.tokenVersion++;
     }
 
     /** Flag this account as an ephemeral demo sandbox. */

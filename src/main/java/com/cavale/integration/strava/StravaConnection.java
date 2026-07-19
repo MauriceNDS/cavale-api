@@ -91,14 +91,6 @@ public class StravaConnection extends Auditable {
         return refreshToken;
     }
 
-    public Instant getExpiresAt() {
-        return expiresAt;
-    }
-
-    public String getScope() {
-        return scope;
-    }
-
     public Instant getLastSyncAt() {
         return lastSyncAt;
     }

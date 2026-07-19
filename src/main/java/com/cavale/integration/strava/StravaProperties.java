@@ -18,7 +18,16 @@ public record StravaProperties(
         /** Public URL Strava pushes events to — empty means webhooks are off. */
         String webhookCallbackUrl,
         /** Shared secret echoed during Strava's subscription validation. */
-        String webhookVerifyToken) {
+        String webhookVerifyToken,
+        /** Strava-assigned subscription id; when set, events with a different one are dropped. */
+        String webhookSubscriptionId) {
+
+    /** The configured subscription id as a number, or null when not set. */
+    public Long webhookSubscriptionIdOrNull() {
+        return webhookSubscriptionId == null || webhookSubscriptionId.isBlank()
+                ? null
+                : Long.valueOf(webhookSubscriptionId.trim());
+    }
 
     public boolean configured() {
         return clientId != null && !clientId.isBlank()

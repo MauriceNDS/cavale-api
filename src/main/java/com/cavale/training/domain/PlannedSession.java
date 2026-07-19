@@ -29,7 +29,7 @@ public class PlannedSession extends Auditable {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "week_id", nullable = false, updatable = false)
+    @JoinColumn(name = "week_id", nullable = false)
     private PlanWeek week;
 
     /** Denormalized from the plan owner: keeps the calendar query join-free. */
@@ -201,6 +201,14 @@ public class PlannedSession extends Auditable {
         if (dateChanged && this.status == SessionStatus.PLANNED) {
             this.status = SessionStatus.MOVED;
         }
+    }
+
+    /**
+     * Move the session to another week of the same plan — kept in sync with the
+     * date so weekly progress counts its load in the week it actually lands in.
+     */
+    public void reassignWeek(PlanWeek newWeek) {
+        this.week = newWeek;
     }
 
     @Override

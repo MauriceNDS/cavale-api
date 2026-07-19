@@ -30,7 +30,14 @@ class StravaWebhookServiceTest {
     private StravaConnectionRepository connectionRepository;
 
     private StravaWebhookService service() {
-        return new StravaWebhookService(syncService, connectionRepository);
+        return service(null);
+    }
+
+    /** @param subscriptionId configured expected subscription, or null to accept any. */
+    private StravaWebhookService service(String subscriptionId) {
+        StravaProperties props = new StravaProperties("id", "secret", "cb", "fe", "login",
+                "https://a", "https://b", "https://cb/webhook", "verify", subscriptionId);
+        return new StravaWebhookService(syncService, connectionRepository, props);
     }
 
     private void connected() {
@@ -82,5 +89,20 @@ class StravaWebhookServiceTest {
         connected();
         doThrow(new StravaException("rate limited")).when(syncService).upsertFromStrava(USER, 9L);
         service().process(event("activity", "create")); // must not throw — the poll self-heals
+    }
+
+    @Test
+    void matchingSubscription_isProcessed() {
+        connected();
+        service("1").process(event("activity", "create")); // event carries subscription_id = 1
+        verify(syncService).upsertFromStrava(USER, 9L);
+    }
+
+    @Test
+    void mismatchedSubscription_isDropped() {
+        // A forged event for a connected athlete but the wrong subscription id
+        // must never reach the sync service (no data touched).
+        service("999").process(event("activity", "delete"));
+        verifyNoInteractions(syncService, connectionRepository);
     }
 }

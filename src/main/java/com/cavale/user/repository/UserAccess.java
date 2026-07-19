@@ -14,4 +14,6 @@ public interface UserAccess {
     UserRole getRole();
 
     boolean isDemo();
+
+    int getTokenVersion();
 }

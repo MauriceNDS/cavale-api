@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cavale.common.Strings;
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Shoe;
 import com.cavale.training.dto.ShoeRequest;
@@ -43,7 +44,7 @@ public class ShoeService {
     @Transactional
     public ShoeResponse create(UUID userId, ShoeRequest request) {
         Shoe shoe = new Shoe(userId, request.name().trim());
-        shoe.update(request.name().trim(), trimmed(request.brand()), trimmed(request.color()),
+        shoe.update(request.name().trim(), Strings.trimToNull(request.brand()), Strings.trimToNull(request.color()),
                 request.purpose(), request.retirementKm(), request.isRetired());
         applyDefault(userId, shoe, request.wantsDefault());
         return ShoeResponse.from(shoeRepository.save(shoe), BigDecimal.ZERO);
@@ -52,7 +53,7 @@ public class ShoeService {
     @Transactional
     public ShoeResponse update(UUID userId, UUID shoeId, ShoeRequest request) {
         Shoe shoe = getOwned(userId, shoeId);
-        shoe.update(request.name().trim(), trimmed(request.brand()), trimmed(request.color()),
+        shoe.update(request.name().trim(), Strings.trimToNull(request.brand()), Strings.trimToNull(request.color()),
                 request.purpose(), request.retirementKm(), request.isRetired());
         applyDefault(userId, shoe, request.wantsDefault());
         return ShoeResponse.from(shoe, mileageByShoe(userId).get(shoeId));
@@ -100,7 +101,4 @@ public class ShoeService {
                         ActivityRepository.ShoeMileage::getTotalKm));
     }
 
-    private static String trimmed(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
-    }
 }

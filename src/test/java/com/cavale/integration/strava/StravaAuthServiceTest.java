@@ -38,7 +38,7 @@ class StravaAuthServiceTest {
     private static final StravaProperties PROPS = new StravaProperties(
             "12345", "secret", "http://localhost:8080/api/strava/callback",
             "http://localhost:5173/settings", "http://localhost:5173/auth/strava",
-            "https://www.strava.com", "https://www.strava.com/api/v3", null, null);
+            "https://www.strava.com", "https://www.strava.com/api/v3", null, null, null);
 
     @Mock
     private StravaClient stravaClient;

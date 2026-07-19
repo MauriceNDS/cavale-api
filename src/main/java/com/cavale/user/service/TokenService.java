@@ -55,6 +55,7 @@ public class TokenService {
                 .claim("email", user.getEmail())
                 .claim("name", user.getDisplayName())
                 .claim("purpose", purpose)
+                .claim("tv", user.getTokenVersion())
                 .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
         return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();

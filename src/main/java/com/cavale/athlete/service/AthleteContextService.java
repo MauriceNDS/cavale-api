@@ -233,7 +233,7 @@ public class AthleteContextService {
                                 .filter(com.cavale.gym.domain.WorkoutLog::isPainFlag)
                                 .filter(log -> {
                                     LocalDate day = LocalDate.ofInstant(log.getStartedAt(),
-                                            java.time.ZoneId.systemDefault());
+                                            com.cavale.common.AppTime.ZONE);
                                     return !day.isBefore(w.weekStart())
                                             && day.isBefore(w.weekStart().plusDays(7));
                                 })

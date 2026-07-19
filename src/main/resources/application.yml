@@ -117,8 +117,10 @@ cavale:
     reap-interval: ${CAVALE_DEMO_REAP_INTERVAL:PT30M}
   security:
     jwt:
-      # HS256 secret, >= 32 bytes. The default is DEV-ONLY — set CAVALE_JWT_SECRET in any real environment.
-      secret: ${CAVALE_JWT_SECRET:cavale-dev-only-secret-change-me-0123456789abcdef}
+      # HS256 secret, >= 32 bytes. REQUIRED — no default, so a deployment
+      # missing CAVALE_JWT_SECRET fails to start rather than signing tokens
+      # with a shared, guessable key. Tests supply one via test resources.
+      secret: ${CAVALE_JWT_SECRET}
       ttl: ${CAVALE_JWT_TTL:PT24H}
       # personal access tokens (MCP client credential) — long-lived by design
       pat-ttl: ${CAVALE_JWT_PAT_TTL:P180D}
@@ -141,3 +143,8 @@ cavale:
     # subscribes once both are set.
     webhook-callback-url: ${CAVALE_STRAVA_WEBHOOK_CALLBACK_URL:}
     webhook-verify-token: ${CAVALE_STRAVA_WEBHOOK_VERIFY_TOKEN:}
+    # Strava-assigned id of THIS deployment's push subscription (from the
+    # subscribe response / GET webhook-subscription). When set, incoming
+    # events whose subscription_id differs are rejected — the documented way
+    # to authenticate Strava's unsigned webhook POSTs. Empty = accept any.
+    webhook-subscription-id: ${CAVALE_STRAVA_WEBHOOK_SUBSCRIPTION_ID:}

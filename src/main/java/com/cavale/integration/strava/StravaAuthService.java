@@ -160,7 +160,10 @@ public class StravaAuthService {
      * for the token refresh to persist.
      */
     public StravaConnection freshConnection(UUID userId) {
-        StravaConnection connection = connectionRepository.findByUserId(userId)
+        // Write-lock the row: if another thread is mid-refresh, we block until
+        // it commits, then read the rotated token instead of re-spending the
+        // now-consumed refresh token (Strava rotates them single-use).
+        StravaConnection connection = connectionRepository.findByUserIdForUpdate(userId)
                 .orElseThrow(() -> new StravaException("Strava is not connected"));
         if (connection.tokenExpiringSoon()) {
             StravaDtos.TokenResponse refreshed = stravaClient.refreshToken(connection.getRefreshToken());

@@ -155,7 +155,7 @@ class ObjectiveServiceTest {
         when(objectiveRepository.findById(objective.getId())).thenReturn(Optional.of(objective));
 
         assertThatThrownBy(() -> service().delete(OWNER, objective.getId()))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(com.cavale.common.exception.ConflictException.class);
 
         verify(objectiveRepository, never()).delete(any());
     }

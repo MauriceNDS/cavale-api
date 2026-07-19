@@ -27,7 +27,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         // browser redirect from strava.com — carries a signed state instead of a bearer token
                         .requestMatchers("/api/strava/callback").permitAll()
-                        // Strava push events — validated by the verify token, not a bearer token
+                        // Strava push events — GET validated by the verify token, POST by the
+                        // subscription id (Strava does not sign events); no bearer token
                         .requestMatchers("/api/strava/webhook").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()

@@ -29,7 +29,7 @@ class StravaWebhookControllerTest {
         StravaProperties stravaProperties() {
             return new StravaProperties("12345", "secret", "http://x/callback",
                     "http://x/settings", "http://x/login", "https://a", "https://b",
-                    "https://cavale.example/api/strava/webhook", "verify-me");
+                    "https://cavale.example/api/strava/webhook", "verify-me", null);
         }
     }
 

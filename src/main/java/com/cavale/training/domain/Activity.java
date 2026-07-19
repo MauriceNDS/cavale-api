@@ -180,6 +180,11 @@ public class Activity extends Auditable {
         this.session = session;
     }
 
+    /** Return a real (e.g. Strava) run to the unattached pool without deleting it. */
+    public void detachFromSession() {
+        this.session = null;
+    }
+
     /** Fill hub metrics; never erases a value already present. */
     public void enrich(BigDecimal avgCadenceSpm, Integer relativeEffort, Integer maxHr) {
         if (this.avgCadenceSpm == null) {

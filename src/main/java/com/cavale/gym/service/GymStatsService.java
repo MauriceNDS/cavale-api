@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -83,7 +82,7 @@ public class GymStatsService {
     }
 
     private static LocalDate day(SetLog set) {
-        return LocalDate.ofInstant(set.getWorkoutLog().getStartedAt(), ZoneId.systemDefault());
+        return LocalDate.ofInstant(set.getWorkoutLog().getStartedAt(), com.cavale.common.AppTime.ZONE);
     }
 
     private static boolean weighted(SetLog set) {

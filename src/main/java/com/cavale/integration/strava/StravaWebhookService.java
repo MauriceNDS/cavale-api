@@ -19,15 +19,28 @@ public class StravaWebhookService {
 
     private final StravaSyncService syncService;
     private final StravaConnectionRepository connectionRepository;
+    private final StravaProperties properties;
 
     public StravaWebhookService(StravaSyncService syncService,
-                                StravaConnectionRepository connectionRepository) {
+                                StravaConnectionRepository connectionRepository,
+                                StravaProperties properties) {
         this.syncService = syncService;
         this.connectionRepository = connectionRepository;
+        this.properties = properties;
     }
 
     @Async
     public void process(StravaDtos.WebhookEvent event) {
+        // Strava does not sign webhook POSTs, so the only authenticity signal
+        // is the subscription id. When we know ours, drop anything else —
+        // otherwise an attacker who guesses a connected athlete's public id
+        // could forge delete/create events against them.
+        Long expectedSubscription = properties.webhookSubscriptionIdOrNull();
+        if (expectedSubscription != null && expectedSubscription != event.subscriptionId()) {
+            log.warn("Dropping Strava webhook with unexpected subscription {} (event {} {})",
+                    event.subscriptionId(), event.aspectType(), event.objectId());
+            return;
+        }
         if (!"activity".equals(event.objectType())) {
             return;
         }

@@ -3,6 +3,7 @@ package com.cavale.training.service;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -135,10 +136,23 @@ public class TrainingPlanService {
     @Transactional
     public PlanWeek addWeek(UUID userId, UUID planId, CreateWeekRequest request) {
         TrainingPlan plan = getOwnedPlan(userId, planId);
+        if (request.startDate().isBefore(plan.getStartDate())
+                || request.startDate().isAfter(plan.getEndDate())) {
+            throw new IllegalArgumentException(
+                    "week start " + request.startDate() + " is outside the plan range");
+        }
         PlanWeek week = new PlanWeek(plan, request.weekNumber(), request.startDate(), request.phase(),
                 request.weekType(), request.targetVolumeKm(), request.targetElevationM(),
                 request.targetLoadUa(), request.focus());
         return weekRepository.save(week);
+    }
+
+    /** The plan's week whose 7-day span contains {@code date}, if any. */
+    private Optional<PlanWeek> weekContaining(UUID planId, LocalDate date) {
+        return weekRepository.findByPlanIdOrderByWeekNumber(planId).stream()
+                .filter(w -> !date.isBefore(w.getStartDate())
+                        && date.isBefore(w.getStartDate().plusDays(7)))
+                .findFirst();
     }
 
     @Transactional
@@ -192,6 +206,20 @@ public class TrainingPlanService {
         return sessionRepository.findByWeekIdOrderByDateAscOrderInDayAsc(weekId);
     }
 
+    /**
+     * Sessions in a date range that belong to the SAME plan as {@code weekId}.
+     * Lets a caller reason about neighbours within one season without a
+     * DRAFT next-season plan's adjacent days bleeding in (which a whole-athlete
+     * calendar query would include).
+     */
+    @Transactional(readOnly = true)
+    public List<PlannedSession> getPlanCalendarForWeek(UUID userId, UUID weekId, LocalDate from, LocalDate to) {
+        UUID planId = getOwnedWeek(userId, weekId).getPlan().getId();
+        return sessionRepository.findByWeekPlanId(planId).stream()
+                .filter(s -> !s.getDate().isBefore(from) && !s.getDate().isAfter(to))
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public List<PlannedSession> getCalendar(UUID userId, LocalDate from, LocalDate to) {
         if (to.isBefore(from)) {
@@ -223,13 +251,25 @@ public class TrainingPlanService {
             }
             int newOrder = request.orderInDay() != null ? request.orderInDay() : session.getOrderInDay();
             session.moveTo(newDate, newOrder);
+            // Keep the session in the week its new date falls in, so weekly
+            // progress attributes its load to the right week (not the old one).
+            weekContaining(plan.getId(), newDate)
+                    .filter(w -> !w.getId().equals(session.getWeek().getId()))
+                    .ifPresent(session::reassignWeek);
         }
         if (request.status() != null) {
             if (request.status() == SessionStatus.PLANNED) {
-                // Un-validating removes the manual measures recorded against it
-                activityRepository.findBySessionId(session.getId())
-                        .filter(a -> a.getSource() == ActivitySource.MANUAL)
-                        .ifPresent(activityRepository::delete);
+                // Un-validating clears the session's actuals: a manually-entered
+                // measure is discarded; a real Strava run is detached (returned
+                // to the unmatched pool) so it stops counting as this now-planned
+                // session's volume and can be re-proposed elsewhere.
+                activityRepository.findBySessionId(session.getId()).ifPresent(activity -> {
+                    if (activity.getSource() == ActivitySource.MANUAL) {
+                        activityRepository.delete(activity);
+                    } else {
+                        activity.detachFromSession();
+                    }
+                });
             }
             session.updateStatus(request.status());
         }

@@ -3,7 +3,6 @@ package com.cavale.athlete.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -63,8 +62,8 @@ public class ActivityFeedService {
                                 .and(Sort.by(Sort.Direction.DESC, "createdAt"))));
         var workoutPage = type == FeedType.RUN ? null
                 : workoutLogRepository.search(userId, WorkoutStatus.FINISHED, pattern,
-                        fromDate.atStartOfDay(ZoneId.systemDefault()).toInstant(),
-                        toDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant(),
+                        fromDate.atStartOfDay(com.cavale.common.AppTime.ZONE).toInstant(),
+                        toDate.plusDays(1).atStartOfDay(com.cavale.common.AppTime.ZONE).toInstant(),
                         PageRequest.of(0, fetch, Sort.by(Sort.Direction.DESC, "startedAt")));
 
         List<FeedItem> merged = new java.util.ArrayList<>();
@@ -113,7 +112,7 @@ public class ActivityFeedService {
                     .reduce(BigDecimal.ZERO, BigDecimal::add)
                     .setScale(0, RoundingMode.HALF_UP);
             return new FeedItem(log.getId(), FeedType.GYM,
-                    LocalDate.ofInstant(log.getStartedAt(), ZoneId.systemDefault()),
+                    LocalDate.ofInstant(log.getStartedAt(), com.cavale.common.AppTime.ZONE),
                     log.getTemplateName() != null ? log.getTemplateName() : "Renfo",
                     log.getDurationMin(), log.getPerceivedEffort(), log.isPainFlag(),
                     null, null, null, null, null,

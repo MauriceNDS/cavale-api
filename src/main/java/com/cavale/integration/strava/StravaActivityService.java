@@ -32,7 +32,6 @@ import com.cavale.training.repository.PlannedSessionRepository;
 @Service
 public class StravaActivityService {
 
-    private static final Set<String> RUN_SPORTS = Set.of("Run", "TrailRun", "VirtualRun");
     private static final int WINDOW_DAYS = 30;
 
     private final StravaAuthService authService;
@@ -191,7 +190,7 @@ public class StravaActivityService {
         Instant now = Instant.now();
         return stravaClient.listActivities(connection.getAccessToken(),
                         now.minusSeconds(WINDOW_DAYS * 86400L), now).stream()
-                .filter(a -> RUN_SPORTS.contains(a.sportType()))
+                .filter(a -> StravaSyncService.RUN_SPORTS.contains(a.sportType()))
                 .toList();
     }
 

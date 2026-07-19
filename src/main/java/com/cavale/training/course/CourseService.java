@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.athlete.service.RunningStatsService;
 import com.cavale.athlete.service.RunningStatsService.TrailPace;
+import com.cavale.common.Strings;
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Course;
 import com.cavale.training.domain.CourseWaypoint;
@@ -90,11 +91,6 @@ public class CourseService {
         return toResponse(userId, ownedCourse(userId, objectiveId), today);
     }
 
-    @Transactional(readOnly = true)
-    public boolean hasCourse(UUID objectiveId) {
-        return courseRepository.findByObjectiveId(objectiveId).isPresent();
-    }
-
     @Transactional
     public void delete(UUID userId, UUID objectiveId) {
         courseRepository.delete(ownedCourse(userId, objectiveId));
@@ -105,7 +101,7 @@ public class CourseService {
                                       LocalDate today) {
         Course course = ownedCourse(userId, objectiveId);
         waypointRepository.save(new CourseWaypoint(course.getId(), request.name().trim(), request.kind(),
-                request.distanceKm(), request.elevationM(), trimmed(request.note())));
+                request.distanceKm(), request.elevationM(), Strings.trimToNull(request.note())));
         return toResponse(userId, course, today);
     }
 
@@ -240,9 +236,5 @@ public class CourseService {
 
     private static BigDecimal round1(double value) {
         return BigDecimal.valueOf(value).setScale(1, RoundingMode.HALF_UP);
-    }
-
-    private static String trimmed(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 }

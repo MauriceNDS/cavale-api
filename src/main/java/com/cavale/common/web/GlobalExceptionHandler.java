@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.cavale.common.exception.ConflictException;
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.demo.DemoUnavailableException;
 import com.cavale.integration.strava.StravaException;
@@ -75,6 +76,14 @@ public class GlobalExceptionHandler {
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setTitle("Invalid request");
+        problem.setDetail(ex.getMessage());
+        return problem;
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    ProblemDetail handleConflict(ConflictException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        problem.setTitle("Not allowed");
         problem.setDetail(ex.getMessage());
         return problem;
     }

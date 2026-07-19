@@ -8,6 +8,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cavale.common.Strings;
+import com.cavale.common.exception.ConflictException;
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Objective;
 import com.cavale.training.domain.ObjectiveIntensity;
@@ -77,16 +79,16 @@ public class ObjectiveService {
         if (intensity != null) {
             objective.updateIntensity(intensity);
         }
-        objective.updateRaceProfile(distanceKm, elevationGainM, trimmed(location));
+        objective.updateRaceProfile(distanceKm, elevationGainM, Strings.trimToNull(location));
         objective.updateTargetTimeMin(targetTimeMin);
-        objective.updateNotes(trimmed(notes));
+        objective.updateNotes(Strings.trimToNull(notes));
     }
 
     @Transactional
     public void delete(UUID userId, UUID objectiveId) {
         Objective objective = getOwned(userId, objectiveId);
         if (objective.getRole() == ObjectiveRole.MAIN) {
-            throw new IllegalArgumentException(
+            throw new ConflictException(
                     "A plan keeps its main objective — edit it, or delete the whole plan");
         }
         objectiveRepository.delete(objective);
@@ -105,9 +107,5 @@ public class ObjectiveService {
         return objectiveRepository.findById(objectiveId)
                 .filter(o -> o.getUserId().equals(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("Objective", objectiveId));
-    }
-
-    private static String trimmed(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 }

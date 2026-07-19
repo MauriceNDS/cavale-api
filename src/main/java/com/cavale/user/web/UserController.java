@@ -2,6 +2,7 @@ package com.cavale.user.web;
 
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cavale.user.dto.UpdateProfileRequest;
@@ -63,5 +65,13 @@ public class UserController {
     public TokenService.IssuedToken issuePat(@AuthenticationPrincipal Jwt jwt) {
         UUID userId = UUID.fromString(jwt.getSubject());
         return tokenService.issuePersonalToken(userService.getById(userId));
+    }
+
+    @PostMapping("/me/revoke-tokens")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Revoke every token for this account — all sessions and "
+            + "personal access tokens, including the current one. Use if a PAT leaks.")
+    public void revokeTokens(@AuthenticationPrincipal Jwt jwt) {
+        userService.revokeTokens(UUID.fromString(jwt.getSubject()));
     }
 }

@@ -9,6 +9,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cavale.common.exception.ConflictException;
 import com.cavale.user.config.AdminProperties;
 import com.cavale.user.domain.AccountStatus;
 import com.cavale.user.domain.User;
@@ -126,12 +127,18 @@ public class UserService {
         return user;
     }
 
+    /** Invalidate every token for the account (leaked-PAT kill switch). */
+    @Transactional
+    public void revokeTokens(UUID id) {
+        getById(id).revokeTokens();
+    }
+
     @Transactional
     public User deactivate(UUID id) {
         User user = getById(id);
         // An admin must never lock the console's own keepers out.
         if (user.isAdmin()) {
-            throw new IllegalArgumentException("Admin accounts cannot be deactivated");
+            throw new ConflictException("Admin accounts cannot be deactivated");
         }
         user.deactivate();
         return user;

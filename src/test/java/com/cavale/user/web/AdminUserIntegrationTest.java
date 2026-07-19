@@ -86,6 +86,31 @@ class AdminUserIntegrationTest {
     }
 
     @Test
+    void revokeTokens_invalidatesExistingSession() throws Exception {
+        register("leaky@cavale.run", "Leaky");
+        makeActive("leaky@cavale.run");
+        String token = login("leaky@cavale.run");
+
+        // The token works…
+        mockMvc.perform(get("/api/users/me").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        // …until the account revokes all its tokens…
+        mockMvc.perform(post("/api/users/me/revoke-tokens").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+
+        // …after which the same token is rejected.
+        mockMvc.perform(get("/api/users/me").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private void makeActive(String email) {
+        User user = userRepository.findByEmail(email).orElseThrow();
+        user.activate();
+        userRepository.save(user);
+    }
+
+    @Test
     void adminApi_isForbiddenToNonAdmins() throws Exception {
         // An ACTIVE but non-admin account — access is fine, admin powers are not.
         register("regular@cavale.run", "Regular");
@@ -140,10 +165,11 @@ class AdminUserIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accountStatus").value("DISABLED"));
 
-        // An admin cannot be locked out through the API.
+        // An admin cannot be locked out through the API (409, not a 400 —
+        // the request is well-formed, the action is disallowed).
         String chiefId = userRepository.findByEmail("chief@cavale.run").orElseThrow().getId().toString();
         mockMvc.perform(post("/api/admin/users/" + chiefId + "/deactivate")
                         .header("Authorization", "Bearer " + adminToken))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isConflict());
     }
 }

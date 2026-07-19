@@ -222,7 +222,7 @@ class UserServiceTest {
         when(userRepository.findById(id)).thenReturn(java.util.Optional.of(admin));
 
         assertThatThrownBy(() -> userService().deactivate(id))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(com.cavale.common.exception.ConflictException.class);
         assertThat(admin.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
     }
 

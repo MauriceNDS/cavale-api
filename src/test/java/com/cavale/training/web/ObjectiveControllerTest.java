@@ -109,14 +109,14 @@ class ObjectiveControllerTest {
     }
 
     @Test
-    void delete_mainObjective_returns400() throws Exception {
+    void delete_mainObjective_returns409() throws Exception {
         UUID objectiveId = UUID.randomUUID();
-        doThrow(new IllegalArgumentException("A plan keeps its main objective"))
+        doThrow(new com.cavale.common.exception.ConflictException("A plan keeps its main objective"))
                 .when(objectiveService).delete(USER_ID, objectiveId);
 
         mockMvc.perform(delete("/api/objectives/{id}", objectiveId)
                         .with(jwt().jwt(j -> j.subject(USER_ID.toString()))))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isConflict());
     }
 
     @Test
