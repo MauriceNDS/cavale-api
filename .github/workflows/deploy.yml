@@ -25,9 +25,9 @@ jobs:
             echo "DEPLOY_HOST=192.168.1.101" >> "$GITHUB_ENV"   # develop
           fi
 
-      - name: Build
-        # TODO: drop -DskipTests once the test suite's infra needs (DB/containers) are wired into CI
-        run: ./mvnw -B -ntp -DskipTests package
+      - name: Build & test
+        # full suite: unit + Testcontainers integration tests (Docker on the runner)
+        run: ./mvnw -B -ntp verify
 
       - name: Deploy
         run: |
