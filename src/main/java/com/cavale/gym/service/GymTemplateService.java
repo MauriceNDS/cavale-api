@@ -191,7 +191,7 @@ public class GymTemplateService {
     public TemplateExercise addExercise(UUID userId, UUID variantId, TemplateExerciseRequest request) {
         GymTemplateVariant variant = getOwnedVariant(userId, variantId);
         Exercise exercise = exerciseService.getOwned(userId, request.exerciseId());
-        validateEffort(exercise, request);
+        validateEffort(exercise, request.reps(), request.seconds());
         int position = (int) templateExerciseRepository.countByVariantId(variantId);
         return templateExerciseRepository.save(new TemplateExercise(variant, exercise, position,
                 request.sets(), request.reps(), request.seconds(), request.restSec(),
@@ -203,7 +203,7 @@ public class GymTemplateService {
                                            TemplateExerciseRequest request) {
         TemplateExercise te = getOwnedTemplateExercise(userId, templateExerciseId);
         Exercise exercise = exerciseService.getOwned(userId, request.exerciseId());
-        validateEffort(exercise, request);
+        validateEffort(exercise, request.reps(), request.seconds());
         te.swapExercise(exercise);
         te.updatePrescription(request.sets(), request.reps(), request.seconds(),
                 request.restSec(), request.intensityPct(), trimmed(request.note()));
@@ -281,13 +281,13 @@ public class GymTemplateService {
     }
 
     /** The prescription must speak the exercise's language: reps OR seconds. */
-    private static void validateEffort(Exercise exercise, TemplateExerciseRequest request) {
+    public static void validateEffort(Exercise exercise, Integer reps, Integer seconds) {
         if (exercise.getMeasure() == ExerciseMeasure.SECONDS) {
-            if (request.seconds() == null) {
+            if (seconds == null) {
                 throw new IllegalArgumentException(
                         "« " + exercise.getName() + " » se mesure en secondes — indique une durée");
             }
-        } else if (request.reps() == null) {
+        } else if (reps == null) {
             throw new IllegalArgumentException(
                     "« " + exercise.getName() + " » se mesure en répétitions — indique un nombre de reps");
         }

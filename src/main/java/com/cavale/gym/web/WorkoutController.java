@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cavale.gym.dto.WorkoutDtos.AddExtraBlockRequest;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
@@ -101,6 +102,23 @@ public class WorkoutController {
                                              @PathVariable UUID workoutLogId,
                                              @PathVariable UUID templateExerciseId) {
         return workoutService.restoreBlock(userId(jwt), workoutLogId, templateExerciseId);
+    }
+
+    @PostMapping("/{workoutLogId}/extra-blocks")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Add an exercise to this workout only (the program is untouched)")
+    public WorkoutBlockResponse addExtraBlock(@AuthenticationPrincipal Jwt jwt,
+                                              @PathVariable UUID workoutLogId,
+                                              @Valid @RequestBody AddExtraBlockRequest request) {
+        return workoutService.addExtraBlock(userId(jwt), workoutLogId, request);
+    }
+
+    @DeleteMapping("/{workoutLogId}/extra-blocks/{extraBlockId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Remove a mid-workout addition — its logged sets go with it")
+    public void removeExtraBlock(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID workoutLogId,
+                                 @PathVariable UUID extraBlockId) {
+        workoutService.removeExtraBlock(userId(jwt), workoutLogId, extraBlockId);
     }
 
     @PostMapping("/{workoutLogId}/finish")

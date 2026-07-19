@@ -40,6 +40,16 @@ public final class WorkoutDtos {
     public record SwapBlockRequest(@NotNull UUID exerciseId) {
     }
 
+    /** An exercise added on top of the program for THIS workout only. */
+    public record AddExtraBlockRequest(
+            @NotNull UUID exerciseId,
+            @Min(value = 1, message = "At least one set") int sets,
+            @Min(1) Integer reps,
+            @Min(1) Integer seconds,
+            @Min(0) Integer restSec,
+            @Size(max = 300) String note) {
+    }
+
     public record FinishWorkoutRequest(
             @Min(1) @Max(600) Integer durationMin,
             PerceivedEffort perceivedEffort,
@@ -79,9 +89,12 @@ public final class WorkoutDtos {
      * {@code exercise} is the EFFECTIVE one (a swap shows the replacement,
      * with the prescribed exercise in {@code swappedFrom}); a skipped block
      * stays in the list, flagged, so it can be restored and honest in history.
+     * Exactly one of {@code templateExerciseId} (programmed block) and
+     * {@code extraBlockId} (added mid-workout) is set.
      */
     public record WorkoutBlockResponse(
             UUID templateExerciseId,
+            UUID extraBlockId,
             ExerciseResponse exercise,
             ExerciseResponse swappedFrom,
             boolean skipped,

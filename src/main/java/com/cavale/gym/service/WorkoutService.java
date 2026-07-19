@@ -18,9 +18,11 @@ import com.cavale.gym.domain.GymTemplateVariant;
 import com.cavale.gym.domain.SetLog;
 import com.cavale.gym.domain.TemplateExercise;
 import com.cavale.gym.domain.WorkoutBlockOverride;
+import com.cavale.gym.domain.WorkoutExtraBlock;
 import com.cavale.gym.domain.WorkoutLog;
 import com.cavale.gym.domain.WorkoutStatus;
 import com.cavale.gym.dto.ExerciseResponse;
+import com.cavale.gym.dto.WorkoutDtos.AddExtraBlockRequest;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
@@ -32,6 +34,7 @@ import com.cavale.gym.dto.WorkoutDtos.WorkoutLogResponse;
 import com.cavale.gym.repository.SetLogRepository;
 import com.cavale.gym.repository.TemplateExerciseRepository;
 import com.cavale.gym.repository.WorkoutBlockOverrideRepository;
+import com.cavale.gym.repository.WorkoutExtraBlockRepository;
 import com.cavale.gym.repository.WorkoutLogRepository;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PerceivedEffort;
@@ -53,6 +56,7 @@ public class WorkoutService {
     private final SetLogRepository setLogRepository;
     private final TemplateExerciseRepository templateExerciseRepository;
     private final WorkoutBlockOverrideRepository overrideRepository;
+    private final WorkoutExtraBlockRepository extraBlockRepository;
     private final PlannedSessionRepository sessionRepository;
     private final GymTemplateService templateService;
     private final ExerciseService exerciseService;
@@ -61,6 +65,7 @@ public class WorkoutService {
                           SetLogRepository setLogRepository,
                           TemplateExerciseRepository templateExerciseRepository,
                           WorkoutBlockOverrideRepository overrideRepository,
+                          WorkoutExtraBlockRepository extraBlockRepository,
                           PlannedSessionRepository sessionRepository,
                           GymTemplateService templateService,
                           ExerciseService exerciseService) {
@@ -68,6 +73,7 @@ public class WorkoutService {
         this.setLogRepository = setLogRepository;
         this.templateExerciseRepository = templateExerciseRepository;
         this.overrideRepository = overrideRepository;
+        this.extraBlockRepository = extraBlockRepository;
         this.sessionRepository = sessionRepository;
         this.templateService = templateService;
         this.exerciseService = exerciseService;
@@ -201,6 +207,46 @@ public class WorkoutService {
         return block(userId, te, saveOrPrune(override));
     }
 
+    /* ── Mid-workout additions: an exercise on top of the program ─────── */
+
+    /**
+     * Add an exercise to THIS workout only ("I had time for calf raises").
+     * The template is untouched. One block per exercise: its sets are keyed
+     * by (workout, exercise, set number), so a duplicate would collide.
+     */
+    @Transactional
+    public WorkoutBlockResponse addExtraBlock(UUID userId, UUID workoutLogId,
+                                              AddExtraBlockRequest request) {
+        WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
+        Exercise exercise = exerciseService.getOwned(userId, request.exerciseId());
+        GymTemplateService.validateEffort(exercise, request.reps(), request.seconds());
+        boolean inTemplate = log.getTemplateVariant() != null && templateExerciseRepository
+                .findByVariantIdOrderByPositionAsc(log.getTemplateVariant().getId()).stream()
+                .anyMatch(te -> te.getExercise().getId().equals(exercise.getId()));
+        if (inTemplate || extraBlockRepository.existsByWorkoutLogIdAndExerciseId(log.getId(),
+                exercise.getId())) {
+            throw new IllegalArgumentException("Cet exercice fait déjà partie de l'entraînement");
+        }
+        int position = (int) extraBlockRepository.countByWorkoutLogId(log.getId());
+        WorkoutExtraBlock extra = extraBlockRepository.save(new WorkoutExtraBlock(log, exercise,
+                position, request.sets(), request.reps(), request.seconds(), request.restSec(),
+                request.note() == null || request.note().isBlank() ? null : request.note().trim()));
+        return extraBlock(userId, extra);
+    }
+
+    /** Remove a mid-workout addition — its logged sets go with it. */
+    @Transactional
+    public void removeExtraBlock(UUID userId, UUID workoutLogId, UUID extraBlockId) {
+        WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
+        WorkoutExtraBlock extra = extraBlockRepository.findById(extraBlockId)
+                .filter(b -> b.getWorkoutLog().getId().equals(log.getId()))
+                .orElseThrow(() -> new ResourceNotFoundException("Block", extraBlockId));
+        setLogRepository.deleteAll(
+                setLogRepository.findByWorkoutLogIdAndExerciseId(log.getId(),
+                        extra.getExercise().getId()));
+        extraBlockRepository.delete(extra);
+    }
+
     /** Closing the workout is what validates the planned session (status DONE). */
     @Transactional
     public WorkoutLogResponse finish(UUID userId, UUID workoutLogId, FinishWorkoutRequest request) {
@@ -235,12 +281,14 @@ public class WorkoutService {
         Map<UUID, WorkoutBlockOverride> overrides = overrideRepository
                 .findByWorkoutLogId(log.getId()).stream()
                 .collect(Collectors.toMap(o -> o.getTemplateExercise().getId(), Function.identity()));
-        List<WorkoutBlockResponse> blocks = log.getTemplateVariant() != null
+        List<WorkoutBlockResponse> blocks = new java.util.ArrayList<>(log.getTemplateVariant() != null
                 ? templateExerciseRepository
                         .findByVariantIdOrderByPositionAsc(log.getTemplateVariant().getId()).stream()
                         .map(te -> block(log.getUserId(), te, overrides.get(te.getId())))
                         .toList()
-                : List.of();
+                : List.of());
+        extraBlockRepository.findByWorkoutLogIdOrderByPositionAsc(log.getId())
+                .forEach(extra -> blocks.add(extraBlock(log.getUserId(), extra)));
         return new WorkoutDetailResponse(WorkoutLogResponse.from(log, setResponses(log.getId())), blocks);
     }
 
@@ -258,11 +306,26 @@ public class WorkoutService {
         List<ExerciseResponse> alternatives = templateService.getAlternatives(te.getId()).stream()
                 .map(alt -> ExerciseResponse.from(alt.getExercise()))
                 .toList();
-        return new WorkoutBlockResponse(te.getId(), ExerciseResponse.from(exercise),
+        return new WorkoutBlockResponse(te.getId(), null, ExerciseResponse.from(exercise),
                 swapped ? ExerciseResponse.from(te.getExercise()) : null,
                 override != null && override.isSkipped(), alternatives,
                 te.getSets(), te.getReps(), te.getSeconds(), te.getRestSec(), te.getIntensityPct(),
                 te.getNote(), lastSets, record);
+    }
+
+    /** A mid-workout addition as a block: same prefills, no alternatives to offer. */
+    private WorkoutBlockResponse extraBlock(UUID userId, WorkoutExtraBlock extra) {
+        Exercise exercise = extra.getExercise();
+        List<SetLogResponse> lastSets = setLogRepository
+                .findLastWorkoutSets(userId, exercise.getId()).stream()
+                .map(SetLogResponse::from)
+                .toList();
+        var record = extra.getReps() != null
+                ? setLogRepository.findRecordWeight(userId, exercise.getId(), extra.getReps()).orElse(null)
+                : null;
+        return new WorkoutBlockResponse(null, extra.getId(), ExerciseResponse.from(exercise), null,
+                false, List.of(), extra.getSets(), extra.getReps(), extra.getSeconds(),
+                extra.getRestSec(), null, extra.getNote(), lastSets, record);
     }
 
     private List<SetLogResponse> setResponses(UUID workoutLogId) {

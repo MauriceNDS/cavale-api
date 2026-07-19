@@ -24,8 +24,10 @@ import com.cavale.gym.domain.SetLog;
 import com.cavale.gym.domain.TemplateExercise;
 import com.cavale.gym.domain.TemplateExerciseAlternative;
 import com.cavale.gym.domain.WorkoutBlockOverride;
+import com.cavale.gym.domain.WorkoutExtraBlock;
 import com.cavale.gym.domain.WorkoutLog;
 import com.cavale.gym.domain.WorkoutStatus;
+import com.cavale.gym.dto.WorkoutDtos.AddExtraBlockRequest;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
@@ -36,6 +38,7 @@ import com.cavale.gym.dto.WorkoutDtos.WorkoutDetailResponse;
 import com.cavale.gym.repository.SetLogRepository;
 import com.cavale.gym.repository.TemplateExerciseRepository;
 import com.cavale.gym.repository.WorkoutBlockOverrideRepository;
+import com.cavale.gym.repository.WorkoutExtraBlockRepository;
 import com.cavale.gym.repository.WorkoutLogRepository;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PerceivedEffort;
@@ -71,6 +74,9 @@ class WorkoutServiceTest {
     private WorkoutBlockOverrideRepository overrideRepository;
 
     @Mock
+    private WorkoutExtraBlockRepository extraBlockRepository;
+
+    @Mock
     private PlannedSessionRepository sessionRepository;
 
     @Mock
@@ -81,8 +87,8 @@ class WorkoutServiceTest {
 
     private WorkoutService service() {
         return new WorkoutService(workoutLogRepository, setLogRepository,
-                templateExerciseRepository, overrideRepository, sessionRepository,
-                templateService, exerciseService);
+                templateExerciseRepository, overrideRepository, extraBlockRepository,
+                sessionRepository, templateService, exerciseService);
     }
 
     /* ── Fixtures ─────────────────────────────────────────────────────── */
@@ -423,6 +429,106 @@ class WorkoutServiceTest {
         assertThat(block.exercise().name()).isEqualTo("Presse");
         assertThat(block.swappedFrom().name()).isEqualTo("Squat");
         assertThat(block.skipped()).isTrue();
+    }
+
+    /* ── Mid-workout additions ────────────────────────────────────────── */
+
+    @Test
+    void addExtraBlock_appendsAnExerciseForThisWorkoutOnly() {
+        GymTemplateVariant variant = variant();
+        TemplateExercise te = prescription(variant, squat());
+        Exercise calves = exercise("Mollets debout");
+        WorkoutLog running = inProgress(variant, null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(exerciseService.getOwned(USER, calves.getId())).thenReturn(calves);
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(variant.getId()))
+                .thenReturn(List.of(te));
+        when(extraBlockRepository.existsByWorkoutLogIdAndExerciseId(running.getId(), calves.getId()))
+                .thenReturn(false);
+        when(extraBlockRepository.countByWorkoutLogId(running.getId())).thenReturn(0L);
+        when(extraBlockRepository.save(any(WorkoutExtraBlock.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(setLogRepository.findLastWorkoutSets(USER, calves.getId())).thenReturn(List.of());
+        when(setLogRepository.findRecordWeight(USER, calves.getId(), 12)).thenReturn(Optional.empty());
+
+        WorkoutBlockResponse block = service().addExtraBlock(USER, running.getId(),
+                new AddExtraBlockRequest(calves.getId(), 3, 12, null, 90, "unilatéral"));
+
+        assertThat(block.templateExerciseId()).isNull();
+        assertThat(block.exercise().name()).isEqualTo("Mollets debout");
+        assertThat(block.sets()).isEqualTo(3);
+        assertThat(block.targetReps()).isEqualTo(12);
+        assertThat(block.restSec()).isEqualTo(90);
+        assertThat(block.note()).isEqualTo("unilatéral");
+    }
+
+    @Test
+    void addExtraBlock_rejectsAnExerciseAlreadyProgrammed() {
+        GymTemplateVariant variant = variant();
+        Exercise squat = squat();
+        TemplateExercise te = prescription(variant, squat);
+        WorkoutLog running = inProgress(variant, null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(exerciseService.getOwned(USER, squat.getId())).thenReturn(squat);
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(variant.getId()))
+                .thenReturn(List.of(te));
+
+        assertThatThrownBy(() -> service().addExtraBlock(USER, running.getId(),
+                new AddExtraBlockRequest(squat.getId(), 3, 8, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("déjà partie");
+        verify(extraBlockRepository, never()).save(any());
+    }
+
+    @Test
+    void removeExtraBlock_discardsItsLoggedSets() {
+        GymTemplateVariant variant = variant();
+        Exercise calves = exercise("Mollets debout");
+        WorkoutLog running = inProgress(variant, null);
+        WorkoutExtraBlock extra = new WorkoutExtraBlock(running, calves, 0, 3, 12, null, 90, null);
+        ReflectionTestUtils.setField(extra, "id", UUID.randomUUID());
+        SetLog logged = new SetLog(running, calves, 0, 1, 12, new BigDecimal("40.0"), null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(extraBlockRepository.findById(extra.getId())).thenReturn(Optional.of(extra));
+        when(setLogRepository.findByWorkoutLogIdAndExerciseId(running.getId(), calves.getId()))
+                .thenReturn(List.of(logged));
+
+        service().removeExtraBlock(USER, running.getId(), extra.getId());
+
+        verify(setLogRepository).deleteAll(List.of(logged));
+        verify(extraBlockRepository).delete(extra);
+    }
+
+    @Test
+    void detail_appendsExtraBlocksAfterTheProgram() {
+        GymTemplateVariant variant = variant();
+        TemplateExercise te = prescription(variant, squat());
+        Exercise calves = exercise("Mollets debout");
+        WorkoutLog running = inProgress(variant, null);
+        WorkoutExtraBlock extra = new WorkoutExtraBlock(running, calves, 0, 3, 12, null, 90, null);
+        ReflectionTestUtils.setField(extra, "id", UUID.randomUUID());
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(variant.getId()))
+                .thenReturn(List.of(te));
+        when(extraBlockRepository.findByWorkoutLogIdOrderByPositionAsc(running.getId()))
+                .thenReturn(List.of(extra));
+        when(templateService.getAlternatives(te.getId())).thenReturn(List.of());
+        when(setLogRepository.findLastWorkoutSets(any(), any())).thenReturn(List.of());
+        when(setLogRepository.findRecordWeight(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(Optional.empty());
+        when(setLogRepository.findByWorkoutLogIdOrderByPositionAscSetNumberAsc(running.getId()))
+                .thenReturn(List.of());
+
+        WorkoutDetailResponse detail = service().get(USER, running.getId());
+
+        assertThat(detail.blocks()).hasSize(2);
+        assertThat(detail.blocks().getFirst().templateExerciseId()).isEqualTo(te.getId());
+        assertThat(detail.blocks().getLast().extraBlockId()).isEqualTo(extra.getId());
+        assertThat(detail.blocks().getLast().exercise().name()).isEqualTo("Mollets debout");
     }
 
     /* ── Finish ───────────────────────────────────────────────────────── */

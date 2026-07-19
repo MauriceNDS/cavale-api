@@ -26,6 +26,8 @@ public interface SetLogRepository extends JpaRepository<SetLog, UUID> {
 
     boolean existsByExerciseId(UUID exerciseId);
 
+    List<SetLog> findByWorkoutLogIdAndExerciseId(UUID workoutLogId, UUID exerciseId);
+
     /** The sets of the LAST finished workout containing this exercise — the prefill. */
     @Query("""
             select s from SetLog s
