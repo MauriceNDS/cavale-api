@@ -20,8 +20,6 @@ import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
 import com.cavale.gym.dto.WorkoutDtos.StartWorkoutRequest;
-import com.cavale.gym.dto.WorkoutDtos.SwapBlockRequest;
-import com.cavale.gym.dto.WorkoutDtos.WorkoutBlockResponse;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutDetailResponse;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutLogResponse;
 import com.cavale.gym.service.WorkoutService;
@@ -75,32 +73,6 @@ public class WorkoutController {
     @Operation(summary = "Remove a logged set")
     public void deleteSet(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID setLogId) {
         workoutService.deleteSet(userId(jwt), setLogId);
-    }
-
-    @PutMapping("/{workoutLogId}/blocks/{templateExerciseId}/exercise")
-    @Operation(summary = "Replace a block's exercise for this workout only "
-            + "(one of its alternatives — or the prescribed one to revert)")
-    public WorkoutBlockResponse swapBlock(@AuthenticationPrincipal Jwt jwt,
-                                          @PathVariable UUID workoutLogId,
-                                          @PathVariable UUID templateExerciseId,
-                                          @Valid @RequestBody SwapBlockRequest request) {
-        return workoutService.swapBlock(userId(jwt), workoutLogId, templateExerciseId, request);
-    }
-
-    @PostMapping("/{workoutLogId}/blocks/{templateExerciseId}/skip")
-    @Operation(summary = "Skip a block for this workout only (undoable, the template is untouched)")
-    public WorkoutBlockResponse skipBlock(@AuthenticationPrincipal Jwt jwt,
-                                          @PathVariable UUID workoutLogId,
-                                          @PathVariable UUID templateExerciseId) {
-        return workoutService.skipBlock(userId(jwt), workoutLogId, templateExerciseId);
-    }
-
-    @PostMapping("/{workoutLogId}/blocks/{templateExerciseId}/restore")
-    @Operation(summary = "Un-skip a block")
-    public WorkoutBlockResponse restoreBlock(@AuthenticationPrincipal Jwt jwt,
-                                             @PathVariable UUID workoutLogId,
-                                             @PathVariable UUID templateExerciseId) {
-        return workoutService.restoreBlock(userId(jwt), workoutLogId, templateExerciseId);
     }
 
     @PostMapping("/{workoutLogId}/finish")

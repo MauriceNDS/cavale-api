@@ -36,10 +36,6 @@ public final class WorkoutDtos {
             @Min(1) Integer seconds) {
     }
 
-    /** Replace a block's exercise for THIS workout — the prescribed one reverts. */
-    public record SwapBlockRequest(@NotNull UUID exerciseId) {
-    }
-
     public record FinishWorkoutRequest(
             @Min(1) @Max(600) Integer durationMin,
             PerceivedEffort perceivedEffort,
@@ -76,15 +72,10 @@ public final class WorkoutDtos {
     /**
      * One exercise block of the live screen: the prescription, what the
      * athlete did LAST time (prefill), and the record at the target reps.
-     * {@code exercise} is the EFFECTIVE one (a swap shows the replacement,
-     * with the prescribed exercise in {@code swappedFrom}); a skipped block
-     * stays in the list, flagged, so it can be restored and honest in history.
      */
     public record WorkoutBlockResponse(
             UUID templateExerciseId,
             ExerciseResponse exercise,
-            ExerciseResponse swappedFrom,
-            boolean skipped,
             List<ExerciseResponse> alternatives,
             int sets,
             Integer targetReps,

@@ -3,11 +3,8 @@ package com.cavale.gym.service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,7 +14,6 @@ import com.cavale.gym.domain.Exercise;
 import com.cavale.gym.domain.GymTemplateVariant;
 import com.cavale.gym.domain.SetLog;
 import com.cavale.gym.domain.TemplateExercise;
-import com.cavale.gym.domain.WorkoutBlockOverride;
 import com.cavale.gym.domain.WorkoutLog;
 import com.cavale.gym.domain.WorkoutStatus;
 import com.cavale.gym.dto.ExerciseResponse;
@@ -25,13 +21,11 @@ import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
 import com.cavale.gym.dto.WorkoutDtos.StartWorkoutRequest;
-import com.cavale.gym.dto.WorkoutDtos.SwapBlockRequest;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutBlockResponse;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutDetailResponse;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutLogResponse;
 import com.cavale.gym.repository.SetLogRepository;
 import com.cavale.gym.repository.TemplateExerciseRepository;
-import com.cavale.gym.repository.WorkoutBlockOverrideRepository;
 import com.cavale.gym.repository.WorkoutLogRepository;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PerceivedEffort;
@@ -52,7 +46,6 @@ public class WorkoutService {
     private final WorkoutLogRepository workoutLogRepository;
     private final SetLogRepository setLogRepository;
     private final TemplateExerciseRepository templateExerciseRepository;
-    private final WorkoutBlockOverrideRepository overrideRepository;
     private final PlannedSessionRepository sessionRepository;
     private final GymTemplateService templateService;
     private final ExerciseService exerciseService;
@@ -60,14 +53,12 @@ public class WorkoutService {
     public WorkoutService(WorkoutLogRepository workoutLogRepository,
                           SetLogRepository setLogRepository,
                           TemplateExerciseRepository templateExerciseRepository,
-                          WorkoutBlockOverrideRepository overrideRepository,
                           PlannedSessionRepository sessionRepository,
                           GymTemplateService templateService,
                           ExerciseService exerciseService) {
         this.workoutLogRepository = workoutLogRepository;
         this.setLogRepository = setLogRepository;
         this.templateExerciseRepository = templateExerciseRepository;
-        this.overrideRepository = overrideRepository;
         this.sessionRepository = sessionRepository;
         this.templateService = templateService;
         this.exerciseService = exerciseService;
@@ -128,7 +119,10 @@ public class WorkoutService {
     /** Autosave: one call per ticked set, upserted by (workout, exercise, set number). */
     @Transactional
     public SetLogResponse logSet(UUID userId, UUID workoutLogId, LogSetRequest request) {
-        WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
+        WorkoutLog log = getOwned(userId, workoutLogId);
+        if (log.getStatus() != WorkoutStatus.IN_PROGRESS) {
+            throw new IllegalArgumentException("Cet entraînement est terminé");
+        }
         if (request.reps() == null && request.seconds() == null) {
             throw new IllegalArgumentException("Une série enregistre des reps ou des secondes");
         }
@@ -152,53 +146,6 @@ public class WorkoutService {
                 .filter(s -> s.getWorkoutLog().getUserId().equals(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("Set", setLogId));
         setLogRepository.delete(set);
-    }
-
-    /* ── Mid-workout deviations: swap to an alternative, skip a block ─── */
-
-    /**
-     * Replace a block's exercise for THIS workout: the machine is taken, do
-     * the declared alternative instead. Only the prescribed exercise or one
-     * of the block's alternatives is accepted — picking the prescribed one
-     * reverts. Sets already ticked stay logged against the exercise that
-     * was actually performed.
-     */
-    @Transactional
-    public WorkoutBlockResponse swapBlock(UUID userId, UUID workoutLogId, UUID templateExerciseId,
-                                          SwapBlockRequest request) {
-        WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
-        TemplateExercise te = blockOf(log, templateExerciseId);
-        Exercise target = exerciseService.getOwned(userId, request.exerciseId());
-        boolean prescribed = te.getExercise().getId().equals(target.getId());
-        boolean alternative = templateService.getAlternatives(te.getId()).stream()
-                .anyMatch(alt -> alt.getExercise().getId().equals(target.getId()));
-        if (!prescribed && !alternative) {
-            throw new IllegalArgumentException(
-                    "Le remplacement doit être l'exercice prévu ou une de ses alternatives");
-        }
-        WorkoutBlockOverride override = overrideOf(log, te);
-        override.replaceWith(prescribed ? null : target);
-        return block(userId, te, saveOrPrune(override));
-    }
-
-    /** No time left — drop this block from THIS workout (undoable, template untouched). */
-    @Transactional
-    public WorkoutBlockResponse skipBlock(UUID userId, UUID workoutLogId, UUID templateExerciseId) {
-        WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
-        TemplateExercise te = blockOf(log, templateExerciseId);
-        WorkoutBlockOverride override = overrideOf(log, te);
-        override.skip();
-        return block(userId, te, saveOrPrune(override));
-    }
-
-    /** Un-skip a block (an active swap on it survives). */
-    @Transactional
-    public WorkoutBlockResponse restoreBlock(UUID userId, UUID workoutLogId, UUID templateExerciseId) {
-        WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
-        TemplateExercise te = blockOf(log, templateExerciseId);
-        WorkoutBlockOverride override = overrideOf(log, te);
-        override.restore();
-        return block(userId, te, saveOrPrune(override));
     }
 
     /** Closing the workout is what validates the planned session (status DONE). */
@@ -232,22 +179,17 @@ public class WorkoutService {
     /* ── Read model ───────────────────────────────────────────────────── */
 
     private WorkoutDetailResponse detail(WorkoutLog log) {
-        Map<UUID, WorkoutBlockOverride> overrides = overrideRepository
-                .findByWorkoutLogId(log.getId()).stream()
-                .collect(Collectors.toMap(o -> o.getTemplateExercise().getId(), Function.identity()));
         List<WorkoutBlockResponse> blocks = log.getTemplateVariant() != null
                 ? templateExerciseRepository
                         .findByVariantIdOrderByPositionAsc(log.getTemplateVariant().getId()).stream()
-                        .map(te -> block(log.getUserId(), te, overrides.get(te.getId())))
+                        .map(te -> block(log.getUserId(), te))
                         .toList()
                 : List.of();
         return new WorkoutDetailResponse(WorkoutLogResponse.from(log, setResponses(log.getId())), blocks);
     }
 
-    /** One block, with its override (if any) applied: prefills and record follow the EFFECTIVE exercise. */
-    private WorkoutBlockResponse block(UUID userId, TemplateExercise te, WorkoutBlockOverride override) {
-        boolean swapped = override != null && override.getExercise() != null;
-        Exercise exercise = swapped ? override.getExercise() : te.getExercise();
+    private WorkoutBlockResponse block(UUID userId, TemplateExercise te) {
+        Exercise exercise = te.getExercise();
         List<SetLogResponse> lastSets = setLogRepository
                 .findLastWorkoutSets(userId, exercise.getId()).stream()
                 .map(SetLogResponse::from)
@@ -258,9 +200,7 @@ public class WorkoutService {
         List<ExerciseResponse> alternatives = templateService.getAlternatives(te.getId()).stream()
                 .map(alt -> ExerciseResponse.from(alt.getExercise()))
                 .toList();
-        return new WorkoutBlockResponse(te.getId(), ExerciseResponse.from(exercise),
-                swapped ? ExerciseResponse.from(te.getExercise()) : null,
-                override != null && override.isSkipped(), alternatives,
+        return new WorkoutBlockResponse(te.getId(), ExerciseResponse.from(exercise), alternatives,
                 te.getSets(), te.getReps(), te.getSeconds(), te.getRestSec(), te.getIntensityPct(),
                 te.getNote(), lastSets, record);
     }
@@ -275,38 +215,5 @@ public class WorkoutService {
         return workoutLogRepository.findById(workoutLogId)
                 .filter(log -> log.getUserId().equals(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("Workout", workoutLogId));
-    }
-
-    private WorkoutLog getOwnedInProgress(UUID userId, UUID workoutLogId) {
-        WorkoutLog log = getOwned(userId, workoutLogId);
-        if (log.getStatus() != WorkoutStatus.IN_PROGRESS) {
-            throw new IllegalArgumentException("Cet entraînement est terminé");
-        }
-        return log;
-    }
-
-    /** The template exercise, provided it really is a block of this workout's variant. */
-    private TemplateExercise blockOf(WorkoutLog log, UUID templateExerciseId) {
-        return templateExerciseRepository.findById(templateExerciseId)
-                .filter(te -> log.getTemplateVariant() != null
-                        && te.getVariant().getId().equals(log.getTemplateVariant().getId()))
-                .orElseThrow(() -> new ResourceNotFoundException("Block", templateExerciseId));
-    }
-
-    private WorkoutBlockOverride overrideOf(WorkoutLog log, TemplateExercise te) {
-        return overrideRepository
-                .findByWorkoutLogIdAndTemplateExerciseId(log.getId(), te.getId())
-                .orElseGet(() -> new WorkoutBlockOverride(log, te));
-    }
-
-    /** Persist a meaningful override, prune a neutral one; null = no override left. */
-    private WorkoutBlockOverride saveOrPrune(WorkoutBlockOverride override) {
-        if (!override.isNeutral()) {
-            return overrideRepository.save(override);
-        }
-        if (override.getId() != null) {
-            overrideRepository.delete(override);
-        }
-        return null;
     }
 }
