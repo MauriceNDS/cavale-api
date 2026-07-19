@@ -19,17 +19,23 @@ import com.cavale.gym.domain.ExerciseCategory;
 import com.cavale.gym.domain.ExerciseMeasure;
 import com.cavale.gym.domain.GymTemplate;
 import com.cavale.gym.domain.GymTemplateVariant;
+import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.gym.domain.SetLog;
 import com.cavale.gym.domain.TemplateExercise;
+import com.cavale.gym.domain.TemplateExerciseAlternative;
+import com.cavale.gym.domain.WorkoutBlockOverride;
 import com.cavale.gym.domain.WorkoutLog;
 import com.cavale.gym.domain.WorkoutStatus;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
 import com.cavale.gym.dto.WorkoutDtos.StartWorkoutRequest;
+import com.cavale.gym.dto.WorkoutDtos.SwapBlockRequest;
+import com.cavale.gym.dto.WorkoutDtos.WorkoutBlockResponse;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutDetailResponse;
 import com.cavale.gym.repository.SetLogRepository;
 import com.cavale.gym.repository.TemplateExerciseRepository;
+import com.cavale.gym.repository.WorkoutBlockOverrideRepository;
 import com.cavale.gym.repository.WorkoutLogRepository;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PerceivedEffort;
@@ -62,6 +68,9 @@ class WorkoutServiceTest {
     private TemplateExerciseRepository templateExerciseRepository;
 
     @Mock
+    private WorkoutBlockOverrideRepository overrideRepository;
+
+    @Mock
     private PlannedSessionRepository sessionRepository;
 
     @Mock
@@ -72,7 +81,8 @@ class WorkoutServiceTest {
 
     private WorkoutService service() {
         return new WorkoutService(workoutLogRepository, setLogRepository,
-                templateExerciseRepository, sessionRepository, templateService, exerciseService);
+                templateExerciseRepository, overrideRepository, sessionRepository,
+                templateService, exerciseService);
     }
 
     /* ── Fixtures ─────────────────────────────────────────────────────── */
@@ -90,6 +100,19 @@ class WorkoutServiceTest {
                 Equipment.BARBELL, ExerciseMeasure.WEIGHT_REPS);
         ReflectionTestUtils.setField(exercise, "id", UUID.randomUUID());
         return exercise;
+    }
+
+    private static Exercise exercise(String name) {
+        Exercise exercise = new Exercise(USER, name, ExerciseCategory.FORCE,
+                Equipment.MACHINE, ExerciseMeasure.WEIGHT_REPS);
+        ReflectionTestUtils.setField(exercise, "id", UUID.randomUUID());
+        return exercise;
+    }
+
+    private static TemplateExercise prescription(GymTemplateVariant variant, Exercise exercise) {
+        TemplateExercise te = new TemplateExercise(variant, exercise, 0, 3, 6, null, 180, null, null);
+        ReflectionTestUtils.setField(te, "id", UUID.randomUUID());
+        return te;
     }
 
     private static PlannedSession gymSession(GymTemplateVariant variant) {
@@ -245,6 +268,161 @@ class WorkoutServiceTest {
                 new LogSetRequest(UUID.randomUUID(), 0, 1, 6, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("terminé");
+    }
+
+    /* ── Mid-workout deviations ───────────────────────────────────────── */
+
+    @Test
+    void swapBlock_toAnAlternative_prefillsFollowTheReplacement() {
+        GymTemplateVariant variant = variant();
+        Exercise squat = squat();
+        Exercise press = exercise("Presse");
+        TemplateExercise te = prescription(variant, squat);
+        WorkoutLog running = inProgress(variant, null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findById(te.getId())).thenReturn(Optional.of(te));
+        when(exerciseService.getOwned(USER, press.getId())).thenReturn(press);
+        when(templateService.getAlternatives(te.getId()))
+                .thenReturn(List.of(new TemplateExerciseAlternative(te, press, 0)));
+        when(overrideRepository.findByWorkoutLogIdAndTemplateExerciseId(running.getId(), te.getId()))
+                .thenReturn(Optional.empty());
+        when(overrideRepository.save(any(WorkoutBlockOverride.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(setLogRepository.findLastWorkoutSets(USER, press.getId())).thenReturn(List.of());
+        when(setLogRepository.findRecordWeight(USER, press.getId(), 6)).thenReturn(Optional.empty());
+
+        WorkoutBlockResponse block = service().swapBlock(USER, running.getId(), te.getId(),
+                new SwapBlockRequest(press.getId()));
+
+        assertThat(block.exercise().name()).isEqualTo("Presse");
+        assertThat(block.swappedFrom().name()).isEqualTo("Squat");
+        assertThat(block.skipped()).isFalse();
+        // prefill and record were looked up for the replacement, not the prescription
+        verify(setLogRepository).findLastWorkoutSets(USER, press.getId());
+        verify(setLogRepository, never()).findLastWorkoutSets(USER, squat.getId());
+    }
+
+    @Test
+    void swapBlock_rejectsExercisesOutsideTheBlock() {
+        GymTemplateVariant variant = variant();
+        TemplateExercise te = prescription(variant, squat());
+        Exercise stranger = exercise("Curl biceps");
+        WorkoutLog running = inProgress(variant, null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findById(te.getId())).thenReturn(Optional.of(te));
+        when(exerciseService.getOwned(USER, stranger.getId())).thenReturn(stranger);
+        when(templateService.getAlternatives(te.getId())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service().swapBlock(USER, running.getId(), te.getId(),
+                new SwapBlockRequest(stranger.getId())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("alternatives");
+        verify(overrideRepository, never()).save(any());
+    }
+
+    @Test
+    void swapBlock_backToPrescribed_prunesTheOverride() {
+        GymTemplateVariant variant = variant();
+        Exercise squat = squat();
+        Exercise press = exercise("Presse");
+        TemplateExercise te = prescription(variant, squat);
+        WorkoutLog running = inProgress(variant, null);
+        WorkoutBlockOverride override = new WorkoutBlockOverride(running, te);
+        override.replaceWith(press);
+        ReflectionTestUtils.setField(override, "id", UUID.randomUUID());
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findById(te.getId())).thenReturn(Optional.of(te));
+        when(exerciseService.getOwned(USER, squat.getId())).thenReturn(squat);
+        when(templateService.getAlternatives(te.getId()))
+                .thenReturn(List.of(new TemplateExerciseAlternative(te, press, 0)));
+        when(overrideRepository.findByWorkoutLogIdAndTemplateExerciseId(running.getId(), te.getId()))
+                .thenReturn(Optional.of(override));
+        when(setLogRepository.findLastWorkoutSets(USER, squat.getId())).thenReturn(List.of());
+        when(setLogRepository.findRecordWeight(USER, squat.getId(), 6)).thenReturn(Optional.empty());
+
+        WorkoutBlockResponse block = service().swapBlock(USER, running.getId(), te.getId(),
+                new SwapBlockRequest(squat.getId()));
+
+        assertThat(block.exercise().name()).isEqualTo("Squat");
+        assertThat(block.swappedFrom()).isNull();
+        verify(overrideRepository).delete(override);
+        verify(overrideRepository, never()).save(any());
+    }
+
+    @Test
+    void skipThenRestore_prunesTheOverride() {
+        GymTemplateVariant variant = variant();
+        TemplateExercise te = prescription(variant, squat());
+        WorkoutLog running = inProgress(variant, null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findById(te.getId())).thenReturn(Optional.of(te));
+        when(templateService.getAlternatives(te.getId())).thenReturn(List.of());
+        when(setLogRepository.findLastWorkoutSets(USER, te.getExercise().getId()))
+                .thenReturn(List.of());
+        when(setLogRepository.findRecordWeight(USER, te.getExercise().getId(), 6))
+                .thenReturn(Optional.empty());
+        when(overrideRepository.findByWorkoutLogIdAndTemplateExerciseId(running.getId(), te.getId()))
+                .thenReturn(Optional.empty());
+        when(overrideRepository.save(any(WorkoutBlockOverride.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        WorkoutBlockResponse skipped = service().skipBlock(USER, running.getId(), te.getId());
+        assertThat(skipped.skipped()).isTrue();
+
+        WorkoutBlockOverride persisted = new WorkoutBlockOverride(running, te);
+        persisted.skip();
+        ReflectionTestUtils.setField(persisted, "id", UUID.randomUUID());
+        when(overrideRepository.findByWorkoutLogIdAndTemplateExerciseId(running.getId(), te.getId()))
+                .thenReturn(Optional.of(persisted));
+
+        WorkoutBlockResponse restored = service().restoreBlock(USER, running.getId(), te.getId());
+        assertThat(restored.skipped()).isFalse();
+        verify(overrideRepository).delete(persisted);
+    }
+
+    @Test
+    void deviations_rejectBlocksOfAnotherVariant() {
+        WorkoutLog running = inProgress(variant(), null);
+        TemplateExercise foreign = prescription(variant(), squat());
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findById(foreign.getId())).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service().skipBlock(USER, running.getId(), foreign.getId()))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void detail_appliesOverrides() {
+        GymTemplateVariant variant = variant();
+        Exercise squat = squat();
+        Exercise press = exercise("Presse");
+        TemplateExercise te = prescription(variant, squat);
+        WorkoutLog running = inProgress(variant, null);
+        WorkoutBlockOverride override = new WorkoutBlockOverride(running, te);
+        override.replaceWith(press);
+        override.skip();
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(overrideRepository.findByWorkoutLogId(running.getId())).thenReturn(List.of(override));
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(variant.getId()))
+                .thenReturn(List.of(te));
+        when(templateService.getAlternatives(te.getId())).thenReturn(List.of());
+        when(setLogRepository.findLastWorkoutSets(USER, press.getId())).thenReturn(List.of());
+        when(setLogRepository.findRecordWeight(USER, press.getId(), 6)).thenReturn(Optional.empty());
+        when(setLogRepository.findByWorkoutLogIdOrderByPositionAscSetNumberAsc(running.getId()))
+                .thenReturn(List.of());
+
+        WorkoutDetailResponse detail = service().get(USER, running.getId());
+
+        var block = detail.blocks().getFirst();
+        assertThat(block.exercise().name()).isEqualTo("Presse");
+        assertThat(block.swappedFrom().name()).isEqualTo("Squat");
+        assertThat(block.skipped()).isTrue();
     }
 
     /* ── Finish ───────────────────────────────────────────────────────── */
