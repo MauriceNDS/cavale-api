@@ -158,12 +158,15 @@ public class StravaAuthService {
      * even when the caller catches the exception as a best-effort step
      * (UnexpectedRollbackException at commit). Callers must be transactional
      * for the token refresh to persist.
+     *
+     * NOTE: some callers run in a read-only transaction (they only list
+     * activities), so this must NOT take a write lock here — that would fail
+     * on Postgres ("SELECT FOR UPDATE in a read-only transaction"). The
+     * single-use-refresh-token race is left to the poll to self-heal; a proper
+     * fix needs the refresh in its own writable transaction.
      */
     public StravaConnection freshConnection(UUID userId) {
-        // Write-lock the row: if another thread is mid-refresh, we block until
-        // it commits, then read the rotated token instead of re-spending the
-        // now-consumed refresh token (Strava rotates them single-use).
-        StravaConnection connection = connectionRepository.findByUserIdForUpdate(userId)
+        StravaConnection connection = connectionRepository.findByUserId(userId)
                 .orElseThrow(() -> new StravaException("Strava is not connected"));
         if (connection.tokenExpiringSoon()) {
             StravaDtos.TokenResponse refreshed = stravaClient.refreshToken(connection.getRefreshToken());
