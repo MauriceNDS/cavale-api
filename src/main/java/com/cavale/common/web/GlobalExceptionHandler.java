@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.cavale.common.exception.ConflictException;
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.demo.DemoUnavailableException;
+import com.cavale.integration.intervals.IntervalsException;
 import com.cavale.integration.strava.StravaException;
 import com.cavale.training.service.PlanImportException;
 import com.cavale.user.service.EmailAlreadyUsedException;
@@ -108,6 +109,14 @@ public class GlobalExceptionHandler {
     ProblemDetail handleStrava(StravaException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
         problem.setTitle("Strava");
+        problem.setDetail(ex.getMessage());
+        return problem;
+    }
+
+    @ExceptionHandler(IntervalsException.class)
+    ProblemDetail handleIntervals(IntervalsException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        problem.setTitle("Intervals.icu");
         problem.setDetail(ex.getMessage());
         return problem;
     }
