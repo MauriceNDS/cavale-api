@@ -153,12 +153,10 @@ cavale:
     # saves their own API key (intervals.icu → Settings → Developer) and links
     # Garmin on intervals.icu ("Upload planned workouts") — no app credentials.
     api-base: https://intervals.icu/api/v1
-    # Days ahead pushed to the calendar; Intervals.icu itself forwards ~7 days
-    # to Garmin, so pushing further only pre-fills the Intervals calendar.
+    # Days ahead covered by the settings-page "push the upcoming week" button;
+    # Intervals.icu itself forwards ~7 days to Garmin. Single sessions export
+    # from their own page (Export → Garmin Connect), whatever their date.
     push-window-days: ${CAVALE_INTERVALS_PUSH_WINDOW_DAYS:8}
-    # Background convergence — upserts by external_id make each tick idempotent.
-    push-interval: ${CAVALE_INTERVALS_PUSH_INTERVAL:PT6H}
-    push-initial-delay: ${CAVALE_INTERVALS_PUSH_INITIAL_DELAY:PT3M}
   dev-login:
     # Passwordless email login for Strava-less environments (the dev box,
     # which sits behind Cloudflare Access). NEVER enable in production.

@@ -127,6 +127,43 @@ class IntervalsServiceTest {
                 .isInstanceOf(IntervalsException.class);
     }
 
+    @Test
+    void singleSessionExportUpsertsOneEvent() {
+        IntervalsConnection connection = new IntervalsConnection(userId, "i647048", "the-key");
+        when(connectionRepository.findByUserId(userId)).thenReturn(Optional.of(connection));
+        PlannedSession run = session(Discipline.RUN, "Seuil 3×8");
+        when(sessionRepository.findById(run.getId())).thenReturn(Optional.of(run));
+
+        IntervalsService.PushResult result = service.pushSession(userId, run.getId());
+
+        assertThat(result.pushed()).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<IntervalsDtos.EventPayload>> events = ArgumentCaptor.forClass(List.class);
+        verify(client).upsertEvents(eq("the-key"), events.capture());
+        assertThat(events.getValue()).hasSize(1);
+        assertThat(events.getValue().getFirst().externalId()).isEqualTo(run.getId().toString());
+        assertThat(connection.getLastPushAt()).isNotNull();
+    }
+
+    @Test
+    void singleSessionExportRefusesForeignAndNonRunSessions() {
+        IntervalsConnection connection = new IntervalsConnection(userId, "i647048", "the-key");
+        when(connectionRepository.findByUserId(userId)).thenReturn(Optional.of(connection));
+
+        PlannedSession foreign = session(Discipline.RUN, "Pas à moi");
+        ReflectionTestUtils.setField(foreign, "userId", UUID.randomUUID());
+        when(sessionRepository.findById(foreign.getId())).thenReturn(Optional.of(foreign));
+        assertThatThrownBy(() -> service.pushSession(userId, foreign.getId()))
+                .isInstanceOf(IntervalsException.class)
+                .hasMessageContaining("introuvable");
+
+        PlannedSession gym = session(Discipline.GYM, "Renfo");
+        when(sessionRepository.findById(gym.getId())).thenReturn(Optional.of(gym));
+        assertThatThrownBy(() -> service.pushSession(userId, gym.getId()))
+                .isInstanceOf(IntervalsException.class)
+                .hasMessageContaining("course");
+    }
+
     private PlannedSession session(Discipline discipline, String title) {
         TrainingPlan plan = new TrainingPlan(userId, "Plan", null,
                 LocalDate.of(2026, 7, 6), LocalDate.of(2026, 11, 29));

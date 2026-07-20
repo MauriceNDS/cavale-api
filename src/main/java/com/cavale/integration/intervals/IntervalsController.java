@@ -7,6 +7,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,12 +40,10 @@ public class IntervalsController {
     }
 
     @PostMapping("/connection")
-    @Operation(summary = "Save the athlete's Intervals.icu API key (validated live), then push the upcoming window")
+    @Operation(summary = "Save the athlete's Intervals.icu API key (validated live)")
     public IntervalsService.IntervalsStatus connect(@AuthenticationPrincipal Jwt jwt,
                                                     @Valid @RequestBody ConnectRequest request) {
-        IntervalsService.IntervalsStatus status = service.connect(userId(jwt), request.apiKey());
-        service.pushUpcoming(userId(jwt));
-        return status;
+        return service.connect(userId(jwt), request.apiKey());
     }
 
     @DeleteMapping("/connection")
@@ -58,6 +57,13 @@ public class IntervalsController {
     @Operation(summary = "Push the upcoming planned runs to the Intervals.icu calendar (and the watch)")
     public IntervalsService.PushResult push(@AuthenticationPrincipal Jwt jwt) {
         return service.pushUpcoming(userId(jwt));
+    }
+
+    @PostMapping("/push/{sessionId}")
+    @Operation(summary = "Export one session to the watch via Intervals.icu")
+    public IntervalsService.PushResult pushSession(@AuthenticationPrincipal Jwt jwt,
+                                                   @PathVariable UUID sessionId) {
+        return service.pushSession(userId(jwt), sessionId);
     }
 
     private static UUID userId(Jwt jwt) {

@@ -88,6 +88,33 @@ public class IntervalsService {
     }
 
     /**
+     * Publishes one RUN session to the Intervals.icu calendar — the
+     * "Export → Garmin Connect" action. external_id = session id, so
+     * re-exporting after an edit updates the event (and the watch) in place.
+     */
+    @Transactional
+    public PushResult pushSession(UUID userId, UUID sessionId) {
+        IntervalsConnection connection = connectionRepository.findByUserId(userId)
+                .orElseThrow(() -> new IntervalsException(
+                        "Intervals.icu n'est pas connecté — ajoutez votre clé API dans Paramètres."));
+        PlannedSession session = sessionRepository.findById(sessionId)
+                .filter(s -> userId.equals(s.getUserId()))
+                .orElseThrow(() -> new IntervalsException("Séance introuvable."));
+        if (session.getDiscipline() != Discipline.RUN) {
+            throw new IntervalsException("Seules les séances de course s'exportent vers la montre.");
+        }
+
+        try {
+            client.upsertEvents(connection.getApiKey(), List.of(toEvent(session)));
+        } catch (Exception e) {
+            throw new IntervalsException("L'envoi vers Intervals.icu a échoué — réessayez.", e);
+        }
+        connection.markPushed(Instant.now());
+        log.info("Intervals push: session {} for athlete {}", sessionId, connection.getAthleteId());
+        return new PushResult(1);
+    }
+
+    /**
      * Publishes the athlete's upcoming planned RUN sessions (today →
      * push-window) to the Intervals.icu calendar. external_id = session id,
      * so a re-push after a plan adaptation updates events in place.
