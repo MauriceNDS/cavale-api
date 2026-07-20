@@ -19,6 +19,7 @@ public record AthleteHubResponse(
         TrailIndex trailIndex,
         Totals totals,
         List<MonthlyStat> monthly,
+        List<WeeklyStat> weekly,
         List<WeeklyEffort> weeklyEffort,
         SyncState sync) {
 
@@ -91,6 +92,19 @@ public record AthleteHubResponse(
 
     public record MonthlyStat(
             String month,
+            int runs,
+            BigDecimal distanceKm,
+            int durationMin,
+            int elevationM,
+            Integer avgPaceSecPerKm,
+            Integer avgHr,
+            BigDecimal avgCadenceSpm,
+            int relativeEffort) {
+    }
+
+    /** Same trend metrics as {@link MonthlyStat}, on ISO-week buckets. */
+    public record WeeklyStat(
+            LocalDate weekStart,
             int runs,
             BigDecimal distanceKm,
             int durationMin,

@@ -32,6 +32,7 @@ import com.cavale.athlete.dto.AthleteHubResponse.Timeframe;
 import com.cavale.athlete.dto.AthleteHubResponse.Totals;
 import com.cavale.athlete.dto.AthleteHubResponse.TrailIndex;
 import com.cavale.athlete.dto.AthleteHubResponse.WeeklyEffort;
+import com.cavale.athlete.dto.AthleteHubResponse.WeeklyStat;
 import com.cavale.integration.strava.StravaConnectionRepository;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivityBestEffort;
@@ -87,7 +88,10 @@ public class AthleteStatsService {
     /** Recency half-weight horizon: an effort N months old weighs e^(-N/12). */
     private static final double TRAIL_INDEX_RECENCY_MONTHS = 12.0;
 
-    private static final int MONTHS_BACK = 12;
+    /** Two years of monthly buckets — the widest zoom of the hub trends. */
+    private static final int MONTHS_BACK = 24;
+    /** Six months of weekly buckets — the fine-grained zoom of the hub trends. */
+    private static final int WEEKS_STATS_BACK = 26;
     private static final int WEEKS_BACK = 16;
 
     private final UserService userService;
@@ -137,6 +141,7 @@ public class AthleteStatsService {
                                 .filter(a -> a.getDate().getYear() == today.getYear()).toList()),
                         totals(activities)),
                 monthly(activities, today),
+                weekly(activities, today),
                 weeklyEffort(activities, today),
                 syncState(userId));
     }
@@ -318,7 +323,7 @@ public class AthleteStatsService {
                 duration, elevation);
     }
 
-    /** The last 12 months, oldest first, empty months included. */
+    /** The last 24 months, oldest first, empty months included. */
     static List<MonthlyStat> monthly(List<Activity> activities, LocalDate today) {
         Map<YearMonth, List<Activity>> byMonth = new LinkedHashMap<>();
         YearMonth current = YearMonth.from(today);
@@ -337,6 +342,32 @@ public class AthleteStatsService {
             List<Activity> runs = entry.getValue();
             PeriodTotals totals = totals(runs);
             stats.add(new MonthlyStat(entry.getKey().toString(), totals.runs(),
+                    totals.distanceKm(), totals.durationMin(), totals.elevationM(),
+                    avgPaceSecPerKm(runs), weightedAvgHr(runs), weightedAvgCadence(runs),
+                    relativeEffortSum(runs)));
+        }
+        return stats;
+    }
+
+    /** The last 26 ISO weeks (Monday start), oldest first, empty weeks included. */
+    static List<WeeklyStat> weekly(List<Activity> activities, LocalDate today) {
+        LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
+        Map<LocalDate, List<Activity>> byWeek = new LinkedHashMap<>();
+        for (int i = WEEKS_STATS_BACK - 1; i >= 0; i--) {
+            byWeek.put(currentWeekStart.minusWeeks(i), new ArrayList<>());
+        }
+        for (Activity activity : activities) {
+            List<Activity> bucket = byWeek.get(activity.getDate().with(DayOfWeek.MONDAY));
+            if (bucket != null) {
+                bucket.add(activity);
+            }
+        }
+
+        List<WeeklyStat> stats = new ArrayList<>();
+        for (Map.Entry<LocalDate, List<Activity>> entry : byWeek.entrySet()) {
+            List<Activity> runs = entry.getValue();
+            PeriodTotals totals = totals(runs);
+            stats.add(new WeeklyStat(entry.getKey(), totals.runs(),
                     totals.distanceKm(), totals.durationMin(), totals.elevationM(),
                     avgPaceSecPerKm(runs), weightedAvgHr(runs), weightedAvgCadence(runs),
                     relativeEffortSum(runs)));

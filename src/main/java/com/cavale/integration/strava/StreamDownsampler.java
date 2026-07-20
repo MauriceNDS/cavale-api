@@ -18,7 +18,7 @@ final class StreamDownsampler {
     private StreamDownsampler() {
     }
 
-    /** @return JSON {"time":[s],"distance":[m],"hr":[bpm],"alt":[m],"vel":[m/s]} or null. */
+    /** @return JSON {"time":[s],"distance":[m],"hr":[bpm],"alt":[m],"vel":[m/s],"cad":[spm]} or null. */
     static String toJson(StravaDtos.StreamSet streams) {
         if (streams == null || streams.time() == null || streams.time().data() == null
                 || streams.time().data().size() < 2) {
@@ -32,18 +32,24 @@ final class StreamDownsampler {
                 "distance", sample(streams.distance() != null ? streams.distance().data() : null, size, stride),
                 "hr", sample(streams.heartrate() != null ? streams.heartrate().data() : null, size, stride),
                 "alt", sample(streams.altitude() != null ? streams.altitude().data() : null, size, stride),
-                "vel", sample(streams.velocitySmooth() != null ? streams.velocitySmooth().data() : null, size, stride));
+                "vel", sample(streams.velocitySmooth() != null ? streams.velocitySmooth().data() : null, size, stride),
+                // Strava reports run cadence per leg; ×2 gives the usual SPM figure.
+                "cad", sample(streams.cadence() != null ? streams.cadence().data() : null, size, stride, 2.0));
         return MAPPER.writeValueAsString(out);
     }
 
     private static List<Double> sample(List<Double> data, int expectedSize, int stride) {
+        return sample(data, expectedSize, stride, 1.0);
+    }
+
+    private static List<Double> sample(List<Double> data, int expectedSize, int stride, double factor) {
         if (data == null || data.size() != expectedSize) {
             return List.of();
         }
         List<Double> sampled = new ArrayList<>();
         for (int i = 0; i < data.size(); i += stride) {
             Double v = data.get(i);
-            sampled.add(v == null ? null : Math.round(v * 100.0) / 100.0);
+            sampled.add(v == null ? null : Math.round(v * factor * 100.0) / 100.0);
         }
         return sampled;
     }

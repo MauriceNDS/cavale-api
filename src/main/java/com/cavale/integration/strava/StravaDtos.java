@@ -40,7 +40,9 @@ public final class StravaDtos {
             Stream distance,
             Stream heartrate,
             Stream altitude,
-            @JsonProperty("velocity_smooth") Stream velocitySmooth) {
+            @JsonProperty("velocity_smooth") Stream velocitySmooth,
+            /** Run cadence, per leg (half the usual SPM figure). */
+            Stream cadence) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

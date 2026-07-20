@@ -70,6 +70,7 @@ class AthleteControllerTest {
                         new PeriodTotals(2, new BigDecimal("30.0"), 150, 800)),
                 List.of(),
                 List.of(),
+                List.of(),
                 new SyncState(true, 320, 0)));
 
         mockMvc.perform(get("/api/athlete/hub")

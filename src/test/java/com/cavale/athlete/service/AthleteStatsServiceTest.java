@@ -18,6 +18,7 @@ import com.cavale.athlete.dto.AthleteHubResponse.Prediction;
 import com.cavale.athlete.dto.AthleteHubResponse.Timeframe;
 import com.cavale.athlete.dto.AthleteHubResponse.TrailIndex;
 import com.cavale.athlete.dto.AthleteHubResponse.WeeklyEffort;
+import com.cavale.athlete.dto.AthleteHubResponse.WeeklyStat;
 import com.cavale.integration.strava.StravaConnectionRepository;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivityBestEffort;
@@ -179,7 +180,7 @@ class AthleteStatsServiceTest {
     /* ── Monthly & weekly buckets ──────────────────────────────────────── */
 
     @Test
-    void monthly_bucketsLast12MonthsIncludingEmptyOnes() {
+    void monthly_bucketsLast24MonthsIncludingEmptyOnes() {
         List<Activity> activities = List.of(
                 run(TODAY.minusDays(3), 60, "10.00", 200, 150, 45, "168.0"),
                 run(TODAY.minusDays(5), 30, "6.00", 50, 140, 20, "172.0"),
@@ -188,8 +189,8 @@ class AthleteStatsServiceTest {
 
         List<MonthlyStat> monthly = AthleteStatsService.monthly(activities, TODAY);
 
-        assertThat(monthly).hasSize(12);
-        assertThat(monthly.getFirst().month()).isEqualTo("2025-08");
+        assertThat(monthly).hasSize(24);
+        assertThat(monthly.getFirst().month()).isEqualTo("2024-08");
         MonthlyStat current = monthly.getLast();
         assertThat(current.month()).isEqualTo("2026-07");
         assertThat(current.runs()).isEqualTo(2);
@@ -203,6 +204,30 @@ class AthleteStatsServiceTest {
         // an empty month stays present with zeros
         assertThat(monthly.get(1).runs()).isZero();
         assertThat(monthly.get(1).avgPaceSecPerKm()).isNull();
+    }
+
+    @Test
+    void weekly_bucketsIsoWeeksWithTrendMetrics() {
+        List<Activity> activities = List.of(
+                run(TODAY.minusDays(1), 60, "10.00", 200, 150, 45, "168.0"),  // this week
+                run(TODAY.minusWeeks(1), 60, "12.00", 300, 148, 52, null),    // last week
+                run(TODAY.minusWeeks(30), 60, "10.00", 100, 150, 40, null));  // outside window
+
+        List<WeeklyStat> weekly = AthleteStatsService.weekly(activities, TODAY);
+
+        assertThat(weekly).hasSize(26);
+        WeeklyStat current = weekly.getLast();
+        assertThat(current.weekStart()).isEqualTo(LocalDate.of(2026, 7, 6)); // Monday
+        assertThat(current.runs()).isEqualTo(1);
+        assertThat(current.distanceKm()).isEqualByComparingTo("10.0");
+        assertThat(current.avgPaceSecPerKm()).isEqualTo(360);
+        assertThat(current.avgHr()).isEqualTo(150);
+        assertThat(current.avgCadenceSpm()).isEqualByComparingTo("168.0");
+        assertThat(current.relativeEffort()).isEqualTo(45);
+        assertThat(weekly.get(24).distanceKm()).isEqualByComparingTo("12.0");
+        // an empty week stays present with zeros
+        assertThat(weekly.getFirst().runs()).isZero();
+        assertThat(weekly.getFirst().avgPaceSecPerKm()).isNull();
     }
 
     @Test
