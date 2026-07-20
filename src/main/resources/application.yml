@@ -159,3 +159,7 @@ cavale:
     # Background convergence — upserts by external_id make each tick idempotent.
     push-interval: ${CAVALE_INTERVALS_PUSH_INTERVAL:PT6H}
     push-initial-delay: ${CAVALE_INTERVALS_PUSH_INITIAL_DELAY:PT3M}
+  dev-login:
+    # Passwordless email login for Strava-less environments (the dev box,
+    # which sits behind Cloudflare Access). NEVER enable in production.
+    enabled: ${CAVALE_DEV_LOGIN_ENABLED:false}

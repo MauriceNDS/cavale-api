@@ -5,6 +5,6 @@ import org.springframework.context.annotation.Configuration;
 
 /** Wires the user feature's configuration properties. */
 @Configuration
-@EnableConfigurationProperties(AdminProperties.class)
+@EnableConfigurationProperties({AdminProperties.class, DevLoginProperties.class})
 public class UserConfig {
 }
