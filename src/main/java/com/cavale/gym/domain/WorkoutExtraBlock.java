@@ -90,6 +90,11 @@ public class WorkoutExtraBlock extends Auditable {
         return sets;
     }
 
+    /** Adjust the set count mid-workout (0 keeps the block visible but done-less). */
+    public void updateSets(int sets) {
+        this.sets = sets;
+    }
+
     public Integer getReps() {
         return reps;
     }

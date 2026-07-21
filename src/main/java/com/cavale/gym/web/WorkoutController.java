@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cavale.gym.dto.WorkoutDtos.AddExtraBlockRequest;
+import com.cavale.gym.dto.WorkoutDtos.AdjustSetsRequest;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
@@ -78,9 +79,27 @@ public class WorkoutController {
         workoutService.deleteSet(userId(jwt), setLogId);
     }
 
+    @PutMapping("/{workoutLogId}/blocks/{templateExerciseId}/sets")
+    @Operation(summary = "Adjust a block's set count for this workout only (0 allowed)")
+    public WorkoutBlockResponse adjustBlockSets(@AuthenticationPrincipal Jwt jwt,
+                                                @PathVariable UUID workoutLogId,
+                                                @PathVariable UUID templateExerciseId,
+                                                @Valid @RequestBody AdjustSetsRequest request) {
+        return workoutService.adjustBlockSets(userId(jwt), workoutLogId, templateExerciseId, request);
+    }
+
+    @PutMapping("/{workoutLogId}/extra-blocks/{extraBlockId}/sets")
+    @Operation(summary = "Adjust a mid-workout addition's set count (0 allowed)")
+    public WorkoutBlockResponse adjustExtraBlockSets(@AuthenticationPrincipal Jwt jwt,
+                                                     @PathVariable UUID workoutLogId,
+                                                     @PathVariable UUID extraBlockId,
+                                                     @Valid @RequestBody AdjustSetsRequest request) {
+        return workoutService.adjustExtraBlockSets(userId(jwt), workoutLogId, extraBlockId, request);
+    }
+
     @PutMapping("/{workoutLogId}/blocks/{templateExerciseId}/exercise")
     @Operation(summary = "Replace a block's exercise for this workout only "
-            + "(one of its alternatives — or the prescribed one to revert)")
+            + "(any owned exercise — the prescribed one to revert)")
     public WorkoutBlockResponse swapBlock(@AuthenticationPrincipal Jwt jwt,
                                           @PathVariable UUID workoutLogId,
                                           @PathVariable UUID templateExerciseId,

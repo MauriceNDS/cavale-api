@@ -47,6 +47,9 @@ public class WorkoutBlockOverride extends Auditable {
     @Column(nullable = false)
     private boolean skipped;
 
+    /** Adjusted set count for this workout (0 allowed) — null means "as prescribed". */
+    private Integer sets;
+
     protected WorkoutBlockOverride() {
     }
 
@@ -67,9 +70,13 @@ public class WorkoutBlockOverride extends Auditable {
         this.skipped = false;
     }
 
+    public void adjustSets(Integer sets) {
+        this.sets = sets;
+    }
+
     /** Nothing left to override — the row has no reason to exist. */
     public boolean isNeutral() {
-        return exercise == null && !skipped;
+        return exercise == null && !skipped && sets == null;
     }
 
     public UUID getId() {
@@ -90,6 +97,10 @@ public class WorkoutBlockOverride extends Auditable {
 
     public boolean isSkipped() {
         return skipped;
+    }
+
+    public Integer getSets() {
+        return sets;
     }
 
     @Override

@@ -40,6 +40,10 @@ public final class WorkoutDtos {
     public record SwapBlockRequest(@NotNull UUID exerciseId) {
     }
 
+    /** Adjust a block's set count for THIS workout — 0 empties it without skipping. */
+    public record AdjustSetsRequest(@Min(0) @Max(10) int sets) {
+    }
+
     /** An exercise added on top of the program for THIS workout only. */
     public record AddExtraBlockRequest(
             @NotNull UUID exerciseId,
@@ -99,7 +103,12 @@ public final class WorkoutDtos {
             ExerciseResponse swappedFrom,
             boolean skipped,
             List<ExerciseResponse> alternatives,
+            /** Ranked same-category / same-muscles candidates, beyond the declared alternatives. */
+            List<ExerciseResponse> suggestedAlternatives,
+            /** EFFECTIVE set count (override applied; loop count in a circuit). */
             int sets,
+            /** What the template prescribes — differs from {@code sets} when adjusted live. */
+            int prescribedSets,
             Integer targetReps,
             Integer targetSeconds,
             Integer restSec,
@@ -109,6 +118,8 @@ public final class WorkoutDtos {
             BigDecimal recordWeightKg) {
     }
 
-    public record WorkoutDetailResponse(WorkoutLogResponse log, List<WorkoutBlockResponse> blocks) {
+    /** Circuit fields are set when the variant is a circuit: blocks run as loops. */
+    public record WorkoutDetailResponse(WorkoutLogResponse log, List<WorkoutBlockResponse> blocks,
+                                        Integer circuitLoops, Integer circuitRestSec) {
     }
 }

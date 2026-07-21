@@ -127,6 +127,7 @@ public class GymTemplateService {
     public GymTemplateVariant copyVariant(UUID userId, UUID variantId, VariantRequest request) {
         GymTemplateVariant source = getOwnedVariant(userId, variantId);
         GymTemplateVariant copy = addVariant(userId, source.getTemplate().getId(), request);
+        copy.configureCircuit(source.getCircuitLoops(), source.getCircuitRestSec());
         for (TemplateExercise te : templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId)) {
             TemplateExercise cloned = templateExerciseRepository.save(new TemplateExercise(copy,
                     te.getExercise(), te.getPosition(), te.getSets(), te.getReps(), te.getSeconds(),
@@ -150,6 +151,15 @@ public class GymTemplateService {
             throw new IllegalArgumentException("La variante « " + label + " » existe déjà");
         }
         variant.update(label, trimmed(request.note()));
+        return variant;
+    }
+
+    /** Configure or clear a variant's circuit mode — loops null reverts to sets×reps. */
+    @Transactional
+    public GymTemplateVariant configureCircuit(UUID userId, UUID variantId,
+                                               Integer loops, Integer restSec) {
+        GymTemplateVariant variant = getOwnedVariant(userId, variantId);
+        variant.configureCircuit(loops, restSec);
         return variant;
     }
 

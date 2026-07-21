@@ -23,6 +23,7 @@ import com.cavale.gym.domain.WorkoutLog;
 import com.cavale.gym.domain.WorkoutStatus;
 import com.cavale.gym.dto.ExerciseResponse;
 import com.cavale.gym.dto.WorkoutDtos.AddExtraBlockRequest;
+import com.cavale.gym.dto.WorkoutDtos.AdjustSetsRequest;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
@@ -164,10 +165,12 @@ public class WorkoutService {
 
     /**
      * Replace a block's exercise for THIS workout: the machine is taken, do
-     * the declared alternative instead. Only the prescribed exercise or one
-     * of the block's alternatives is accepted — picking the prescribed one
-     * reverts. Sets already ticked stay logged against the exercise that
-     * was actually performed.
+     * something equivalent instead. Any owned, non-archived exercise is
+     * accepted — the declared alternatives and the suggester only RANK the
+     * choices — except one already used by another block (set logs are keyed
+     * by exercise, the two blocks would collide). Picking the prescribed
+     * exercise reverts. Sets already ticked stay logged against the exercise
+     * that was actually performed.
      */
     @Transactional
     public WorkoutBlockResponse swapBlock(UUID userId, UUID workoutLogId, UUID templateExerciseId,
@@ -176,15 +179,18 @@ public class WorkoutService {
         TemplateExercise te = blockOf(log, templateExerciseId);
         Exercise target = exerciseService.getOwned(userId, request.exerciseId());
         boolean prescribed = te.getExercise().getId().equals(target.getId());
-        boolean alternative = templateService.getAlternatives(te.getId()).stream()
-                .anyMatch(alt -> alt.getExercise().getId().equals(target.getId()));
-        if (!prescribed && !alternative) {
-            throw new IllegalArgumentException(
-                    "Le remplacement doit être l'exercice prévu ou une de ses alternatives");
+        if (!prescribed) {
+            if (target.isArchived()) {
+                throw new IllegalArgumentException("Cet exercice est archivé");
+            }
+            if (takenExerciseIds(log, te.getId()).contains(target.getId())) {
+                throw new IllegalArgumentException(
+                        "« " + target.getName() + " » fait déjà partie de cet entraînement");
+            }
         }
         WorkoutBlockOverride override = overrideOf(log, te);
         override.replaceWith(prescribed ? null : target);
-        return block(userId, te, saveOrPrune(override));
+        return block(log, te, saveOrPrune(override));
     }
 
     /** No time left — drop this block from THIS workout (undoable, template untouched). */
@@ -194,7 +200,7 @@ public class WorkoutService {
         TemplateExercise te = blockOf(log, templateExerciseId);
         WorkoutBlockOverride override = overrideOf(log, te);
         override.skip();
-        return block(userId, te, saveOrPrune(override));
+        return block(log, te, saveOrPrune(override));
     }
 
     /** Un-skip a block (an active swap on it survives). */
@@ -204,7 +210,35 @@ public class WorkoutService {
         TemplateExercise te = blockOf(log, templateExerciseId);
         WorkoutBlockOverride override = overrideOf(log, te);
         override.restore();
-        return block(userId, te, saveOrPrune(override));
+        return block(log, te, saveOrPrune(override));
+    }
+
+    /**
+     * Adjust a block's set count for THIS workout — down to 0 (the block stays
+     * visible, just empty) or above the prescription. Matching the prescribed
+     * count clears the override. Already-logged sets beyond the new count are
+     * kept: history stays honest, the UI keeps showing them.
+     */
+    @Transactional
+    public WorkoutBlockResponse adjustBlockSets(UUID userId, UUID workoutLogId,
+                                                UUID templateExerciseId, AdjustSetsRequest request) {
+        WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
+        TemplateExercise te = blockOf(log, templateExerciseId);
+        WorkoutBlockOverride override = overrideOf(log, te);
+        override.adjustSets(request.sets() == prescribedSets(log, te) ? null : request.sets());
+        return block(log, te, saveOrPrune(override));
+    }
+
+    /** Same adjustment for a mid-workout addition — its sets are its own row. */
+    @Transactional
+    public WorkoutBlockResponse adjustExtraBlockSets(UUID userId, UUID workoutLogId,
+                                                     UUID extraBlockId, AdjustSetsRequest request) {
+        WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
+        WorkoutExtraBlock extra = extraBlockRepository.findById(extraBlockId)
+                .filter(b -> b.getWorkoutLog().getId().equals(log.getId()))
+                .orElseThrow(() -> new ResourceNotFoundException("Block", extraBlockId));
+        extra.updateSets(request.sets());
+        return extraBlock(log.getUserId(), extra);
     }
 
     /* ── Mid-workout additions: an exercise on top of the program ─────── */
@@ -220,11 +254,7 @@ public class WorkoutService {
         WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
         Exercise exercise = exerciseService.getOwned(userId, request.exerciseId());
         GymTemplateService.validateEffort(exercise, request.reps(), request.seconds());
-        boolean inTemplate = log.getTemplateVariant() != null && templateExerciseRepository
-                .findByVariantIdOrderByPositionAsc(log.getTemplateVariant().getId()).stream()
-                .anyMatch(te -> te.getExercise().getId().equals(exercise.getId()));
-        if (inTemplate || extraBlockRepository.existsByWorkoutLogIdAndExerciseId(log.getId(),
-                exercise.getId())) {
+        if (takenExerciseIds(log, null).contains(exercise.getId())) {
             throw new IllegalArgumentException("Cet exercice fait déjà partie de l'entraînement");
         }
         int position = (int) extraBlockRepository.countByWorkoutLogId(log.getId());
@@ -281,19 +311,40 @@ public class WorkoutService {
         Map<UUID, WorkoutBlockOverride> overrides = overrideRepository
                 .findByWorkoutLogId(log.getId()).stream()
                 .collect(Collectors.toMap(o -> o.getTemplateExercise().getId(), Function.identity()));
+        // the pool and the taken set are shared by every block — one query each
+        List<Exercise> pool = exerciseService.list(log.getUserId());
+        java.util.Set<UUID> taken = takenExerciseIds(log, null);
         List<WorkoutBlockResponse> blocks = new java.util.ArrayList<>(log.getTemplateVariant() != null
                 ? templateExerciseRepository
                         .findByVariantIdOrderByPositionAsc(log.getTemplateVariant().getId()).stream()
-                        .map(te -> block(log.getUserId(), te, overrides.get(te.getId())))
+                        .map(te -> block(log, te, overrides.get(te.getId()), pool, taken))
                         .toList()
                 : List.of());
         extraBlockRepository.findByWorkoutLogIdOrderByPositionAsc(log.getId())
                 .forEach(extra -> blocks.add(extraBlock(log.getUserId(), extra)));
-        return new WorkoutDetailResponse(WorkoutLogResponse.from(log, setResponses(log.getId())), blocks);
+        GymTemplateVariant variant = log.getTemplateVariant();
+        return new WorkoutDetailResponse(WorkoutLogResponse.from(log, setResponses(log.getId())),
+                blocks,
+                variant != null ? variant.getCircuitLoops() : null,
+                variant != null ? variant.getCircuitRestSec() : null);
+    }
+
+    /** In a circuit every block runs once per loop — the loop count IS the set count. */
+    private static int prescribedSets(WorkoutLog log, TemplateExercise te) {
+        GymTemplateVariant variant = log.getTemplateVariant();
+        return variant != null && variant.isCircuit() ? variant.getCircuitLoops() : te.getSets();
+    }
+
+    /** Single-block endpoints re-derive the shared context; detail() passes it in. */
+    private WorkoutBlockResponse block(WorkoutLog log, TemplateExercise te, WorkoutBlockOverride override) {
+        return block(log, te, override, exerciseService.list(log.getUserId()),
+                takenExerciseIds(log, null));
     }
 
     /** One block, with its override (if any) applied: prefills and record follow the EFFECTIVE exercise. */
-    private WorkoutBlockResponse block(UUID userId, TemplateExercise te, WorkoutBlockOverride override) {
+    private WorkoutBlockResponse block(WorkoutLog log, TemplateExercise te, WorkoutBlockOverride override,
+                                       List<Exercise> pool, java.util.Set<UUID> taken) {
+        UUID userId = log.getUserId();
         boolean swapped = override != null && override.getExercise() != null;
         Exercise exercise = swapped ? override.getExercise() : te.getExercise();
         List<SetLogResponse> lastSets = setLogRepository
@@ -303,14 +354,28 @@ public class WorkoutService {
         var record = te.getReps() != null
                 ? setLogRepository.findRecordWeight(userId, exercise.getId(), te.getReps()).orElse(null)
                 : null;
-        List<ExerciseResponse> alternatives = templateService.getAlternatives(te.getId()).stream()
-                .map(alt -> ExerciseResponse.from(alt.getExercise()))
+        List<Exercise> declared = templateService.getAlternatives(te.getId()).stream()
+                .map(com.cavale.gym.domain.TemplateExerciseAlternative::getExercise)
                 .toList();
+
+        // Suggestions target the PRESCRIBED movement; everything already in the
+        // workout or already declared is excluded from the ranking.
+        java.util.Set<UUID> excluded = new java.util.HashSet<>(taken);
+        declared.forEach(alt -> excluded.add(alt.getId()));
+        List<ExerciseResponse> suggested = AlternativeSuggester
+                .suggest(te.getExercise(), pool, excluded, 4).stream()
+                .map(ExerciseResponse::from)
+                .toList();
+
+        int prescribedSets = prescribedSets(log, te);
+        int sets = override != null && override.getSets() != null
+                ? override.getSets() : prescribedSets;
         return new WorkoutBlockResponse(te.getId(), null, ExerciseResponse.from(exercise),
                 swapped ? ExerciseResponse.from(te.getExercise()) : null,
-                override != null && override.isSkipped(), alternatives,
-                te.getSets(), te.getReps(), te.getSeconds(), te.getRestSec(), te.getIntensityPct(),
-                te.getNote(), lastSets, record);
+                override != null && override.isSkipped(),
+                declared.stream().map(ExerciseResponse::from).toList(), suggested,
+                sets, prescribedSets, te.getReps(), te.getSeconds(), te.getRestSec(),
+                te.getIntensityPct(), te.getNote(), lastSets, record);
     }
 
     /** A mid-workout addition as a block: same prefills, no alternatives to offer. */
@@ -324,8 +389,34 @@ public class WorkoutService {
                 ? setLogRepository.findRecordWeight(userId, exercise.getId(), extra.getReps()).orElse(null)
                 : null;
         return new WorkoutBlockResponse(null, extra.getId(), ExerciseResponse.from(exercise), null,
-                false, List.of(), extra.getSets(), extra.getReps(), extra.getSeconds(),
-                extra.getRestSec(), null, extra.getNote(), lastSets, record);
+                false, List.of(), List.of(), extra.getSets(), extra.getSets(), extra.getReps(),
+                extra.getSeconds(), extra.getRestSec(), null, extra.getNote(), lastSets, record);
+    }
+
+    /**
+     * Ids of every exercise the workout already uses — effective template
+     * exercises (swaps applied) and extra blocks. {@code exceptTemplateExerciseId}
+     * leaves one block out (the one being re-assigned).
+     */
+    private java.util.Set<UUID> takenExerciseIds(WorkoutLog log, UUID exceptTemplateExerciseId) {
+        java.util.Set<UUID> taken = new java.util.HashSet<>();
+        if (log.getTemplateVariant() != null) {
+            Map<UUID, WorkoutBlockOverride> overrides = overrideRepository
+                    .findByWorkoutLogId(log.getId()).stream()
+                    .collect(Collectors.toMap(o -> o.getTemplateExercise().getId(), Function.identity()));
+            for (TemplateExercise other : templateExerciseRepository
+                    .findByVariantIdOrderByPositionAsc(log.getTemplateVariant().getId())) {
+                if (other.getId().equals(exceptTemplateExerciseId)) {
+                    continue;
+                }
+                WorkoutBlockOverride override = overrides.get(other.getId());
+                taken.add(override != null && override.getExercise() != null
+                        ? override.getExercise().getId() : other.getExercise().getId());
+            }
+        }
+        extraBlockRepository.findByWorkoutLogIdOrderByPositionAsc(log.getId())
+                .forEach(extra -> taken.add(extra.getExercise().getId()));
+        return taken;
     }
 
     private List<SetLogResponse> setResponses(UUID workoutLogId) {

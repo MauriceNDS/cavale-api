@@ -38,6 +38,16 @@ public final class TemplateDtos {
             String note) {
     }
 
+    /** Turn a variant into a circuit (loops set) or back into a classic program (loops null). */
+    public record CircuitRequest(
+            @Min(value = 1, message = "A circuit runs at least one loop")
+            @Max(value = 10, message = "At most 10 loops")
+            Integer loops,
+            @Min(value = 0, message = "Rest must not be negative")
+            @Max(value = 900, message = "Rest between loops is at most 15 minutes")
+            Integer restSec) {
+    }
+
     public record TemplateExerciseRequest(
             @NotNull(message = "Exercise is required")
             UUID exerciseId,
@@ -64,11 +74,12 @@ public final class TemplateDtos {
 
     /* ── Responses ────────────────────────────────────────────────────── */
 
-    public record VariantSummary(UUID id, String label, String note, long exerciseCount) {
+    public record VariantSummary(UUID id, String label, String note, long exerciseCount,
+                                 Integer circuitLoops, Integer circuitRestSec) {
 
         public static VariantSummary from(GymTemplateVariant variant, long exerciseCount) {
             return new VariantSummary(variant.getId(), variant.getLabel(), variant.getNote(),
-                    exerciseCount);
+                    exerciseCount, variant.getCircuitLoops(), variant.getCircuitRestSec());
         }
     }
 
@@ -104,13 +115,14 @@ public final class TemplateDtos {
     }
 
     public record VariantDetailResponse(UUID id, UUID templateId, String templateName, String label,
-                                        String note, List<TemplateExerciseResponse> exercises) {
+                                        String note, Integer circuitLoops, Integer circuitRestSec,
+                                        List<TemplateExerciseResponse> exercises) {
 
         public static VariantDetailResponse from(GymTemplateVariant variant,
                                                  List<TemplateExerciseResponse> exercises) {
             return new VariantDetailResponse(variant.getId(), variant.getTemplate().getId(),
                     variant.getTemplate().getName(), variant.getLabel(), variant.getNote(),
-                    exercises);
+                    variant.getCircuitLoops(), variant.getCircuitRestSec(), exercises);
         }
     }
 }

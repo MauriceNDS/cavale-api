@@ -27,6 +27,7 @@ import com.cavale.gym.domain.WorkoutBlockOverride;
 import com.cavale.gym.domain.WorkoutExtraBlock;
 import com.cavale.gym.domain.WorkoutLog;
 import com.cavale.gym.domain.WorkoutStatus;
+import com.cavale.gym.dto.WorkoutDtos;
 import com.cavale.gym.dto.WorkoutDtos.AddExtraBlockRequest;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
@@ -310,22 +311,109 @@ class WorkoutServiceTest {
     }
 
     @Test
-    void swapBlock_rejectsExercisesOutsideTheBlock() {
+    void swapBlock_acceptsAnyOwnedExercise_beyondDeclaredAlternatives() {
         GymTemplateVariant variant = variant();
         TemplateExercise te = prescription(variant, squat());
-        Exercise stranger = exercise("Curl biceps");
+        Exercise stranger = exercise("Presse à cuisses");
         WorkoutLog running = inProgress(variant, null);
 
         when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
         when(templateExerciseRepository.findById(te.getId())).thenReturn(Optional.of(te));
         when(exerciseService.getOwned(USER, stranger.getId())).thenReturn(stranger);
-        when(templateService.getAlternatives(te.getId())).thenReturn(List.of());
+        when(overrideRepository.findByWorkoutLogIdAndTemplateExerciseId(running.getId(), te.getId()))
+                .thenReturn(Optional.empty());
+        when(overrideRepository.save(any(WorkoutBlockOverride.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        WorkoutBlockResponse block = service().swapBlock(USER, running.getId(), te.getId(),
+                new SwapBlockRequest(stranger.getId()));
+
+        assertThat(block.exercise().name()).isEqualTo("Presse à cuisses");
+        assertThat(block.swappedFrom().name()).isEqualTo("Squat");
+    }
+
+    @Test
+    void swapBlock_rejectsAnExerciseAlreadyUsedByAnotherBlock() {
+        GymTemplateVariant variant = variant();
+        Exercise squat = squat();
+        Exercise press = exercise("Presse");
+        TemplateExercise te = prescription(variant, squat);
+        TemplateExercise other = prescription(variant, press);
+        WorkoutLog running = inProgress(variant, null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findById(te.getId())).thenReturn(Optional.of(te));
+        when(exerciseService.getOwned(USER, press.getId())).thenReturn(press);
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(variant.getId()))
+                .thenReturn(List.of(te, other));
 
         assertThatThrownBy(() -> service().swapBlock(USER, running.getId(), te.getId(),
-                new SwapBlockRequest(stranger.getId())))
+                new SwapBlockRequest(press.getId())))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("alternatives");
+                .hasMessageContaining("fait déjà partie");
         verify(overrideRepository, never()).save(any());
+    }
+
+    @Test
+    void adjustBlockSets_toZero_persistsTheOverride() {
+        GymTemplateVariant variant = variant();
+        TemplateExercise te = prescription(variant, squat()); // prescribes 3 sets
+        WorkoutLog running = inProgress(variant, null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findById(te.getId())).thenReturn(Optional.of(te));
+        when(overrideRepository.findByWorkoutLogIdAndTemplateExerciseId(running.getId(), te.getId()))
+                .thenReturn(Optional.empty());
+        when(overrideRepository.save(any(WorkoutBlockOverride.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        WorkoutBlockResponse block = service().adjustBlockSets(USER, running.getId(), te.getId(),
+                new WorkoutDtos.AdjustSetsRequest(0));
+
+        assertThat(block.sets()).isZero();
+        assertThat(block.prescribedSets()).isEqualTo(3);
+        verify(overrideRepository).save(any(WorkoutBlockOverride.class));
+    }
+
+    @Test
+    void adjustBlockSets_backToPrescription_prunesTheOverride() {
+        GymTemplateVariant variant = variant();
+        TemplateExercise te = prescription(variant, squat()); // prescribes 3 sets
+        WorkoutLog running = inProgress(variant, null);
+        WorkoutBlockOverride override = new WorkoutBlockOverride(running, te);
+        override.adjustSets(1);
+        ReflectionTestUtils.setField(override, "id", UUID.randomUUID());
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findById(te.getId())).thenReturn(Optional.of(te));
+        when(overrideRepository.findByWorkoutLogIdAndTemplateExerciseId(running.getId(), te.getId()))
+                .thenReturn(Optional.of(override));
+
+        WorkoutBlockResponse block = service().adjustBlockSets(USER, running.getId(), te.getId(),
+                new WorkoutDtos.AdjustSetsRequest(3));
+
+        assertThat(block.sets()).isEqualTo(3);
+        verify(overrideRepository).delete(override);
+        verify(overrideRepository, never()).save(any());
+    }
+
+    @Test
+    void circuitVariant_loopCountBecomesEverySetCount() {
+        GymTemplateVariant variant = variant();
+        variant.configureCircuit(3, 60);
+        TemplateExercise te = prescription(variant, squat()); // prescribes 3×6 — ignored in circuit
+        WorkoutLog running = inProgress(variant, null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(variant.getId()))
+                .thenReturn(List.of(te));
+
+        WorkoutDetailResponse detail = service().get(USER, running.getId());
+
+        assertThat(detail.circuitLoops()).isEqualTo(3);
+        assertThat(detail.circuitRestSec()).isEqualTo(60);
+        assertThat(detail.blocks().getFirst().sets()).isEqualTo(3);
+        assertThat(detail.blocks().getFirst().prescribedSets()).isEqualTo(3);
     }
 
     @Test
@@ -444,8 +532,6 @@ class WorkoutServiceTest {
         when(exerciseService.getOwned(USER, calves.getId())).thenReturn(calves);
         when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(variant.getId()))
                 .thenReturn(List.of(te));
-        when(extraBlockRepository.existsByWorkoutLogIdAndExerciseId(running.getId(), calves.getId()))
-                .thenReturn(false);
         when(extraBlockRepository.countByWorkoutLogId(running.getId())).thenReturn(0L);
         when(extraBlockRepository.save(any(WorkoutExtraBlock.class)))
                 .thenAnswer(inv -> inv.getArgument(0));

@@ -30,6 +30,7 @@ import com.cavale.gym.dto.TemplateDtos.TemplateExerciseResponse;
 import com.cavale.gym.dto.TemplateDtos.TemplateRequest;
 import com.cavale.gym.dto.TemplateDtos.TemplateResponse;
 import com.cavale.gym.dto.TemplateDtos.VariantDetailResponse;
+import com.cavale.gym.dto.TemplateDtos.CircuitRequest;
 import com.cavale.gym.dto.TemplateDtos.VariantRequest;
 import com.cavale.gym.dto.TemplateDtos.VariantSummary;
 import com.cavale.gym.service.GymTemplateService;
@@ -127,6 +128,17 @@ public class GymTemplateController {
                                         @Valid @RequestBody VariantRequest request) {
         UUID userId = userId(jwt);
         GymTemplateVariant variant = templateService.updateVariant(userId, variantId, request);
+        return VariantSummary.from(variant, templateService.getExercises(userId, variantId).size());
+    }
+
+    @PutMapping("/variants/{variantId}/circuit")
+    @Operation(summary = "Configure circuit mode (loops + rest between loops); loops null reverts to sets\u00d7reps")
+    public VariantSummary configureCircuit(@AuthenticationPrincipal Jwt jwt,
+                                           @PathVariable UUID variantId,
+                                           @Valid @RequestBody CircuitRequest request) {
+        UUID userId = userId(jwt);
+        GymTemplateVariant variant = templateService.configureCircuit(userId, variantId,
+                request.loops(), request.restSec());
         return VariantSummary.from(variant, templateService.getExercises(userId, variantId).size());
     }
 
