@@ -25,6 +25,9 @@ import com.cavale.training.dto.PlanProgressResponse;
 import com.cavale.training.dto.PlanProgressResponse.ProgressTotals;
 import com.cavale.training.dto.PlanProgressResponse.WeekProgress;
 import com.cavale.training.dto.PlanResponse;
+import com.cavale.training.pace.PaceModel;
+import com.cavale.training.pace.PaceModelService;
+import com.cavale.training.pace.SessionKmEstimator;
 import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.training.repository.PlanWeekRepository;
@@ -46,17 +49,20 @@ public class PlanProgressService {
     private final PlannedSessionRepository sessionRepository;
     private final ActivityRepository activityRepository;
     private final ObjectiveRepository objectiveRepository;
+    private final PaceModelService paceModelService;
 
     public PlanProgressService(TrainingPlanService planService,
                                PlanWeekRepository weekRepository,
                                PlannedSessionRepository sessionRepository,
                                ActivityRepository activityRepository,
-                               ObjectiveRepository objectiveRepository) {
+                               ObjectiveRepository objectiveRepository,
+                               PaceModelService paceModelService) {
         this.planService = planService;
         this.weekRepository = weekRepository;
         this.sessionRepository = sessionRepository;
         this.activityRepository = activityRepository;
         this.objectiveRepository = objectiveRepository;
+        this.paceModelService = paceModelService;
     }
 
     @Transactional(readOnly = true)
@@ -84,9 +90,10 @@ public class PlanProgressService {
         Map<UUID, List<PlannedSession>> sessionsByWeek = sessions.stream()
                 .collect(Collectors.groupingBy(s -> s.getWeek().getId()));
 
+        PaceModel paceModel = paceModelService.modelFor(userId);
         List<WeekProgress> weekRows = weeks.stream()
                 .map(week -> weekProgress(week, sessionsByWeek.getOrDefault(week.getId(), List.of()),
-                        activitiesBySession, today))
+                        activitiesBySession, paceModel, today))
                 .toList();
 
         Integer currentWeekNumber = weekRows.stream()
@@ -119,7 +126,8 @@ public class PlanProgressService {
     }
 
     private static WeekProgress weekProgress(PlanWeek week, List<PlannedSession> sessions,
-                                             Map<UUID, Activity> activities, LocalDate today) {
+                                             Map<UUID, Activity> activities, PaceModel paceModel,
+                                             LocalDate today) {
         List<PlannedSession> real = withoutRest(sessions);
         boolean current = !today.isBefore(week.getStartDate())
                 && today.isBefore(week.getStartDate().plusDays(DAYS_PER_WEEK));
@@ -131,6 +139,7 @@ public class PlanProgressService {
                 week.getPhase(),
                 current,
                 week.getTargetVolumeKm(),
+                estimatedVolumeKm(real, paceModel),
                 week.getTargetElevationM(),
                 week.getTargetLoadUa(),
                 actualVolumeKm(real, activities),
@@ -189,6 +198,18 @@ public class PlanProgressService {
 
     private static int countByStatus(List<PlannedSession> sessions, SessionStatus status) {
         return (int) sessions.stream().filter(s -> s.getStatus() == status).count();
+    }
+
+    /** Expected km of the week's prescribed running, or null when nothing is estimable. */
+    private static BigDecimal estimatedVolumeKm(List<PlannedSession> sessions, PaceModel paceModel) {
+        BigDecimal total = null;
+        for (PlannedSession session : sessions) {
+            BigDecimal km = SessionKmEstimator.estimateKm(session, paceModel);
+            if (km != null) {
+                total = total == null ? km : total.add(km);
+            }
+        }
+        return total;
     }
 
     private static BigDecimal actualVolumeKm(List<PlannedSession> sessions, Map<UUID, Activity> activities) {

@@ -51,6 +51,8 @@ public record PlanProgressResponse(
             String phase,
             boolean current,
             BigDecimal targetVolumeKm,
+            /** Km the prescribed session times should actually produce (personal pace model). */
+            BigDecimal estimatedVolumeKm,
             Integer targetElevationM,
             Integer targetLoadUa,
             BigDecimal actualVolumeKm,

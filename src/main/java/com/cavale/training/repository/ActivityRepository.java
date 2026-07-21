@@ -49,6 +49,10 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
     /** Unattached (history) activities around a date — the matcher's candidates. */
     List<Activity> findByUserIdAndSessionIsNullAndDateBetween(UUID userId, LocalDate from, LocalDate to);
 
+    /** Recent runs of one discipline — the pace model's training corpus. */
+    List<Activity> findByUserIdAndDisciplineAndDateGreaterThanEqual(
+            UUID userId, com.cavale.training.domain.Discipline discipline, LocalDate from);
+
     /** Strava activities whose best efforts haven't been extracted yet, oldest first. */
     List<Activity> findByUserIdAndExternalIdIsNotNullAndRecordsAnalyzedFalseOrderByDateAsc(
             UUID userId, Limit limit);

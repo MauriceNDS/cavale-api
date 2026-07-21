@@ -32,6 +32,7 @@ import com.cavale.training.dto.ImportResult;
 import com.cavale.training.dto.PlanDetailResponse;
 import com.cavale.training.dto.PlanResponse;
 import com.cavale.training.dto.WeekResponse;
+import com.cavale.training.pace.WeekEstimateService;
 import com.cavale.training.service.PlanImportException;
 import com.cavale.training.service.PlanImportService;
 import com.cavale.training.service.TrainingPlanService;
@@ -47,10 +48,13 @@ public class TrainingPlanController {
 
     private final TrainingPlanService planService;
     private final PlanImportService importService;
+    private final WeekEstimateService estimateService;
 
-    public TrainingPlanController(TrainingPlanService planService, PlanImportService importService) {
+    public TrainingPlanController(TrainingPlanService planService, PlanImportService importService,
+                                  WeekEstimateService estimateService) {
         this.planService = planService;
         this.importService = importService;
+        this.estimateService = estimateService;
     }
 
     @PostMapping
@@ -74,7 +78,8 @@ public class TrainingPlanController {
     public PlanDetailResponse get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID planId) {
         UUID userId = userId(jwt);
         TrainingPlan plan = planService.getOwnedPlan(userId, planId);
-        return PlanDetailResponse.from(plan, planService.getWeeks(userId, planId));
+        return PlanDetailResponse.from(plan, planService.getWeeks(userId, planId),
+                estimateService.estimatesForPlan(userId, planId));
     }
 
     @PostMapping("/{planId}/weeks")

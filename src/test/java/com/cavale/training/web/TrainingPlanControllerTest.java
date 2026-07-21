@@ -42,6 +42,9 @@ class TrainingPlanControllerTest {
     private PlanImportService importService;
 
     @MockitoBean
+    private com.cavale.training.pace.WeekEstimateService estimateService;
+
+    @MockitoBean
     private JwtDecoder jwtDecoder;
 
     private static final UUID USER_ID = UUID.randomUUID();

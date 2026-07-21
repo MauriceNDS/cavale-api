@@ -51,9 +51,13 @@ class PlanProgressServiceTest {
     @Mock
     private ObjectiveRepository objectiveRepository;
 
+    @Mock
+    private com.cavale.training.pace.PaceModelService paceModelService;
+
     private PlanProgressService service() {
+        when(paceModelService.modelFor(OWNER)).thenReturn(com.cavale.training.pace.PaceModel.fallback());
         return new PlanProgressService(planService, weekRepository, sessionRepository,
-                activityRepository, objectiveRepository);
+                activityRepository, objectiveRepository, paceModelService);
     }
 
     private static final UUID OWNER = UUID.randomUUID();
