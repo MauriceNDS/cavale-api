@@ -1,6 +1,10 @@
 package com.cavale.training.service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -9,11 +13,14 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cavale.common.AppTime;
 import com.cavale.common.Strings;
 import com.cavale.common.exception.ResourceNotFoundException;
+import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.Shoe;
 import com.cavale.training.dto.ShoeRequest;
 import com.cavale.training.dto.ShoeResponse;
+import com.cavale.training.dto.ShoeStatsResponse;
 import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.ShoeRepository;
 
@@ -77,6 +84,60 @@ public class ShoeService {
     @Transactional
     public void delete(UUID userId, UUID shoeId) {
         shoeRepository.delete(getOwned(userId, shoeId));
+    }
+
+    /** One pair's life in numbers, computed from its linked activities. */
+    @Transactional(readOnly = true)
+    public ShoeStatsResponse stats(UUID userId, UUID shoeId) {
+        getOwned(userId, shoeId);
+        List<Activity> runs = activityRepository.findByUserIdAndShoeIdOrderByDateAsc(userId, shoeId);
+
+        BigDecimal totalKm = BigDecimal.ZERO;
+        int totalElevation = 0;
+        long totalMin = 0;
+        for (Activity run : runs) {
+            if (run.getDistanceKm() != null) {
+                totalKm = totalKm.add(run.getDistanceKm());
+            }
+            if (run.getElevationM() != null) {
+                totalElevation += run.getElevationM();
+            }
+            totalMin += run.getDurationMin();
+        }
+        Integer avgPace = totalKm.doubleValue() > 0.1
+                ? (int) Math.round(totalMin * 60 / totalKm.doubleValue())
+                : null;
+
+        Map<YearMonth, BigDecimal> byMonth = runs.stream()
+                .filter(run -> run.getDistanceKm() != null)
+                .collect(Collectors.groupingBy(run -> YearMonth.from(run.getDate()),
+                        Collectors.reducing(BigDecimal.ZERO, Activity::getDistanceKm, BigDecimal::add)));
+        YearMonth current = YearMonth.from(LocalDate.now(AppTime.ZONE));
+        List<ShoeStatsResponse.MonthKm> monthly = new ArrayList<>();
+        for (int back = 5; back >= 0; back--) {
+            YearMonth month = current.minusMonths(back);
+            monthly.add(new ShoeStatsResponse.MonthKm(month.toString(),
+                    byMonth.getOrDefault(month, BigDecimal.ZERO).setScale(1, RoundingMode.HALF_UP)));
+        }
+
+        return new ShoeStatsResponse(runs.size(), totalKm.setScale(1, RoundingMode.HALF_UP),
+                totalElevation,
+                runs.isEmpty() ? null : runs.getFirst().getDate(),
+                runs.isEmpty() ? null : runs.getLast().getDate(),
+                avgPace, monthly);
+    }
+
+    /**
+     * Assign a pair to an activity after the fact (null clears it) — the
+     * validated report and history runs both use it, so mileage stays honest.
+     */
+    @Transactional
+    public UUID assignToActivity(UUID userId, UUID activityId, UUID shoeId) {
+        Activity activity = activityRepository.findById(activityId)
+                .filter(a -> a.getUserId().equals(userId))
+                .orElseThrow(() -> new ResourceNotFoundException("Activity", activityId));
+        activity.assignShoe(requireOwned(userId, shoeId));
+        return activity.getShoeId();
     }
 
     /** Returns the shoe id only if it belongs to the athlete (null passes through). */

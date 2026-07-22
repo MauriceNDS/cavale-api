@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.cavale.training.dto.ShoeRequest;
 import com.cavale.training.dto.ShoeResponse;
+import com.cavale.training.dto.ShoeStatsResponse;
 import com.cavale.training.service.ShoeService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -60,5 +61,24 @@ public class ShoeController {
     @Operation(summary = "Delete a pair of shoes (its activities keep their history, unlinked)")
     public void delete(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID shoeId) {
         shoeService.delete(UUID.fromString(jwt.getSubject()), shoeId);
+    }
+
+    @GetMapping("/{shoeId}/stats")
+    @Operation(summary = "One pair's life in numbers: runs, km, D+, pace, last six months")
+    public ShoeStatsResponse stats(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID shoeId) {
+        return shoeService.stats(UUID.fromString(jwt.getSubject()), shoeId);
+    }
+
+    /** The activity's shoe as a sub-resource: PUT assigns, null clears. */
+    public record AssignShoeRequest(UUID shoeId) {
+    }
+
+    @PutMapping("/of-activity/{activityId}")
+    @Operation(summary = "Assign a pair to an activity after the fact (null clears it)")
+    public AssignShoeRequest assignToActivity(@AuthenticationPrincipal Jwt jwt,
+                                              @PathVariable UUID activityId,
+                                              @RequestBody AssignShoeRequest request) {
+        return new AssignShoeRequest(shoeService.assignToActivity(
+                UUID.fromString(jwt.getSubject()), activityId, request.shoeId()));
     }
 }

@@ -29,7 +29,9 @@ public record ActivityDetailResponse(
         PerceivedEffort perceivedEffort,
         boolean painFlag,
         String comment,
-        boolean hasStreams) {
+        boolean hasStreams,
+        UUID shoeId,
+        com.cavale.training.domain.Discipline discipline) {
 
     public static ActivityDetailResponse from(Activity activity) {
         return new ActivityDetailResponse(
@@ -48,6 +50,8 @@ public record ActivityDetailResponse(
                 activity.getPerceivedEffort(),
                 activity.isPainFlag(),
                 activity.getComment(),
-                activity.getStreamsJson() != null);
+                activity.getStreamsJson() != null,
+                activity.getShoeId(),
+                activity.getDiscipline());
     }
 }

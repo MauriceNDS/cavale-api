@@ -1,6 +1,7 @@
 package com.cavale.training.dto;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivitySource;
@@ -17,12 +18,15 @@ public record ActivitySummary(
         PerceivedEffort perceivedEffort,
         boolean painFlag,
         String comment,
-        boolean hasStreams) {
+        boolean hasStreams,
+        UUID activityId,
+        UUID shoeId) {
 
     public static ActivitySummary from(Activity activity) {
         return new ActivitySummary(activity.getSource(), activity.getName(), activity.getDurationMin(),
                 activity.getDistanceKm(), activity.getElevationM(), activity.getAvgHr(),
                 activity.getAvgCadenceSpm(), activity.getPerceivedEffort(), activity.isPainFlag(),
-                activity.getComment(), activity.getStreamsJson() != null);
+                activity.getComment(), activity.getStreamsJson() != null,
+                activity.getId(), activity.getShoeId());
     }
 }

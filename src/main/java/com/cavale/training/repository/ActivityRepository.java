@@ -53,6 +53,9 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
     List<Activity> findByUserIdAndDisciplineAndDateGreaterThanEqual(
             UUID userId, com.cavale.training.domain.Discipline discipline, LocalDate from);
 
+    /** Every run logged on one pair — the shoe stats corpus. */
+    List<Activity> findByUserIdAndShoeIdOrderByDateAsc(UUID userId, UUID shoeId);
+
     /** Strava activities whose best efforts haven't been extracted yet, oldest first. */
     List<Activity> findByUserIdAndExternalIdIsNotNullAndRecordsAnalyzedFalseOrderByDateAsc(
             UUID userId, Limit limit);
