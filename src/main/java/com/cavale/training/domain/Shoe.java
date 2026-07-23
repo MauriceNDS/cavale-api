@@ -42,6 +42,10 @@ public class Shoe extends Auditable {
     @Column(length = 20)
     private String color;
 
+    /** Optional second colour of a two-tone pair, as a hex string. */
+    @Column(name = "color_secondary", length = 20)
+    private String colorSecondary;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 10)
     private ShoePurpose purpose;
@@ -64,11 +68,12 @@ public class Shoe extends Auditable {
         this.name = name;
     }
 
-    public void update(String name, String brand, String color, ShoePurpose purpose,
-                       Integer retirementKm, boolean retired) {
+    public void update(String name, String brand, String color, String colorSecondary,
+                       ShoePurpose purpose, Integer retirementKm, boolean retired) {
         this.name = name;
         this.brand = brand;
         this.color = color;
+        this.colorSecondary = colorSecondary;
         this.purpose = purpose;
         this.retirementKm = retirementKm;
         this.retired = retired;
@@ -100,6 +105,10 @@ public class Shoe extends Auditable {
 
     public String getColor() {
         return color;
+    }
+
+    public String getColorSecondary() {
+        return colorSecondary;
     }
 
     public boolean isDefault() {

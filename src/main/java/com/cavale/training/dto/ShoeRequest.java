@@ -20,6 +20,9 @@ public record ShoeRequest(
         @Pattern(regexp = "^#[0-9a-fA-F]{6}$", message = "Color must be a hex value like #E4002B")
         String color,
 
+        @Pattern(regexp = "^#[0-9a-fA-F]{6}$", message = "Color must be a hex value like #E4002B")
+        String colorSecondary,
+
         ShoePurpose purpose,
 
         @Positive(message = "Retirement distance must be positive")

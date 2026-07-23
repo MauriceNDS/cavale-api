@@ -52,7 +52,8 @@ public class ShoeService {
     public ShoeResponse create(UUID userId, ShoeRequest request) {
         Shoe shoe = new Shoe(userId, request.name().trim());
         shoe.update(request.name().trim(), Strings.trimToNull(request.brand()), Strings.trimToNull(request.color()),
-                request.purpose(), request.retirementKm(), request.isRetired());
+                Strings.trimToNull(request.colorSecondary()), request.purpose(), request.retirementKm(),
+                request.isRetired());
         applyDefault(userId, shoe, request.wantsDefault());
         return ShoeResponse.from(shoeRepository.save(shoe), BigDecimal.ZERO);
     }
@@ -61,7 +62,8 @@ public class ShoeService {
     public ShoeResponse update(UUID userId, UUID shoeId, ShoeRequest request) {
         Shoe shoe = getOwned(userId, shoeId);
         shoe.update(request.name().trim(), Strings.trimToNull(request.brand()), Strings.trimToNull(request.color()),
-                request.purpose(), request.retirementKm(), request.isRetired());
+                Strings.trimToNull(request.colorSecondary()), request.purpose(), request.retirementKm(),
+                request.isRetired());
         applyDefault(userId, shoe, request.wantsDefault());
         return ShoeResponse.from(shoe, mileageByShoe(userId).get(shoeId));
     }

@@ -157,9 +157,9 @@ public class DemoSeeder {
 
     private DemoShoes seedShoes(UUID userId) {
         UUID trail = shoeService.create(userId,
-                new ShoeRequest("Speedgoat 5", "Hoka", "#14B4C8", ShoePurpose.TRAIL, 800, false, true)).id();
+                new ShoeRequest("Speedgoat 5", "Hoka", "#14B4C8", "#F97316", ShoePurpose.TRAIL, 800, false, true)).id();
         UUID road = shoeService.create(userId,
-                new ShoeRequest("Pegasus 40", "Nike", "#111111", ShoePurpose.ROAD, 700, false, false)).id();
+                new ShoeRequest("Pegasus 40", "Nike", "#111111", null, ShoePurpose.ROAD, 700, false, false)).id();
         return new DemoShoes(trail, road);
     }
 }

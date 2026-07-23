@@ -142,6 +142,7 @@ public class PlanProgressService {
                 estimatedVolumeKm(real, paceModel),
                 week.getTargetElevationM(),
                 week.getTargetLoadUa(),
+                plannedDurationMin(real),
                 actualVolumeKm(real, activities),
                 actualElevationM(real, activities),
                 actualDurationMin(real, activities),
@@ -210,6 +211,15 @@ public class PlanProgressService {
             }
         }
         return total;
+    }
+
+    /** Sum of the week's prescribed durations, or null when no session carries one. */
+    private static Integer plannedDurationMin(List<PlannedSession> sessions) {
+        int total = sessions.stream()
+                .filter(s -> s.getDurationMin() != null)
+                .mapToInt(PlannedSession::getDurationMin)
+                .sum();
+        return total > 0 ? total : null;
     }
 
     private static BigDecimal actualVolumeKm(List<PlannedSession> sessions, Map<UUID, Activity> activities) {

@@ -55,6 +55,8 @@ public record PlanProgressResponse(
             BigDecimal estimatedVolumeKm,
             Integer targetElevationM,
             Integer targetLoadUa,
+            /** Sum of the week's prescribed session durations; null when nothing carries one. */
+            Integer plannedDurationMin,
             BigDecimal actualVolumeKm,
             int actualElevationM,
             int actualDurationMin,

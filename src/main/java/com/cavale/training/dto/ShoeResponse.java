@@ -16,6 +16,7 @@ public record ShoeResponse(
         String name,
         String brand,
         String color,
+        String colorSecondary,
         ShoePurpose purpose,
         Integer retirementKm,
         boolean retired,
@@ -28,7 +29,7 @@ public record ShoeResponse(
         boolean needsRetirement = !shoe.isRetired() && shoe.getRetirementKm() != null
                 && km.doubleValue() >= shoe.getRetirementKm();
         return new ShoeResponse(shoe.getId(), shoe.getName(), shoe.getBrand(), shoe.getColor(),
-                shoe.getPurpose(), shoe.getRetirementKm(), shoe.isRetired(), shoe.isDefault(),
-                km, needsRetirement);
+                shoe.getColorSecondary(), shoe.getPurpose(), shoe.getRetirementKm(), shoe.isRetired(),
+                shoe.isDefault(), km, needsRetirement);
     }
 }

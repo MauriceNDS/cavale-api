@@ -145,12 +145,15 @@ class PlanProgressServiceTest {
         assertThat(row1.current()).isFalse();
         assertThat(row1.actualVolumeKm()).isEqualByComparingTo("10.50");
         assertThat(row1.actualDurationMin()).isEqualTo(115);
+        // 60 + 50 + 45 prescribed (REST excluded)
+        assertThat(row1.plannedDurationMin()).isEqualTo(155);
         assertThat(row1.sessionsPlanned()).isEqualTo(3);
         assertThat(row1.sessionsDone()).isEqualTo(2);
         assertThat(row1.sessionsSkipped()).isEqualTo(1);
         WeekProgress row2 = progress.weeks().get(1);
         assertThat(row2.current()).isTrue();
         assertThat(row2.actualVolumeKm()).isEqualByComparingTo("12.00");
+        assertThat(row2.plannedDurationMin()).isEqualTo(150);
         assertThat(row2.sessionsPlanned()).isEqualTo(2);
         assertThat(row2.sessionsDone()).isEqualTo(1);
     }
