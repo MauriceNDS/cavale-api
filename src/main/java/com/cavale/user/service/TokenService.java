@@ -30,11 +30,13 @@ public class TokenService {
     /**
      * Long-lived personal access token — the credential an MCP client
      * (the owner's Claude) presents on every call. Same HS256 signature as
-     * session tokens, longer TTL, marked with purpose=pat.
+     * session tokens, longer TTL, marked with purpose=pat. The {@code jti}
+     * ties the JWT to its {@code personal_token} bookkeeping row so it can be
+     * revoked individually.
      */
-    public IssuedToken issuePersonalToken(User user) {
+    public IssuedToken issuePersonalToken(User user, java.util.UUID jti) {
         Instant expiresAt = Instant.now().plus(jwtProperties.patTtl());
-        return new IssuedToken(issue(user, jwtProperties.patTtl(), "pat"), expiresAt);
+        return new IssuedToken(issue(user, jwtProperties.patTtl(), "pat", jti), expiresAt);
     }
 
     public record IssuedToken(String token, Instant expiresAt) {
@@ -46,8 +48,12 @@ public class TokenService {
     }
 
     private String issue(User user, java.time.Duration ttl, String purpose) {
+        return issue(user, ttl, purpose, null);
+    }
+
+    private String issue(User user, java.time.Duration ttl, String purpose, java.util.UUID jti) {
         Instant now = Instant.now();
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
                 .issuer("cavale-api")
                 .subject(user.getId().toString())
                 .issuedAt(now)
@@ -55,9 +61,11 @@ public class TokenService {
                 .claim("email", user.getEmail())
                 .claim("name", user.getDisplayName())
                 .claim("purpose", purpose)
-                .claim("tv", user.getTokenVersion())
-                .build();
+                .claim("tv", user.getTokenVersion());
+        if (jti != null) {
+            claims.id(jti.toString());
+        }
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
-        return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+        return jwtEncoder.encode(JwtEncoderParameters.from(header, claims.build())).getTokenValue();
     }
 }

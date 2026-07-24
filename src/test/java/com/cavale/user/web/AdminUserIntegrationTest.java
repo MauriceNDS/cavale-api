@@ -146,7 +146,12 @@ class AdminUserIntegrationTest {
 
         // Now the newly-activated user can reach a protected endpoint.
         String userToken = login("newbie@cavale.run");
-        mockMvc.perform(post("/api/users/me/pat").header("Authorization", "Bearer " + userToken))
+        mockMvc.perform(post("/api/users/me/pat")
+                        .header("Authorization", "Bearer " + userToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"label": "Claude Code"}
+                                """))
                 .andExpect(status().isOk());
     }
 

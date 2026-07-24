@@ -3,6 +3,7 @@ package com.cavale.common.security;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import com.cavale.user.repository.PersonalTokenRepository;
 import com.cavale.user.repository.UserRepository;
 
 /**
@@ -19,7 +20,8 @@ import com.cavale.user.repository.UserRepository;
 public class AccountAccessConfig {
 
     @Bean
-    AccountAccessFilter accountAccessFilter(UserRepository userRepository) {
-        return new AccountAccessFilter(userRepository);
+    AccountAccessFilter accountAccessFilter(UserRepository userRepository,
+                                            PersonalTokenRepository personalTokenRepository) {
+        return new AccountAccessFilter(userRepository, personalTokenRepository);
     }
 }

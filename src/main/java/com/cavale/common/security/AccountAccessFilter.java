@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.cavale.user.domain.AccountStatus;
+import com.cavale.user.repository.PersonalTokenRepository;
 import com.cavale.user.repository.UserAccess;
 import com.cavale.user.repository.UserRepository;
 
@@ -49,9 +50,12 @@ public class AccountAccessFilter extends OncePerRequestFilter {
     private static final String OWN_PROFILE = "/api/users/me";
 
     private final UserRepository userRepository;
+    private final PersonalTokenRepository personalTokenRepository;
 
-    public AccountAccessFilter(UserRepository userRepository) {
+    public AccountAccessFilter(UserRepository userRepository,
+                               PersonalTokenRepository personalTokenRepository) {
         this.userRepository = userRepository;
+        this.personalTokenRepository = personalTokenRepository;
     }
 
     @Override
@@ -108,6 +112,19 @@ public class AccountAccessFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Individually revocable PATs: a pat-purpose token carrying a jti must
+        // still have an un-revoked bookkeeping row. Legacy PATs (minted before
+        // the personal_token table) have no jti and stay honoured until expiry
+        // — the account-wide tv bump above remains their only kill switch.
+        if ("pat".equals(jwtAuth.getToken().getClaim("purpose"))) {
+            String jti = jwtAuth.getToken().getId();
+            if (jti != null && !isHonouredPat(jti)) {
+                writeProblem(response, HttpStatus.UNAUTHORIZED, "Token revoked",
+                        "This personal access token has been revoked.");
+                return;
+            }
+        }
+
         if (isAdminPath(request) && !user.getRole().name().equals("ADMIN")) {
             writeProblem(response, HttpStatus.FORBIDDEN, "Forbidden",
                     "This action requires administrator privileges.");
@@ -137,6 +154,14 @@ public class AccountAccessFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext().setAuthentication(authorized);
 
         chain.doFilter(request, response);
+    }
+
+    private boolean isHonouredPat(String jti) {
+        try {
+            return personalTokenRepository.existsByJtiAndRevokedAtIsNull(UUID.fromString(jti));
+        } catch (IllegalArgumentException ex) {
+            return false; // a malformed jti is nobody's credential
+        }
     }
 
     private static boolean isAdminPath(HttpServletRequest request) {
