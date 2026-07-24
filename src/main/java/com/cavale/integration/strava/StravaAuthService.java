@@ -129,7 +129,7 @@ public class StravaAuthService {
      * unique address; the random password is unusable — Strava IS the login.
      */
     private User createUserForAthlete(StravaDtos.Athlete athlete) {
-        String email = "strava-" + athlete.id() + "@users.cavale.local";
+        String email = "strava-" + athlete.id() + User.SYNTHETIC_EMAIL_SUFFIX;
         String unusablePassword = passwordEncoder.encode(UUID.randomUUID().toString());
         User user = new User(email, unusablePassword, athlete.displayName());
         userService.bootstrapIfFirstAccount(user);

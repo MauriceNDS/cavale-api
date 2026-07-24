@@ -105,6 +105,22 @@ public class User extends Auditable {
         this.displayName = displayName;
     }
 
+    /** Synthetic-address marker: Strava-born accounts get
+     *  {@code strava-<athleteId>@users.cavale.local} plus a random password,
+     *  because Strava's OAuth exposes no email. Such an account has no usable
+     *  email/password login until the owner claims it. */
+    public static final String SYNTHETIC_EMAIL_SUFFIX = "@users.cavale.local";
+
+    public boolean hasRealCredentials() {
+        return !email.endsWith(SYNTHETIC_EMAIL_SUFFIX);
+    }
+
+    /** One-shot account claim for Strava-born users: real email + password. */
+    public void updateCredentials(String email, String passwordHash) {
+        this.email = email;
+        this.passwordHash = passwordHash;
+    }
+
     /** Full replacement of the athlete profile (the form always sends everything). */
     public void updateProfile(String displayName, BigDecimal weightKg, Integer heightCm,
                               LocalDate birthDate, Integer maxHr, Integer restingHr) {

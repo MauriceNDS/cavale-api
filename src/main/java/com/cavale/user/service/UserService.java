@@ -13,6 +13,7 @@ import com.cavale.common.exception.ConflictException;
 import com.cavale.user.config.AdminProperties;
 import com.cavale.user.domain.AccountStatus;
 import com.cavale.user.domain.User;
+import com.cavale.user.dto.UpdateCredentialsRequest;
 import com.cavale.user.dto.UpdateProfileRequest;
 import com.cavale.user.dto.UpdateStatusRequest;
 import com.cavale.user.repository.UserRepository;
@@ -107,6 +108,31 @@ public class UserService {
         if (request.preferredLanguage() != null) {
             user.updatePreferredLanguage(request.preferredLanguage());
         }
+        return user;
+    }
+
+    /**
+     * One-shot claim of a Strava-born account: sets a real email + password so
+     * the owner can log in without Strava. Refused once real credentials exist
+     * — changing an established email/password is a different (future) flow
+     * with its own safeguards. No token refresh is needed afterwards: auth
+     * resolves users by id, and the filter reloads the account per request;
+     * the JWT's embedded email claim going stale is cosmetic.
+     */
+    @Transactional
+    public User setCredentials(UUID id, UpdateCredentialsRequest request) {
+        User user = getById(id);
+        if (user.hasRealCredentials()) {
+            throw new ConflictException("This account already has email/password credentials");
+        }
+        String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
+        if (normalizedEmail.endsWith(User.SYNTHETIC_EMAIL_SUFFIX)) {
+            throw new ConflictException("This email domain is reserved");
+        }
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw new EmailAlreadyUsedException(normalizedEmail);
+        }
+        user.updateCredentials(normalizedEmail, passwordEncoder.encode(request.password()));
         return user;
     }
 

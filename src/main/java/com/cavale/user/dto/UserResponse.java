@@ -27,6 +27,7 @@ public record UserResponse(
         AccountStatus accountStatus,
         UserRole role,
         boolean demo,
+        boolean hasCredentials,
         Instant createdAt) {
 
     public static UserResponse from(User user) {
@@ -35,6 +36,7 @@ public record UserResponse(
                 user.getMaxHr(), user.getRestingHr(), user.isGymEnabled(),
                 user.getPreferredLanguage(), user.getAthleteStatus(),
                 user.getStatusNote(), user.getStatusSince(),
-                user.getAccountStatus(), user.getRole(), user.isDemo(), user.getCreatedAt());
+                user.getAccountStatus(), user.getRole(), user.isDemo(),
+                user.hasRealCredentials(), user.getCreatedAt());
     }
 }

@@ -236,6 +236,58 @@ class UserServiceTest {
     }
 
     @Test
+    void setCredentials_claimsAStravaBornAccount() {
+        User user = new User("strava-42@users.cavale.local", "$2a$random", "Alice");
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
+        when(userRepository.existsByEmail("alice@cavale.run")).thenReturn(false);
+        when(passwordEncoder.encode("s3cret-pass")).thenReturn("$2a$hashed");
+
+        User updated = userService().setCredentials(id,
+                new com.cavale.user.dto.UpdateCredentialsRequest(" Alice@Cavale.RUN ", "s3cret-pass"));
+
+        assertThat(updated.getEmail()).isEqualTo("alice@cavale.run");
+        assertThat(updated.getPasswordHash()).isEqualTo("$2a$hashed");
+        assertThat(updated.hasRealCredentials()).isTrue();
+    }
+
+    @Test
+    void setCredentials_rejectsDuplicateEmail() {
+        User user = new User("strava-42@users.cavale.local", "$2a$random", "Alice");
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
+        when(userRepository.existsByEmail("taken@cavale.run")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService().setCredentials(id,
+                new com.cavale.user.dto.UpdateCredentialsRequest("taken@cavale.run", "s3cret-pass")))
+                .isInstanceOf(EmailAlreadyUsedException.class);
+
+        verify(passwordEncoder, never()).encode(any());
+    }
+
+    @Test
+    void setCredentials_refusesWhenAccountAlreadyHasRealOnes() {
+        User user = new User("alice@cavale.run", "$2a$hashed", "Alice");
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
+
+        assertThatThrownBy(() -> userService().setCredentials(id,
+                new com.cavale.user.dto.UpdateCredentialsRequest("new@cavale.run", "s3cret-pass")))
+                .isInstanceOf(com.cavale.common.exception.ConflictException.class);
+    }
+
+    @Test
+    void setCredentials_refusesTheReservedSyntheticDomain() {
+        User user = new User("strava-42@users.cavale.local", "$2a$random", "Alice");
+        java.util.UUID id = java.util.UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
+
+        assertThatThrownBy(() -> userService().setCredentials(id,
+                new com.cavale.user.dto.UpdateCredentialsRequest("strava-99@users.cavale.local", "s3cret-pass")))
+                .isInstanceOf(com.cavale.common.exception.ConflictException.class);
+    }
+
+    @Test
     void updateStatus_stampsSinceOnlyWhenStatusChanges() {
         User user = new User("alice@cavale.run", "$2a$hashed", "Alice");
         java.util.UUID id = java.util.UUID.randomUUID();

@@ -14,6 +14,7 @@ import com.jayway.jsonpath.JsonPath;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,6 +30,54 @@ class AuthFlowIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private com.cavale.user.repository.UserRepository userRepository;
+
+    @Autowired
+    private com.cavale.user.service.TokenService tokenService;
+
+    @Test
+    void credentialsClaim_letsAStravaBornAccountLogInWithEmail() throws Exception {
+        // A Strava-born account: synthetic address, unusable random password.
+        com.cavale.user.domain.User user = new com.cavale.user.domain.User(
+                "strava-991@users.cavale.local", "$2a$10$unusable", "Strava Born");
+        user.activate();
+        user = userRepository.save(user);
+        String token = tokenService.issueFor(user);
+
+        mockMvc.perform(get("/api/users/me")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasCredentials").value(false));
+
+        mockMvc.perform(put("/api/users/me/credentials")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email": "claimed@cavale.run", "password": "s3cret-pass"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("claimed@cavale.run"))
+                .andExpect(jsonPath("$.hasCredentials").value(true));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email": "claimed@cavale.run", "password": "s3cret-pass"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty());
+
+        // A second claim must be refused — the account now has real credentials.
+        mockMvc.perform(put("/api/users/me/credentials")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email": "other@cavale.run", "password": "s3cret-pass"}
+                                """))
+                .andExpect(status().isConflict());
+    }
 
     @Test
     void fullAuthFlow_registerLoginThenMe() throws Exception {
