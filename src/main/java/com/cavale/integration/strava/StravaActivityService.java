@@ -180,6 +180,10 @@ public class StravaActivityService {
             if (json != null) {
                 activity.attachStreams(json);
             }
+            String polyline = PolylineEncoder.encode(streams != null ? streams.latlng() : null);
+            if (polyline != null && activity.getMapPolyline() == null) {
+                activity.attachMapPolyline(polyline);
+            }
         } catch (Exception e) {
             // report simply won't have charts
         }

@@ -84,6 +84,10 @@ public class Activity extends Auditable {
     @Column(name = "streams_json", columnDefinition = "text")
     private String streamsJson;
 
+    /** Encoded-polyline GPS trace (~1500 pts), denser than the chart streams — feeds the map. */
+    @Column(name = "map_polyline", columnDefinition = "text")
+    private String mapPolyline;
+
     /** Strides per minute, both legs (Strava reports per leg — stored doubled). */
     @Column(name = "avg_cadence_spm", precision = 5, scale = 1)
     private BigDecimal avgCadenceSpm;
@@ -227,6 +231,10 @@ public class Activity extends Auditable {
         this.streamsJson = streamsJson;
     }
 
+    public void attachMapPolyline(String mapPolyline) {
+        this.mapPolyline = mapPolyline;
+    }
+
     /** Refresh the source-of-truth measures from Strava; athlete feedback stays. */
     public void refreshFromSource(String name, int durationMin, BigDecimal distanceKm,
                                   Integer elevationM, Integer avgHr) {
@@ -304,6 +312,10 @@ public class Activity extends Auditable {
 
     public String getStreamsJson() {
         return streamsJson;
+    }
+
+    public String getMapPolyline() {
+        return mapPolyline;
     }
 
     public BigDecimal getAvgCadenceSpm() {

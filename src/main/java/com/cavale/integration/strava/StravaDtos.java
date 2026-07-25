@@ -34,6 +34,10 @@ public final class StravaDtos {
     public record Stream(java.util.List<Double> data) {
     }
 
+    /** GPS stream: each sample is a [lat, lng] pair. */
+    public record LatLngStream(java.util.List<java.util.List<Double>> data) {
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record StreamSet(
             Stream time,
@@ -42,7 +46,8 @@ public final class StravaDtos {
             Stream altitude,
             @JsonProperty("velocity_smooth") Stream velocitySmooth,
             /** Run cadence, per leg (half the usual SPM figure). */
-            Stream cadence) {
+            Stream cadence,
+            LatLngStream latlng) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
