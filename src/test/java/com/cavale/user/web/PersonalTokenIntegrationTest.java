@@ -1,5 +1,7 @@
 package com.cavale.user.web;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -88,6 +90,36 @@ class PersonalTokenIntegrationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/users/me/pats").header("Authorization", "Bearer " + session))
                 .andExpect(jsonPath("$[0].revoked").value(true));
+    }
+
+    @Test
+    void deadTokens_areCappedAtTenOldestDeleted() throws Exception {
+        User user = activeUser("hoarder@cavale.run");
+        String session = tokenService.issueFor(user);
+
+        // Issue and immediately revoke 12 tokens — two more than the cap.
+        for (int i = 0; i < 12; i++) {
+            MvcResult issued = mockMvc.perform(post("/api/users/me/pat")
+                            .header("Authorization", "Bearer " + session)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"label\": \"t%d\"}".formatted(i)))
+                    .andExpect(status().isOk())
+                    .andReturn();
+            String tokenId = JsonPath.read(issued.getResponse().getContentAsString(), "$.id");
+            mockMvc.perform(delete("/api/users/me/pats/" + tokenId)
+                            .header("Authorization", "Bearer " + session))
+                    .andExpect(status().isNoContent());
+        }
+
+        // Only the 10 newest dead rows survive; t0 and t1 were pruned.
+        MvcResult listed = mockMvc.perform(get("/api/users/me/pats")
+                        .header("Authorization", "Bearer " + session))
+                .andExpect(status().isOk())
+                .andReturn();
+        List<String> labels = JsonPath.read(listed.getResponse().getContentAsString(), "$[*].label");
+        org.assertj.core.api.Assertions.assertThat(labels)
+                .hasSize(10)
+                .containsExactly("t11", "t10", "t9", "t8", "t7", "t6", "t5", "t4", "t3", "t2");
     }
 
     @Test

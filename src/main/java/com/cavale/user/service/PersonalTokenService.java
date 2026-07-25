@@ -21,6 +21,10 @@ import com.cavale.user.repository.PersonalTokenRepository;
 @Service
 public class PersonalTokenService {
 
+    /** Dead (revoked or expired) tokens kept as history in the settings list;
+     *  beyond this the oldest are deleted so the UI never silts up. */
+    static final int MAX_DEAD_TOKENS = 10;
+
     private final PersonalTokenRepository personalTokenRepository;
     private final TokenService tokenService;
     private final UserService userService;
@@ -39,6 +43,7 @@ public class PersonalTokenService {
         TokenService.IssuedToken issued = tokenService.issuePersonalToken(user, jti);
         PersonalToken row = personalTokenRepository.save(
                 new PersonalToken(userId, label.trim(), jti, Instant.now(), issued.expiresAt()));
+        pruneDead(userId);
         return new IssuedPat(row.getId(), row.getLabel(), issued.token(), issued.expiresAt());
     }
 
@@ -54,6 +59,17 @@ public class PersonalTokenService {
         PersonalToken token = personalTokenRepository.findByIdAndUserId(tokenId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Personal token", tokenId));
         token.revoke(Instant.now());
+        pruneDead(userId);
+    }
+
+    /** Keep only the newest {@link #MAX_DEAD_TOKENS} dead rows per user. Live
+     *  tokens are never pruned — a row disappears only once it can no longer
+     *  authenticate anything anyway. */
+    private void pruneDead(UUID userId) {
+        List<PersonalToken> dead = personalTokenRepository.findDeadByUserId(userId, Instant.now());
+        if (dead.size() > MAX_DEAD_TOKENS) {
+            personalTokenRepository.deleteAll(dead.subList(MAX_DEAD_TOKENS, dead.size()));
+        }
     }
 
     /** Issue-time payload: the raw token appears here and never again. */
