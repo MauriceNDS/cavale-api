@@ -16,6 +16,9 @@ import java.util.Set;
 
 import com.cavale.athlete.dto.AthleteContextResponse;
 import com.cavale.athlete.service.AthleteContextService;
+import com.cavale.coach.dto.WeeklyInsightResponse;
+import com.cavale.coach.service.CoachInsightService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.cavale.gym.domain.Equipment;
 import com.cavale.gym.domain.ExerciseCategory;
 import com.cavale.gym.domain.ExerciseMeasure;
@@ -73,11 +76,13 @@ public class CoachTools {
     private final GymTemplateService gymTemplateService;
     private final CourseService courseService;
     private final PlanCoachService coachService;
+    private final CoachInsightService insightService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public CoachTools(AthleteContextService contextService, TrainingPlanService planService,
                       ObjectiveService objectiveService, ExerciseService exerciseService,
                       GymTemplateService gymTemplateService, CourseService courseService,
-                      PlanCoachService coachService) {
+                      PlanCoachService coachService, CoachInsightService insightService) {
         this.contextService = contextService;
         this.planService = planService;
         this.objectiveService = objectiveService;
@@ -85,6 +90,7 @@ public class CoachTools {
         this.gymTemplateService = gymTemplateService;
         this.courseService = courseService;
         this.coachService = coachService;
+        this.insightService = insightService;
     }
 
     /* ── Read ──────────────────────────────────────────────────────────── */
@@ -245,6 +251,39 @@ public class CoachTools {
             the change to the athlete.""")
     public PlanRealignResponse planRealign(@ToolParam(description = "Plan UUID") String planId) {
         return coachService.realign(currentUserId(), UUID.fromString(planId), LocalDate.now());
+    }
+
+    @Tool(name = "submit_weekly_insight", description = """
+            Store the weekly coach review the athlete reads in the app. One per \
+            ISO week (weekStart = that week's Monday); resubmitting replaces it. \
+            prose: the review in the athlete's language — what last week showed \
+            vs the plan, load/ACWR/monotony read, one clear priority for the \
+            coming week. Short paragraphs, no markdown headers. proposals \
+            (OPTIONAL, JSON array, max 10 — only changes that genuinely help): \
+            each {"kind", "sessionId", "payload", "rationale"} where kind is \
+            MOVE_SESSION (payload {"date":"YYYY-MM-DD"}), UPDATE_SESSION \
+            (payload with any of title/detail/zone/durationMin/elevationM/\
+            rpeMin/rpeMax/comment), SKIP_SESSION (payload {}), or ADD_SESSION \
+            (no sessionId; payload needs weekId/date/discipline/title, plus the \
+            usual session fields). NOTHING is applied automatically — the \
+            athlete approves or dismisses each proposal, so write rationales \
+            they can decide on.""")
+    public WeeklyInsightResponse submitWeeklyInsight(
+            @ToolParam(description = "Monday of the reviewed ISO week, ISO date") String weekStart,
+            @ToolParam(description = "The review, athlete's language") String prose,
+            @ToolParam(description = "JSON array of proposals (see schema above)", required = false) String proposalsJson) {
+        return WeeklyInsightResponse.from(insightService.submit(currentUserId(),
+                LocalDate.parse(weekStart), prose, proposalsJson), objectMapper);
+    }
+
+    @Tool(name = "latest_weekly_insight", description = """
+            The most recent weekly review, with each proposal's status (PENDING/\
+            APPLIED/DISMISSED). Read it before writing a new one: continuity \
+            matters, and what the athlete dismissed last week tells you what \
+            not to propose again. Empty array when none exists yet.""")
+    public List<WeeklyInsightResponse> latestWeeklyInsight() {
+        return insightService.latest(currentUserId()).stream()
+                .map(i -> WeeklyInsightResponse.from(i, objectMapper)).toList();
     }
 
     @Tool(name = "add_week", description = """

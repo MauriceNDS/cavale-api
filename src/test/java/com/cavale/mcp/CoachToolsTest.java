@@ -76,11 +76,14 @@ class CoachToolsTest {
     @Mock
     private PlanCoachService coachService;
 
+    @Mock
+    private com.cavale.coach.service.CoachInsightService insightService;
+
     private static final UUID ATHLETE = UUID.randomUUID();
 
     private CoachTools tools() {
         return new CoachTools(contextService, planService, objectiveService, exerciseService,
-                gymTemplateService, courseService, coachService);
+                gymTemplateService, courseService, coachService, insightService);
     }
 
     @BeforeEach

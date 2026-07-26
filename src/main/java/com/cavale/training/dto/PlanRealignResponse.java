@@ -16,6 +16,9 @@ public record PlanRealignResponse(
         int missedRunSessions,
         BigDecimal missedVolumeKm,
         List<WeekAdjustment> redistribution,
+        /** Unplanned hikes in the window — extra leg load the plan didn't ask for. */
+        int unplannedHikes,
+        BigDecimal unplannedHikeKmEffort,
         String guidance) {
 
     public enum Tier {

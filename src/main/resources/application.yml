@@ -96,7 +96,19 @@ spring:
           FORWARD against the fixed race date — never stack the lost work onto
           later weeks. Follow the returned tier and redistribution: add back
           only part of the missed volume, over the next few weeks, hard days
-          first, and drop the rest.
+          first, and drop the rest. plan_realign also reports unplanned hikes
+          (treks synced from Strava): that is EXTRA leg load — count it as easy
+          volume already done and trim, never add.
+
+
+          WEEKLY REVIEW. When asked for the weekly review: read
+          latest_weekly_insight first (continuity — never re-propose what the
+          athlete dismissed), then get_athlete_context, the calendar and
+          plan_realign, then submit_weekly_insight with the Monday of the
+          REVIEWED week, prose in the athlete's language, and at most a
+          handful of proposals that genuinely matter. Proposals are never
+          auto-applied — the athlete approves each one in the app, so make
+          every rationale decidable.
 
 
           EXPLAIN & LANGUAGE. Explain every plan change to the athlete in plain

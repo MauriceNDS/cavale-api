@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.athlete.service.RunningStatsService;
 import com.cavale.common.exception.ResourceNotFoundException;
+import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.Objective;
 import com.cavale.training.domain.ObjectiveIntensity;
@@ -35,6 +36,7 @@ import com.cavale.training.dto.PlanRealignResponse.Tier;
 import com.cavale.training.dto.PlanRealignResponse.WeekAdjustment;
 import com.cavale.training.dto.PlanValidationResponse;
 import com.cavale.training.pace.PaceModelService;
+import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
@@ -59,6 +61,7 @@ public class PlanCoachService {
     private final ObjectiveRepository objectiveRepository;
     private final PlanWeekRepository weekRepository;
     private final PlannedSessionRepository sessionRepository;
+    private final ActivityRepository activityRepository;
     private final TrainingPlanService planService;
     private final RunningStatsService runningStatsService;
     private final SessionTemplateService templateService;
@@ -67,6 +70,7 @@ public class PlanCoachService {
     public PlanCoachService(ObjectiveRepository objectiveRepository,
                             PlanWeekRepository weekRepository,
                             PlannedSessionRepository sessionRepository,
+                            ActivityRepository activityRepository,
                             TrainingPlanService planService,
                             RunningStatsService runningStatsService,
                             SessionTemplateService templateService,
@@ -74,6 +78,7 @@ public class PlanCoachService {
         this.objectiveRepository = objectiveRepository;
         this.weekRepository = weekRepository;
         this.sessionRepository = sessionRepository;
+        this.activityRepository = activityRepository;
         this.planService = planService;
         this.runningStatsService = runningStatsService;
         this.templateService = templateService;
@@ -398,9 +403,29 @@ public class PlanCoachService {
         Tier tier = tier(missed.size(), missedWeeks);
         List<WeekAdjustment> redistribution = redistribution(planId, today, tier, missedKm);
 
+        // Unplanned hikes are EXTRA leg load the plan never asked for — the
+        // inverse of a missed session, and just as relevant to the rebuild.
+        List<Activity> hikes = activityRepository
+                .findByUserIdAndSessionIsNullAndDateBetween(userId, recentFrom, today)
+                .stream()
+                .filter(a -> a.getDiscipline() == Discipline.HIKE)
+                .toList();
+        double hikeKmEffort = hikes.stream()
+                .mapToDouble(a -> (a.getDistanceKm() != null ? a.getDistanceKm().doubleValue() : 0)
+                        + (a.getElevationM() != null ? a.getElevationM() / 100.0 : 0))
+                .sum();
+
+        String guidance = guidance(tier);
+        if (!hikes.isEmpty()) {
+            guidance += " Also: " + hikes.size() + " unplanned hike(s) added ~"
+                    + Math.round(hikeKmEffort) + " km-effort of leg load — count it as easy "
+                    + "volume already done and trim the coming week's easy running accordingly.";
+        }
+
         return new PlanRealignResponse(tier, missed.size(), missedRuns.size(),
                 BigDecimal.valueOf(missedKm).setScale(0, RoundingMode.HALF_UP), redistribution,
-                guidance(tier));
+                hikes.size(), BigDecimal.valueOf(hikeKmEffort).setScale(0, RoundingMode.HALF_UP),
+                guidance);
     }
 
     private static Tier tier(int missedCount, long missedWeeks) {

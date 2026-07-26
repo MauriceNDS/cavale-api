@@ -59,6 +59,9 @@ class PlanCoachServiceTest {
     private PlannedSessionRepository sessionRepository;
 
     @Mock
+    private com.cavale.training.repository.ActivityRepository activityRepository;
+
+    @Mock
     private TrainingPlanService planService;
 
     @Mock
@@ -72,7 +75,8 @@ class PlanCoachServiceTest {
 
     private PlanCoachService service() {
         return new PlanCoachService(objectiveRepository, weekRepository, sessionRepository,
-                planService, runningStatsService, templateService, paceModelService);
+                activityRepository, planService, runningStatsService, templateService,
+                paceModelService);
     }
 
     private static RunningStatsResponse statsWithWeeklyKm(String km) {
@@ -271,6 +275,8 @@ class PlanCoachServiceTest {
         PlanWeek up1 = week(plan, 2, TODAY.plusWeeks(1), WeekType.BUILD);
         PlanWeek up2 = week(plan, 3, TODAY.plusWeeks(2), WeekType.BUILD);
         when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(pastWeek, up1, up2));
+        when(activityRepository.findByUserIdAndSessionIsNullAndDateBetween(eq(USER), any(), any()))
+                .thenReturn(List.of());
 
         PlanRealignResponse result = service().realign(USER, PLAN, TODAY);
 
@@ -280,6 +286,28 @@ class PlanCoachServiceTest {
         // ~60 % added back across the two upcoming weeks, not the whole miss
         assertThat(result.redistribution()).hasSize(2);
         assertThat(result.redistribution().getFirst().addKm()).isEqualByComparingTo("9"); // 30×0.6/2
+    }
+
+    @Test
+    void realign_countsUnplannedHikesAsExtraLoad() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 7, 6), LocalDate.of(2026, 9, 28));
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of());
+
+        // an 18 km / 1200 m trek synced from Strava, attached to no session
+        com.cavale.training.domain.Activity hike = com.cavale.training.domain.Activity
+                .stravaHistory(USER, TODAY.minusDays(2), 240, new BigDecimal("18.00"), 1200,
+                        110, "Trek Chamonix", 99L);
+        hike.markDiscipline(Discipline.HIKE);
+        when(activityRepository.findByUserIdAndSessionIsNullAndDateBetween(eq(USER), any(), any()))
+                .thenReturn(List.of(hike));
+
+        PlanRealignResponse result = service().realign(USER, PLAN, TODAY);
+
+        assertThat(result.unplannedHikes()).isEqualTo(1);
+        assertThat(result.unplannedHikeKmEffort()).isEqualByComparingTo("30"); // 18 + 1200/100
+        assertThat(result.guidance()).contains("km-effort");
     }
 
     /* ── Shared: hard-session classification ───────────────────────────── */
