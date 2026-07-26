@@ -1,9 +1,13 @@
 package com.cavale.gym.service;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -31,6 +35,7 @@ import com.cavale.gym.dto.WorkoutDtos.StartWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.SwapBlockRequest;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutBlockResponse;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutDetailResponse;
+import com.cavale.gym.dto.WorkoutDtos.WorkoutGroupAssignment;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutLogResponse;
 import com.cavale.gym.repository.SetLogRepository;
 import com.cavale.gym.repository.TemplateExerciseRepository;
@@ -214,6 +219,61 @@ public class WorkoutService {
         WorkoutBlockOverride override = overrideOf(log, te);
         override.replaceWith(prescribed ? null : target);
         return block(log, te, saveOrPrune(override));
+    }
+
+    /**
+     * Pair or unpair blocks on the gym floor — "I'll do these two together
+     * today". The whole prescribed list arrives at once, exactly like the
+     * template editor's grouping, and the same rule holds: members of a
+     * superset must be neighbours. Nothing here touches the program.
+     */
+    @Transactional
+    public WorkoutDetailResponse regroup(UUID userId, UUID workoutLogId,
+                                         List<WorkoutGroupAssignment> assignments) {
+        WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
+        if (log.getTemplateVariant() == null) {
+            throw new IllegalArgumentException("Cet entraînement n'a pas de programme à regrouper");
+        }
+        List<TemplateExercise> prescriptions = templateExerciseRepository
+                .findByVariantIdOrderByPositionAsc(log.getTemplateVariant().getId());
+        Map<UUID, String> wanted = new LinkedHashMap<>();
+        for (WorkoutGroupAssignment assignment : assignments) {
+            wanted.put(assignment.templateExerciseId(), blank(assignment.groupKey()));
+        }
+        if (wanted.size() != prescriptions.size()
+                || !prescriptions.stream().map(TemplateExercise::getId).collect(Collectors.toSet())
+                        .equals(wanted.keySet())) {
+            throw new IllegalArgumentException(
+                    "L'assignation doit couvrir exactement les exercices du programme");
+        }
+
+        List<String> ordered = prescriptions.stream().map(te -> wanted.get(te.getId())).toList();
+        java.util.Set<String> closed = new java.util.LinkedHashSet<>();
+        for (int i = 0; i < ordered.size(); i++) {
+            String key = ordered.get(i);
+            if (key != null && (i == 0 || !key.equals(ordered.get(i - 1))) && !closed.add(key)) {
+                throw new IllegalArgumentException(
+                        "Les exercices d'un même groupe (« " + key + " ») doivent se suivre");
+            }
+        }
+
+        for (int i = 0; i < prescriptions.size(); i++) {
+            TemplateExercise te = prescriptions.get(i);
+            String key = ordered.get(i);
+            boolean alone = key != null
+                    && (i == 0 || !key.equals(ordered.get(i - 1)))
+                    && (i == ordered.size() - 1 || !key.equals(ordered.get(i + 1)));
+            String effective = alone ? null : key;
+            WorkoutBlockOverride override = overrideOf(log, te);
+            // back to exactly what the program says ⇒ stop overriding at all
+            if (java.util.Objects.equals(effective, te.getGroupKey())) {
+                override.clearGrouping();
+            } else {
+                override.regroup(effective);
+            }
+            saveOrPrune(override);
+        }
+        return detail(log);
     }
 
     /** No time left — drop this block from THIS workout (undoable, template untouched). */
@@ -408,12 +468,44 @@ public class WorkoutService {
         int prescribedSets = te.getSets();
         int sets = override != null && override.getSets() != null
                 ? override.getSets() : prescribedSets;
+        // the athlete's own pairing wins over the program's, for this workout only
+        String groupKey = override != null
+                ? override.effectiveGroupKey(te.getGroupKey()) : te.getGroupKey();
+        WeightSuggester.Suggestion proposal = suggestWeight(userId, exercise, te.getIntensityPct(),
+                te.getReps(), lastSets);
         return new WorkoutBlockResponse(te.getId(), null, ExerciseResponse.from(exercise),
                 swapped ? ExerciseResponse.from(te.getExercise()) : null,
                 override != null && override.isSkipped(),
                 declared.stream().map(ExerciseResponse::from).toList(), suggested,
                 sets, prescribedSets, te.getReps(), te.getSeconds(), te.getRestSec(),
-                te.getIntensityPct(), te.getNote(), te.getGroupKey(), lastSets, record);
+                te.getIntensityPct(), te.getNote(), groupKey,
+                proposal.weightKg(), proposal.source(), proposal.basisKg(), lastSets, record);
+    }
+
+    /**
+     * The load to put in front of the athlete. The 1RM is estimated from
+     * recent working sets — only needed when the program speaks in
+     * percentages, so it is not queried otherwise.
+     */
+    private WeightSuggester.Suggestion suggestWeight(UUID userId, Exercise exercise,
+                                                     Integer intensityPct, Integer targetReps,
+                                                     List<SetLogResponse> lastSets) {
+        BigDecimal oneRepMax = null;
+        if (intensityPct != null) {
+            oneRepMax = setLogRepository
+                    .findRecentWorkingSets(userId, exercise.getId(),
+                            Instant.now().minus(WeightSuggester.ONE_RM_WINDOW_DAYS, ChronoUnit.DAYS))
+                    .stream()
+                    .map(OneRepMax::of)
+                    .filter(Objects::nonNull)
+                    .max(BigDecimal::compareTo)
+                    .orElse(null);
+        }
+        return WeightSuggester.suggest(exercise, intensityPct, targetReps,
+                lastSets.stream()
+                        .map(s -> new WeightSuggester.PastSet(s.weightKg(), s.reps(), s.warmup()))
+                        .toList(),
+                oneRepMax);
     }
 
     /** A mid-workout addition as a block: same prefills, no alternatives to offer. */
@@ -426,9 +518,16 @@ public class WorkoutService {
         var record = extra.getReps() != null
                 ? setLogRepository.findRecordWeight(userId, exercise.getId(), extra.getReps()).orElse(null)
                 : null;
+        WeightSuggester.Suggestion proposal = suggestWeight(userId, exercise, null,
+                extra.getReps(), lastSets);
         return new WorkoutBlockResponse(null, extra.getId(), ExerciseResponse.from(exercise), null,
                 false, List.of(), List.of(), extra.getSets(), extra.getSets(), extra.getReps(),
-                extra.getSeconds(), extra.getRestSec(), null, extra.getNote(), null, lastSets, record);
+                extra.getSeconds(), extra.getRestSec(), null, extra.getNote(), null,
+                proposal.weightKg(), proposal.source(), proposal.basisKg(), lastSets, record);
+    }
+
+    private static String blank(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**

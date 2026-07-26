@@ -50,6 +50,17 @@ public class WorkoutBlockOverride extends Auditable {
     /** Adjusted set count for this workout (0 allowed) — null means "as prescribed". */
     private Integer sets;
 
+    /**
+     * Regrouping decided on the gym floor. The key alone cannot express
+     * "deliberately on its own" — that is also null — so a flag says whether
+     * the athlete has spoken at all; until then the program's grouping wins.
+     */
+    @Column(name = "group_key", length = 4)
+    private String groupKey;
+
+    @Column(name = "group_overridden", nullable = false)
+    private boolean groupOverridden;
+
     protected WorkoutBlockOverride() {
     }
 
@@ -74,9 +85,26 @@ public class WorkoutBlockOverride extends Auditable {
         this.sets = sets;
     }
 
+    /** Pair this block with its neighbours for this workout, or set it loose. */
+    public void regroup(String groupKey) {
+        this.groupKey = groupKey;
+        this.groupOverridden = true;
+    }
+
+    /** Hand the grouping back to the program. */
+    public void clearGrouping() {
+        this.groupKey = null;
+        this.groupOverridden = false;
+    }
+
+    /** The grouping in force, given what the program prescribes. */
+    public String effectiveGroupKey(String prescribed) {
+        return groupOverridden ? groupKey : prescribed;
+    }
+
     /** Nothing left to override — the row has no reason to exist. */
     public boolean isNeutral() {
-        return exercise == null && !skipped && sets == null;
+        return exercise == null && !skipped && sets == null && !groupOverridden;
     }
 
     public UUID getId() {
@@ -101,6 +129,14 @@ public class WorkoutBlockOverride extends Auditable {
 
     public Integer getSets() {
         return sets;
+    }
+
+    public String getGroupKey() {
+        return groupKey;
+    }
+
+    public boolean isGroupOverridden() {
+        return groupOverridden;
     }
 
     @Override

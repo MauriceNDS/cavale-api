@@ -8,6 +8,7 @@ import java.util.UUID;
 import com.cavale.gym.domain.SetLog;
 import com.cavale.gym.domain.WorkoutLog;
 import com.cavale.gym.domain.WorkoutStatus;
+import com.cavale.gym.service.WeightSuggester;
 import com.cavale.training.domain.PerceivedEffort;
 
 import jakarta.validation.constraints.Max;
@@ -125,8 +126,22 @@ public final class WorkoutDtos {
             String note,
             /** Superset this block belongs to — shared with its neighbours, null when standalone. */
             String groupKey,
+            /** The load to propose, already rounded to a step the kit can make. */
+            BigDecimal suggestedWeightKg,
+            /** Which rule produced it, so the runner can show its work. */
+            WeightSuggester.Source suggestionSource,
+            /** What that rule worked from: the estimated 1RM, or last time's load. */
+            BigDecimal suggestionBasisKg,
             List<SetLogResponse> lastSets,
             BigDecimal recordWeightKg) {
+    }
+
+    /** Pair or unpair blocks for THIS workout — the whole prescribed list at once. */
+    public record WorkoutGroupsRequest(@NotNull List<WorkoutGroupAssignment> assignments) {
+    }
+
+    public record WorkoutGroupAssignment(@NotNull UUID templateExerciseId,
+                                         @Size(max = 4) String groupKey) {
     }
 
     /**

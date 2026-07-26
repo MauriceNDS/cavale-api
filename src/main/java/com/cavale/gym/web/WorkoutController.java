@@ -22,6 +22,7 @@ import com.cavale.gym.dto.WorkoutDtos.AdjustSetsRequest;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.RateSetRequest;
+import com.cavale.gym.dto.WorkoutDtos.WorkoutGroupsRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
 import com.cavale.gym.dto.WorkoutDtos.StartWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.SwapBlockRequest;
@@ -72,6 +73,15 @@ public class WorkoutController {
     public SetLogResponse logSet(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID workoutLogId,
                                  @Valid @RequestBody LogSetRequest request) {
         return workoutService.logSet(userId(jwt), workoutLogId, request);
+    }
+
+    @PutMapping("/{workoutLogId}/groups")
+    @Operation(summary = "Pair or unpair blocks for THIS workout — the whole prescribed list at "
+            + "once. Members of a superset must be consecutive; the program is never touched.")
+    public WorkoutDetailResponse regroup(@AuthenticationPrincipal Jwt jwt,
+                                         @PathVariable UUID workoutLogId,
+                                         @Valid @RequestBody WorkoutGroupsRequest request) {
+        return workoutService.regroup(userId(jwt), workoutLogId, request.assignments());
     }
 
     @PatchMapping("/sets/{setLogId}/rating")

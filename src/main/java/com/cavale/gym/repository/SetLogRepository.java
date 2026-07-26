@@ -52,9 +52,28 @@ public interface SetLogRepository extends JpaRepository<SetLog, UUID> {
             where s.exercise.id = :exerciseId
               and s.workoutLog.userId = :userId
               and s.workoutLog.status = com.cavale.gym.domain.WorkoutStatus.FINISHED
+              and s.warmup = false
               and s.reps = :reps
             """)
     Optional<BigDecimal> findRecordWeight(@Param("userId") UUID userId,
                                           @Param("exerciseId") UUID exerciseId,
                                           @Param("reps") int reps);
+
+    /**
+     * Recent working sets carrying a load — the evidence a 1RM estimate is
+     * built from. Warm-ups are excluded: they say nothing about a maximum.
+     */
+    @Query("""
+            select s from SetLog s
+            where s.exercise.id = :exerciseId
+              and s.workoutLog.userId = :userId
+              and s.workoutLog.status = com.cavale.gym.domain.WorkoutStatus.FINISHED
+              and s.warmup = false
+              and s.weightKg is not null
+              and s.reps is not null
+              and s.workoutLog.startedAt >= :since
+            """)
+    List<SetLog> findRecentWorkingSets(@Param("userId") UUID userId,
+                                       @Param("exerciseId") UUID exerciseId,
+                                       @Param("since") java.time.Instant since);
 }
