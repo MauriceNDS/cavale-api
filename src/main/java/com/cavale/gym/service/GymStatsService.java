@@ -18,6 +18,10 @@ import com.cavale.gym.domain.Exercise;
 import com.cavale.gym.domain.Muscle;
 import com.cavale.gym.domain.SetLog;
 import com.cavale.gym.domain.WorkoutStatus;
+import com.cavale.gym.dto.ExerciseHistoryResponse;
+import com.cavale.gym.dto.ExerciseHistoryResponse.PerformedSet;
+import com.cavale.gym.dto.ExerciseHistoryResponse.Point;
+import com.cavale.gym.dto.ExerciseHistoryResponse.Session;
 import com.cavale.gym.dto.GymStatsResponse;
 import com.cavale.gym.dto.GymStatsResponse.ExerciseTrend;
 import com.cavale.gym.dto.GymStatsResponse.MuscleVolume;
@@ -48,11 +52,14 @@ public class GymStatsService {
 
     private final SetLogRepository setLogRepository;
     private final PlannedSessionRepository sessionRepository;
+    private final ExerciseService exerciseService;
 
     public GymStatsService(SetLogRepository setLogRepository,
-                           PlannedSessionRepository sessionRepository) {
+                           PlannedSessionRepository sessionRepository,
+                           ExerciseService exerciseService) {
         this.setLogRepository = setLogRepository;
         this.sessionRepository = sessionRepository;
+        this.exerciseService = exerciseService;
     }
 
     @Transactional(readOnly = true)
@@ -74,19 +81,24 @@ public class GymStatsService {
                 adherence(userId, today));
     }
 
-    /** Epley: 1RM ≈ w × (1 + reps/30). The classic, good enough to trend. */
-    static BigDecimal estimateOneRm(BigDecimal weightKg, int reps) {
-        return weightKg.multiply(BigDecimal.ONE.add(
-                        BigDecimal.valueOf(reps).divide(BigDecimal.valueOf(30), 4, RoundingMode.HALF_UP)))
-                .setScale(1, RoundingMode.HALF_UP);
-    }
-
     private static LocalDate day(SetLog set) {
         return LocalDate.ofInstant(set.getWorkoutLog().getStartedAt(), com.cavale.common.AppTime.ZONE);
     }
 
+    /**
+     * A set that says something about strength: real work, carrying load.
+     * Approach sets are excluded from every statistic — counting them would
+     * drag tonnage up while dragging the average load down, and would make
+     * logging warm-ups honestly a thing that corrupts your own numbers.
+     */
     private static boolean weighted(SetLog set) {
-        return set.getWeightKg() != null && set.getReps() != null && set.getReps() > 0;
+        return !set.isWarmup() && set.getWeightKg() != null
+                && set.getReps() != null && set.getReps() > 0;
+    }
+
+    /** Any working set at all — including bodyweight reps and timed holds. */
+    private static boolean working(SetLog set) {
+        return !set.isWarmup();
     }
 
     /** Best estimated 1RM per training day, for the most-trained lifts. */
@@ -104,7 +116,10 @@ public class GymStatsService {
                     Exercise exercise = exerciseSets.getFirst().getExercise();
                     Map<LocalDate, TrendPoint> byDay = new LinkedHashMap<>();
                     for (SetLog set : exerciseSets) {
-                        BigDecimal oneRm = estimateOneRm(set.getWeightKg(), set.getReps());
+                        BigDecimal oneRm = OneRepMax.of(set);
+                        if (oneRm == null) {
+                            continue;
+                        }
                         byDay.merge(day(set),
                                 new TrendPoint(day(set), set.getWeightKg(), oneRm),
                                 (a, b) -> a.estOneRmKg().compareTo(b.estOneRmKg()) >= 0 ? a : b);
@@ -124,14 +139,23 @@ public class GymStatsService {
             LocalDate weekEnd = weekStart.plusDays(6);
             List<SetLog> weekSets = sets.stream()
                     .filter(s -> !day(s).isBefore(weekStart) && !day(s).isAfter(weekEnd))
+                    .filter(GymStatsService::working)
                     .toList();
             BigDecimal tonnage = weekSets.stream()
                     .filter(GymStatsService::weighted)
                     .map(s -> s.getWeightKg().multiply(BigDecimal.valueOf(s.getReps())))
                     .reduce(BigDecimal.ZERO, BigDecimal::add)
                     .setScale(0, RoundingMode.HALF_UP);
+            // Half this library is bodyweight or timed work, which moves no
+            // kilos at all: without these two, a whole gainage session reads
+            // as a week where nothing happened.
+            int secondsUnderTension = weekSets.stream()
+                    .filter(s -> s.getSeconds() != null)
+                    .mapToInt(SetLog::getSeconds)
+                    .sum();
             long workouts = weekSets.stream().map(s -> s.getWorkoutLog().getId()).distinct().count();
-            weeks.add(new WeekTonnage(weekStart, tonnage, weekSets.size(), (int) workouts));
+            weeks.add(new WeekTonnage(weekStart, tonnage, weekSets.size(), (int) workouts,
+                    secondsUnderTension));
         }
         return weeks;
     }
@@ -142,7 +166,7 @@ public class GymStatsService {
         Map<Muscle, int[]> setCounts = new LinkedHashMap<>();
         Map<Muscle, BigDecimal> tonnage = new LinkedHashMap<>();
         for (SetLog set : sets) {
-            if (day(set).isBefore(from)) {
+            if (day(set).isBefore(from) || !working(set)) {
                 continue;
             }
             for (Muscle muscle : set.getExercise().getMuscles()) {
@@ -183,6 +207,80 @@ public class GymStatsService {
                 .filter(pr -> !pr.date().isBefore(today.minusDays(PR_WINDOW_DAYS)))
                 .sorted(Comparator.comparing(PrEntry::date).reversed())
                 .toList();
+    }
+
+    /**
+     * Everything ever logged on one lift, grouped by the session it happened
+     * in. Warm-ups are kept in the per-session detail — you want to see the
+     * ramp you actually did — but never counted in a best or a trend.
+     */
+    @Transactional(readOnly = true)
+    public ExerciseHistoryResponse history(UUID userId, UUID exerciseId) {
+        Exercise exercise = exerciseService.getOwned(userId, exerciseId);
+        List<SetLog> sets = setLogRepository
+                .findByWorkoutLogUserIdAndWorkoutLogStatusOrderByWorkoutLogStartedAtAsc(
+                        userId, WorkoutStatus.FINISHED).stream()
+                .filter(s -> s.getExercise().getId().equals(exerciseId))
+                .toList();
+
+        Map<UUID, List<SetLog>> byWorkout = new LinkedHashMap<>();
+        for (SetLog set : sets) {
+            byWorkout.computeIfAbsent(set.getWorkoutLog().getId(), k -> new ArrayList<>()).add(set);
+        }
+
+        List<Session> sessions = new ArrayList<>();
+        List<Point> trend = new ArrayList<>();
+        for (List<SetLog> group : byWorkout.values()) {
+            SetLog first = group.getFirst();
+            List<SetLog> work = group.stream().filter(GymStatsService::working).toList();
+            BigDecimal top = work.stream()
+                    .filter(s -> s.getWeightKg() != null)
+                    .map(SetLog::getWeightKg)
+                    .max(BigDecimal::compareTo).orElse(null);
+            BigDecimal oneRm = work.stream()
+                    .map(OneRepMax::of)
+                    .filter(java.util.Objects::nonNull)
+                    .max(BigDecimal::compareTo).orElse(null);
+            BigDecimal tonnage = work.stream()
+                    .filter(GymStatsService::weighted)
+                    .map(s -> s.getWeightKg().multiply(BigDecimal.valueOf(s.getReps())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(0, RoundingMode.HALF_UP);
+            sessions.add(new Session(first.getWorkoutLog().getId(), day(first),
+                    first.getWorkoutLog().getTemplateName(),
+                    group.stream()
+                            .sorted(Comparator.comparingInt(SetLog::getSetNumber))
+                            .map(s -> new PerformedSet(s.getSetNumber(), s.getReps(),
+                                    s.getWeightKg(), s.getSeconds(), s.isWarmup(), s.getRir()))
+                            .toList(),
+                    top, oneRm, tonnage));
+            if (oneRm != null) {
+                trend.add(new Point(day(first), oneRm));
+            }
+        }
+
+        BigDecimal bestOneRm = trend.stream().map(Point::estOneRmKg)
+                .max(BigDecimal::compareTo).orElse(null);
+        BigDecimal bestWeight = sets.stream().filter(GymStatsService::weighted)
+                .map(SetLog::getWeightKg).max(BigDecimal::compareTo).orElse(null);
+
+        // how long the lift has been standing still
+        Integer stalled = null;
+        if (bestOneRm != null) {
+            int lastPeak = 0;
+            for (int i = 0; i < trend.size(); i++) {
+                if (trend.get(i).estOneRmKg().compareTo(bestOneRm) >= 0) {
+                    lastPeak = i;
+                }
+            }
+            stalled = trend.size() - 1 - lastPeak;
+        }
+
+        List<Session> newestFirst = new ArrayList<>(sessions);
+        java.util.Collections.reverse(newestFirst);
+        return new ExerciseHistoryResponse(exercise.getId(), exercise.getName(),
+                List.copyOf(newestFirst), List.copyOf(trend), bestWeight, bestOneRm,
+                (int) sets.stream().filter(GymStatsService::working).count(), stalled);
     }
 
     /** Planned vs done GYM sessions per week — is the strength work happening? */

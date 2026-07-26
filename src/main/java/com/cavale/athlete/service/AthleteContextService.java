@@ -195,7 +195,49 @@ public class AthleteContextService {
                 .map(pr -> new AthleteContextResponse.GymPr(pr.exerciseName(), pr.reps(),
                         pr.weightKg(), pr.date()))
                 .toList();
-        return new AthleteContextResponse.GymLoad(weeks, prs);
+
+        Integer daysSince = finished.stream()
+                .map(log -> LocalDate.ofInstant(log.getStartedAt(), com.cavale.common.AppTime.ZONE))
+                .max(LocalDate::compareTo)
+                .map(last -> (int) java.time.temporal.ChronoUnit.DAYS.between(last, today))
+                .orElse(null);
+
+        int planned = stats.adherence().stream().mapToInt(a -> a.plannedGym()).sum();
+        int done = stats.adherence().stream().mapToInt(a -> a.doneGym()).sum();
+
+        // where each tracked lift stands, and whether it is still moving
+        List<AthleteContextResponse.LiftProgress> lifts = stats.oneRmTrends().stream()
+                .map(trend -> {
+                    var points = trend.points();
+                    if (points.isEmpty()) {
+                        return new AthleteContextResponse.LiftProgress(trend.name(), null, null);
+                    }
+                    BigDecimal best = points.stream()
+                            .map(com.cavale.gym.dto.GymStatsResponse.TrendPoint::estOneRmKg)
+                            .max(BigDecimal::compareTo).orElseThrow();
+                    int lastPeak = 0;
+                    for (int i = 0; i < points.size(); i++) {
+                        if (points.get(i).estOneRmKg().compareTo(best) >= 0) {
+                            lastPeak = i;
+                        }
+                    }
+                    return new AthleteContextResponse.LiftProgress(trend.name(),
+                            points.getLast().estOneRmKg(), points.size() - 1 - lastPeak);
+                })
+                .toList();
+
+        // a muscle absent from the recent balance is one nothing has trained
+        java.util.Set<String> trained = stats.muscleVolume().stream()
+                .filter(v -> v.sets() > 0)
+                .map(v -> v.muscle().name())
+                .collect(java.util.stream.Collectors.toSet());
+        List<String> gaps = java.util.Arrays.stream(com.cavale.gym.domain.Muscle.values())
+                .map(Enum::name)
+                .filter(m -> !trained.contains(m))
+                .toList();
+
+        return new AthleteContextResponse.GymLoad(weeks, prs, daysSince, planned, done,
+                lifts, gaps);
     }
 
     private static AthleteContextResponse.Profile profile(User user, LocalDate today) {

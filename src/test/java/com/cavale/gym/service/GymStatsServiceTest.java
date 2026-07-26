@@ -44,7 +44,7 @@ class GymStatsServiceTest {
     private PlannedSessionRepository sessionRepository;
 
     private GymStatsService service() {
-        return new GymStatsService(setLogRepository, sessionRepository);
+        return new GymStatsService(setLogRepository, sessionRepository, exerciseService);
     }
 
     private static Exercise squat() {
@@ -63,15 +63,29 @@ class GymStatsServiceTest {
         return log;
     }
 
+    @Mock
+    private ExerciseService exerciseService;
+
     private static SetLog set(WorkoutLog log, Exercise exercise, int setNumber, int reps, String kg) {
         return new SetLog(log, exercise, 0, setNumber, reps, new BigDecimal(kg), null);
     }
 
+    private static SetLog warmup(WorkoutLog log, Exercise exercise, int setNumber, int reps,
+                                 String kg) {
+        SetLog s = set(log, exercise, setNumber, reps, kg);
+        s.markWarmup(true);
+        return s;
+    }
+
+    private static SetLog held(WorkoutLog log, Exercise exercise, int setNumber, int seconds) {
+        return new SetLog(log, exercise, 0, setNumber, null, null, seconds);
+    }
+
     @Test
     void epley_matchesTheFormula() {
-        assertThat(GymStatsService.estimateOneRm(new BigDecimal("100"), 1))
+        assertThat(OneRepMax.estimate(new BigDecimal("100"), 1, null))
                 .isEqualByComparingTo("103.3"); // 100 × (1 + 1/30)
-        assertThat(GymStatsService.estimateOneRm(new BigDecimal("85"), 6))
+        assertThat(OneRepMax.estimate(new BigDecimal("85"), 6, null))
                 .isEqualByComparingTo("102.0"); // 85 × 1.2
     }
 
@@ -134,5 +148,68 @@ class GymStatsServiceTest {
                 eq(USER), any(), any())).thenReturn(List.of());
 
         assertThat(service().getStats(USER, TODAY).prWall()).isEmpty();
+    }
+
+    @Test
+    void warmUpsAreExcludedFromEveryNumber() {
+        Exercise squat = squat();
+        WorkoutLog today = logOn(TODAY);
+        when(setLogRepository
+                .findByWorkoutLogUserIdAndWorkoutLogStatusOrderByWorkoutLogStartedAtAsc(
+                        USER, WorkoutStatus.FINISHED))
+                .thenReturn(List.of(
+                        warmup(today, squat, 1, 10, "40.0"),   // approach — invisible
+                        set(today, squat, 2, 6, "90.0")));
+        when(sessionRepository.findByUserIdAndDateBetweenOrderByDateAscOrderInDayAsc(
+                eq(USER), any(), any())).thenReturn(List.of());
+
+        GymStatsResponse stats = service().getStats(USER, TODAY);
+
+        var week = stats.weeklyTonnage().getLast();
+        assertThat(week.tonnageKg()).isEqualByComparingTo("540"); // 90×6 only, not 40×10
+        assertThat(week.sets()).isEqualTo(1);
+        assertThat(stats.oneRmTrends().getFirst().points()).hasSize(1);
+        // the 40 kg approach must not appear as a record at 10 reps
+        assertThat(stats.prWall()).allSatisfy(pr -> assertThat(pr.reps()).isEqualTo(6));
+        assertThat(stats.muscleVolume()).allSatisfy(v -> assertThat(v.sets()).isEqualTo(1));
+    }
+
+    @Test
+    void timedWorkStopsReadingAsAWeekWhereNothingHappened() {
+        Exercise plank = new Exercise(USER, "Planche", ExerciseCategory.GAINAGE,
+                Equipment.BODYWEIGHT, ExerciseMeasure.SECONDS);
+        ReflectionTestUtils.setField(plank, "id", UUID.randomUUID());
+        WorkoutLog today = logOn(TODAY);
+        when(setLogRepository
+                .findByWorkoutLogUserIdAndWorkoutLogStatusOrderByWorkoutLogStartedAtAsc(
+                        USER, WorkoutStatus.FINISHED))
+                .thenReturn(List.of(held(today, plank, 1, 45), held(today, plank, 2, 45)));
+        when(sessionRepository.findByUserIdAndDateBetweenOrderByDateAscOrderInDayAsc(
+                eq(USER), any(), any())).thenReturn(List.of());
+
+        var week = service().getStats(USER, TODAY).weeklyTonnage().getLast();
+
+        assertThat(week.tonnageKg()).isEqualByComparingTo("0"); // no kilos moved, truthfully
+        assertThat(week.sets()).isEqualTo(2);                   // but real work all the same
+        assertThat(week.secondsUnderTension()).isEqualTo(90);
+    }
+
+    @Test
+    void aReserveRatedSetReadsAsTheBiggerMaxItIs() {
+        Exercise squat = squat();
+        WorkoutLog today = logOn(TODAY);
+        SetLog easy = set(today, squat, 1, 5, "100.0");
+        easy.rateReserve(3); // three left in the tank
+        when(setLogRepository
+                .findByWorkoutLogUserIdAndWorkoutLogStatusOrderByWorkoutLogStartedAtAsc(
+                        USER, WorkoutStatus.FINISHED))
+                .thenReturn(List.of(easy));
+        when(sessionRepository.findByUserIdAndDateBetweenOrderByDateAscOrderInDayAsc(
+                eq(USER), any(), any())).thenReturn(List.of());
+
+        var point = service().getStats(USER, TODAY).oneRmTrends().getFirst().points().getFirst();
+
+        // 100 × (1 + (5+3)/30) = 126.7, not the 116.7 a face-value read gives
+        assertThat(point.estOneRmKg()).isEqualByComparingTo("126.7");
     }
 }

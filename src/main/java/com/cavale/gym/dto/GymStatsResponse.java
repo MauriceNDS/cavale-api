@@ -24,7 +24,12 @@ public record GymStatsResponse(
     public record TrendPoint(LocalDate date, BigDecimal bestWeightKg, BigDecimal estOneRmKg) {
     }
 
-    public record WeekTonnage(LocalDate weekStart, BigDecimal tonnageKg, int sets, int workouts) {
+    /**
+     * A week of strength work in three currencies, because kilos alone are
+     * blind to half of it: bodyweight reps and timed holds move no load.
+     */
+    public record WeekTonnage(LocalDate weekStart, BigDecimal tonnageKg, int sets, int workouts,
+                              int secondsUnderTension) {
     }
 
     /** Where the training volume lands — flags imbalances a runner should fix. */

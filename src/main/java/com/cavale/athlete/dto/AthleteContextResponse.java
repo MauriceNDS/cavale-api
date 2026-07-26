@@ -110,7 +110,27 @@ public record AthleteContextResponse(
     }
 
     /** The strength side of the load: weekly tonnage and fresh records. */
-    public record GymLoad(List<GymWeek> weeks, List<GymPr> recentPrs) {
+    /**
+     * What the coach needs to say anything useful about strength work.
+     * Without this the agent writes about running only, because running is
+     * all it can see.
+     */
+    public record GymLoad(List<GymWeek> weeks, List<GymPr> recentPrs,
+                          /** Null when nothing has ever been logged. */
+                          Integer daysSinceLastSession,
+                          int plannedSessions, int doneSessions,
+                          List<LiftProgress> lifts,
+                          /** Trained little or not at all lately — the gaps worth naming. */
+                          List<String> underworkedMuscles) {
+    }
+
+    /**
+     * @param sessionsSinceProgress how many sessions since this lift's
+     *                              estimated max last improved — a lift
+     *                              standing still is the one worth changing
+     */
+    public record LiftProgress(String exerciseName, BigDecimal estOneRmKg,
+                               Integer sessionsSinceProgress) {
     }
 
     public record GymWeek(LocalDate weekStart, int workouts, BigDecimal tonnageKg, int painFlags) {
