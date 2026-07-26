@@ -50,10 +50,18 @@ public class ActivityFeedService {
         this.setLogRepository = setLogRepository;
     }
 
+    /** Decoupling below this duration is warm-up noise, not durability signal. */
+    private static final int DECOUPLING_MIN_MIN = 60;
+
     /** One past run/ride in full, scoped to its owner (404 for anyone else's). */
     @Transactional(readOnly = true)
     public ActivityDetailResponse activityDetail(UUID userId, UUID activityId) {
-        return ActivityDetailResponse.from(ownedActivity(userId, activityId));
+        Activity activity = ownedActivity(userId, activityId);
+        Double decoupling = activity.getStreamsJson() != null
+                && activity.getDurationMin() >= DECOUPLING_MIN_MIN
+                        ? RunningStatsService.decoupling(activity.getStreamsJson())
+                        : null;
+        return ActivityDetailResponse.from(activity, decoupling);
     }
 
     /** The activity's downsampled Strava streams JSON, or empty when it has none. */

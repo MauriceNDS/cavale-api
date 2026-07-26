@@ -31,9 +31,13 @@ public record ActivityDetailResponse(
         String comment,
         boolean hasStreams,
         UUID shoeId,
-        com.cavale.training.domain.Discipline discipline) {
+        com.cavale.training.domain.Discipline discipline,
+        /** Encoded-polyline GPS trace for the map — null on pre-capture activities. */
+        String mapPolyline,
+        /** First-half vs second-half HR/pace drift %, on long-enough runs with streams. */
+        Double decouplingPct) {
 
-    public static ActivityDetailResponse from(Activity activity) {
+    public static ActivityDetailResponse from(Activity activity, Double decouplingPct) {
         return new ActivityDetailResponse(
                 activity.getId(),
                 activity.getSource(),
@@ -52,6 +56,8 @@ public record ActivityDetailResponse(
                 activity.getComment(),
                 activity.getStreamsJson() != null,
                 activity.getShoeId(),
-                activity.getDiscipline());
+                activity.getDiscipline(),
+                activity.getMapPolyline(),
+                decouplingPct);
     }
 }
