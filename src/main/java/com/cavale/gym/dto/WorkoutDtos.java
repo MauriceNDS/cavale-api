@@ -136,6 +136,37 @@ public final class WorkoutDtos {
             BigDecimal recordWeightKg) {
     }
 
+    /**
+     * What the session was worth, handed back the moment it is saved.
+     *
+     * <p>Logging every set only pays off if something comes of it, so
+     * finishing answers immediately: the work done, anything that beat a
+     * previous best, and the load just banked — with a run of comparable
+     * cost, because a bare number means nothing on its own.
+     */
+    public record WorkoutRecapResponse(
+            UUID workoutLogId,
+            String templateName,
+            Integer durationMin,
+            int workingSets,
+            int warmupSets,
+            int exercises,
+            /** Kilos actually moved: working sets only, weighted work only. */
+            BigDecimal tonnageKg,
+            /** Total seconds held, for the gainage and mobility side. */
+            int secondsUnderTension,
+            List<RecordBeaten> records,
+            /** Relative-effort equivalent — the same currency a run earns. */
+            int load,
+            /** "about a 45-minute easy run" — the load made legible. */
+            Integer comparableRunMin,
+            UUID sessionId) {
+    }
+
+    public record RecordBeaten(String exerciseName, int reps, BigDecimal weightKg,
+                               BigDecimal previousKg) {
+    }
+
     /** Pair or unpair blocks for THIS workout — the whole prescribed list at once. */
     public record WorkoutGroupsRequest(@NotNull List<WorkoutGroupAssignment> assignments) {
     }

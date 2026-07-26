@@ -29,6 +29,7 @@ import com.cavale.gym.dto.WorkoutDtos.SwapBlockRequest;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutBlockResponse;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutDetailResponse;
 import com.cavale.gym.dto.WorkoutDtos.WorkoutLogResponse;
+import com.cavale.gym.dto.WorkoutDtos.WorkoutRecapResponse;
 import com.cavale.gym.service.WorkoutService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -161,7 +162,7 @@ public class WorkoutController {
 
     @PostMapping("/{workoutLogId}/finish")
     @Operation(summary = "Finish the workout — validates the planned session")
-    public WorkoutLogResponse finish(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID workoutLogId,
+    public WorkoutRecapResponse finish(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID workoutLogId,
                                      @Valid @RequestBody FinishWorkoutRequest request) {
         return workoutService.finish(userId(jwt), workoutLogId, request);
     }

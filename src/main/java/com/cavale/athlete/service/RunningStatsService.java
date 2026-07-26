@@ -33,6 +33,7 @@ import com.cavale.athlete.dto.RunningStatsResponse.Vo2maxPoint;
 import com.cavale.athlete.dto.RunningStatsResponse.WeekEffort;
 import com.cavale.athlete.dto.RunningStatsResponse.WeekMonotony;
 import com.cavale.athlete.dto.RunningStatsResponse.WeekVolume;
+import com.cavale.gym.service.GymLoadService;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivityBestEffort;
 import com.cavale.training.domain.Objective;
@@ -107,15 +108,41 @@ public class RunningStatsService {
     private final ActivityBestEffortRepository bestEffortRepository;
     private final ObjectiveRepository objectiveRepository;
     private final UserService userService;
+    private final GymLoadService gymLoadService;
 
     public RunningStatsService(ActivityRepository activityRepository,
                                ActivityBestEffortRepository bestEffortRepository,
                                ObjectiveRepository objectiveRepository,
-                               UserService userService) {
+                               UserService userService,
+                               GymLoadService gymLoadService) {
         this.activityRepository = activityRepository;
         this.bestEffortRepository = bestEffortRepository;
         this.objectiveRepository = objectiveRepository;
         this.userService = userService;
+        this.gymLoadService = gymLoadService;
+    }
+
+    /**
+     * One day's training load, whatever produced it.
+     *
+     * <p>The load curves have always counted every activity — a bike ride
+     * is real fatigue — and now count strength work too, converted to the
+     * same relative-effort currency. Keeping the source alongside lets the
+     * stats page say how much of a week was lifting rather than running.
+     */
+    record DayLoad(LocalDate date, int effort, boolean estimated, boolean gym) {
+    }
+
+    /** Merge the two sources into one series, oldest first. */
+    static List<DayLoad> dayLoads(List<Activity> activities, Map<LocalDate, Integer> gymByDay) {
+        List<DayLoad> loads = new ArrayList<>(activities.size() + gymByDay.size());
+        for (Activity activity : activities) {
+            loads.add(new DayLoad(activity.getDate(), dailyEffort(activity),
+                    activity.getRelativeEffort() == null, false));
+        }
+        gymByDay.forEach((date, effort) -> loads.add(new DayLoad(date, effort, false, true)));
+        loads.sort(Comparator.comparing(DayLoad::date));
+        return loads;
     }
 
     /** Series window lengths — the defaults, or stretched back to the first activity. */
@@ -161,19 +188,21 @@ public class RunningStatsService {
                 ? Windows.covering(all.get(0).getDate(), today)
                 : Windows.DEFAULT;
 
+        List<DayLoad> loads = dayLoads(all, gymLoadService.dailyLoad(userId));
+
         double weeklyKm = recentWeeklyKm(runs, today);
-        List<DayForm> form = form(all, today, windows.formDays());
-        Acwr acwr = acwr(all, today);
+        List<DayForm> form = form(loads, today, windows.formDays());
+        Acwr acwr = acwr(loads, today);
         return new RunningStatsResponse(
                 form,
-                weeklyEffort(all, today, windows.weeks()),
+                weeklyEffort(loads, today, windows.weeks()),
                 acwr,
                 weeklyVolume(runs, today, windows.weeks()),
                 efficiency(runs, today, windows.months()),
                 checkpoints(runs),
                 roadPredictions(AthleteStatsService.roadRecords(efforts), weeklyKm),
                 trailEstimates(runs, objectives, today),
-                monotony(all, today, windows.weeks()),
+                monotony(loads, today, windows.weeks()),
                 trainingStatus(form, acwr),
                 vo2maxTrend(runs, user, today, windows.months()),
                 criticalPace(efforts),
@@ -191,13 +220,13 @@ public class RunningStatsService {
                 : (int) Math.round(activity.getDurationMin() * ESTIMATED_RE_PER_MIN);
     }
 
-    private static List<DayForm> form(List<Activity> activities, LocalDate today, int formDays) {
+    private static List<DayForm> form(List<DayLoad> loads, LocalDate today, int formDays) {
         // warm up the averages well before the visible window
         LocalDate warmupStart = today.minusDays(formDays + 3L * (long) FITNESS_TAU);
         Map<LocalDate, Integer> effortByDay = new LinkedHashMap<>();
-        for (Activity activity : activities) {
-            if (!activity.getDate().isBefore(warmupStart)) {
-                effortByDay.merge(activity.getDate(), dailyEffort(activity), Integer::sum);
+        for (DayLoad load : loads) {
+            if (!load.date().isBefore(warmupStart)) {
+                effortByDay.merge(load.date(), load.effort(), Integer::sum);
             }
         }
 
@@ -220,19 +249,22 @@ public class RunningStatsService {
     }
 
     /** Weekly effort with its target band: 0.8–1.3 × the trailing 3-week average. */
-    private static List<WeekEffort> weeklyEffort(List<Activity> activities, LocalDate today,
+    private static List<WeekEffort> weeklyEffort(List<DayLoad> loads, LocalDate today,
                                                  int weekCount) {
         LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
-        Map<LocalDate, int[]> weeks = new LinkedHashMap<>(); // [effort, estimatedCount]
+        Map<LocalDate, int[]> weeks = new LinkedHashMap<>(); // [effort, estimatedCount, gym]
         for (int i = weekCount + 2; i >= 0; i--) { // +3 weeks of history for the first band
-            weeks.put(currentWeekStart.minusWeeks(i), new int[2]);
+            weeks.put(currentWeekStart.minusWeeks(i), new int[3]);
         }
-        for (Activity activity : activities) {
-            int[] bucket = weeks.get(activity.getDate().with(DayOfWeek.MONDAY));
+        for (DayLoad load : loads) {
+            int[] bucket = weeks.get(load.date().with(DayOfWeek.MONDAY));
             if (bucket != null) {
-                bucket[0] += dailyEffort(activity);
-                if (activity.getRelativeEffort() == null) {
+                bucket[0] += load.effort();
+                if (load.estimated()) {
                     bucket[1]++;
+                }
+                if (load.gym()) {
+                    bucket[2] += load.effort();
                 }
             }
         }
@@ -245,21 +277,22 @@ public class RunningStatsService {
             Integer bandLow = previous3 > 0 ? Math.round(previous3 / 3f * 0.8f) : null;
             Integer bandHigh = previous3 > 0 ? Math.round(previous3 / 3f * 1.3f) : null;
             series.add(new WeekEffort(entries.get(i).getKey(), entries.get(i).getValue()[0],
-                    bandLow, bandHigh, entries.get(i).getValue()[1] > 0));
+                    bandLow, bandHigh, entries.get(i).getValue()[1] > 0,
+                    entries.get(i).getValue()[2]));
         }
         return series;
     }
 
     /** Acute (7 d) over chronic (28 d, weekly-averaged) load. */
-    private static Acwr acwr(List<Activity> activities, LocalDate today) {
+    private static Acwr acwr(List<DayLoad> loads, LocalDate today) {
         int acute = 0;
         int chronic = 0;
-        for (Activity activity : activities) {
-            long daysAgo = java.time.temporal.ChronoUnit.DAYS.between(activity.getDate(), today);
+        for (DayLoad load : loads) {
+            long daysAgo = java.time.temporal.ChronoUnit.DAYS.between(load.date(), today);
             if (daysAgo < 0 || daysAgo >= 28) {
                 continue;
             }
-            int effort = dailyEffort(activity);
+            int effort = load.effort();
             chronic += effort;
             if (daysAgo < 7) {
                 acute += effort;
@@ -286,11 +319,11 @@ public class RunningStatsService {
      * scores low (healthy); both are null when a week has no training, or no
      * day-to-day variance at all (standard deviation zero).
      */
-    private static List<WeekMonotony> monotony(List<Activity> activities, LocalDate today,
+    private static List<WeekMonotony> monotony(List<DayLoad> loads, LocalDate today,
                                                int weekCount) {
         Map<LocalDate, Integer> effortByDay = new HashMap<>();
-        for (Activity activity : activities) {
-            effortByDay.merge(activity.getDate(), dailyEffort(activity), Integer::sum);
+        for (DayLoad load : loads) {
+            effortByDay.merge(load.date(), load.effort(), Integer::sum);
         }
         LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
         List<WeekMonotony> series = new ArrayList<>(weekCount);

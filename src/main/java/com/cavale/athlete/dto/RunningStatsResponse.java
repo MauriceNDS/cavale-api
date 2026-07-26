@@ -53,7 +53,9 @@ public record RunningStatsResponse(
      * (0.8–1.3 × the trailing 3-week average — the progressive zone).
      */
     public record WeekEffort(LocalDate weekStart, int effort, Integer bandLow, Integer bandHigh,
-                             boolean partlyEstimated) {
+                             boolean partlyEstimated,
+                             /** How much of the week's load was strength work. */
+                             int gymEffort) {
     }
 
     public enum AcwrZone { UNDER, OPTIMAL, CAUTION, DANGER }

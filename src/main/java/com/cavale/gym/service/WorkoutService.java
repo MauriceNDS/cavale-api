@@ -30,6 +30,8 @@ import com.cavale.gym.dto.WorkoutDtos.AddExtraBlockRequest;
 import com.cavale.gym.dto.WorkoutDtos.AdjustSetsRequest;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
+import com.cavale.gym.dto.WorkoutDtos.RecordBeaten;
+import com.cavale.gym.dto.WorkoutDtos.WorkoutRecapResponse;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
 import com.cavale.gym.dto.WorkoutDtos.StartWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.SwapBlockRequest;
@@ -57,6 +59,13 @@ import com.cavale.training.repository.PlannedSessionRepository;
  */
 @Service
 public class WorkoutService {
+
+    /**
+     * What an easy run earns per minute — the yardstick that turns a load
+     * number into "about a 45-minute run", which is the only form of it
+     * anyone can actually feel.
+     */
+    private static final double ESTIMATED_RUN_RE_PER_MIN = 0.7;
 
     private final WorkoutLogRepository workoutLogRepository;
     private final SetLogRepository setLogRepository;
@@ -362,7 +371,7 @@ public class WorkoutService {
 
     /** Closing the workout is what validates the planned session (status DONE). */
     @Transactional
-    public WorkoutLogResponse finish(UUID userId, UUID workoutLogId, FinishWorkoutRequest request) {
+    public WorkoutRecapResponse finish(UUID userId, UUID workoutLogId, FinishWorkoutRequest request) {
         WorkoutLog log = getOwned(userId, workoutLogId);
         if (log.getStatus() != WorkoutStatus.IN_PROGRESS) {
             throw new IllegalArgumentException("Cet entraînement est déjà terminé");
@@ -375,7 +384,60 @@ public class WorkoutService {
         if (log.getSession() != null) {
             log.getSession().updateStatus(SessionStatus.DONE);
         }
-        return WorkoutLogResponse.from(log, setResponses(log.getId()));
+        return recap(log);
+    }
+
+    /**
+     * What the session was worth. Records are computed against everything
+     * logged BEFORE this workout, so a set only counts as a record if it
+     * actually beat history rather than beating itself.
+     */
+    private WorkoutRecapResponse recap(WorkoutLog log) {
+        List<SetLog> sets = setLogRepository
+                .findByWorkoutLogIdOrderByPositionAscSetNumberAsc(log.getId());
+        List<SetLog> working = sets.stream().filter(s -> !s.isWarmup()).toList();
+
+        BigDecimal tonnage = working.stream()
+                .filter(s -> s.getWeightKg() != null && s.getReps() != null)
+                .map(s -> s.getWeightKg().multiply(BigDecimal.valueOf(s.getReps())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(0, java.math.RoundingMode.HALF_UP);
+        int seconds = working.stream()
+                .filter(s -> s.getSeconds() != null)
+                .mapToInt(SetLog::getSeconds)
+                .sum();
+
+        List<RecordBeaten> records = new java.util.ArrayList<>();
+        Map<String, BigDecimal> bestHere = new LinkedHashMap<>();
+        for (SetLog set : working) {
+            if (set.getWeightKg() == null || set.getReps() == null || set.getReps() <= 0) {
+                continue;
+            }
+            String key = set.getExercise().getId() + ":" + set.getReps();
+            BigDecimal alreadyToday = bestHere.get(key);
+            if (alreadyToday != null && alreadyToday.compareTo(set.getWeightKg()) >= 0) {
+                continue; // a heavier set of this shape already counted
+            }
+            bestHere.put(key, set.getWeightKg());
+            BigDecimal previous = setLogRepository
+                    .findRecordWeightBefore(log.getUserId(), set.getExercise().getId(),
+                            set.getReps(), log.getStartedAt())
+                    .orElse(null);
+            if (previous == null || set.getWeightKg().compareTo(previous) > 0) {
+                records.removeIf(r -> r.exerciseName().equals(set.getExerciseName())
+                        && r.reps() == set.getReps());
+                records.add(new RecordBeaten(set.getExerciseName(), set.getReps(),
+                        set.getWeightKg(), previous));
+            }
+        }
+
+        int load = GymLoadService.loadOf(log);
+        return new WorkoutRecapResponse(log.getId(), log.getTemplateName(), log.getDurationMin(),
+                working.size(), sets.size() - working.size(),
+                (int) sets.stream().map(s -> s.getExercise().getId()).distinct().count(),
+                tonnage, seconds, List.copyOf(records), load,
+                load > 0 ? (int) Math.round(load / ESTIMATED_RUN_RE_PER_MIN) : null,
+                log.getSession() != null ? log.getSession().getId() : null);
     }
 
     /** Abandon an IN_PROGRESS workout — nothing happened, nothing kept. */

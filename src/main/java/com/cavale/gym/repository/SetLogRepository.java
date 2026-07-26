@@ -60,6 +60,24 @@ public interface SetLogRepository extends JpaRepository<SetLog, UUID> {
                                           @Param("reps") int reps);
 
     /**
+     * The record at this rep count as it stood BEFORE a given moment — so a
+     * set can be judged against history rather than against itself.
+     */
+    @Query("""
+            select max(s.weightKg) from SetLog s
+            where s.exercise.id = :exerciseId
+              and s.workoutLog.userId = :userId
+              and s.workoutLog.status = com.cavale.gym.domain.WorkoutStatus.FINISHED
+              and s.warmup = false
+              and s.reps = :reps
+              and s.workoutLog.startedAt < :before
+            """)
+    Optional<BigDecimal> findRecordWeightBefore(@Param("userId") UUID userId,
+                                                @Param("exerciseId") UUID exerciseId,
+                                                @Param("reps") int reps,
+                                                @Param("before") java.time.Instant before);
+
+    /**
      * Recent working sets carrying a load — the evidence a 1RM estimate is
      * built from. Warm-ups are excluded: they say nothing about a maximum.
      */

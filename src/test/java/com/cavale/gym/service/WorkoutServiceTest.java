@@ -53,6 +53,7 @@ import com.cavale.training.repository.PlannedSessionRepository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -677,13 +678,45 @@ class WorkoutServiceTest {
         when(setLogRepository.findByWorkoutLogIdOrderByPositionAscSetNumberAsc(running.getId()))
                 .thenReturn(List.of());
 
-        var response = service().finish(USER, running.getId(),
+        var recap = service().finish(USER, running.getId(),
                 new FinishWorkoutRequest(null, PerceivedEffort.DIFFICILE, true, "genou droit sensible"));
 
-        assertThat(response.status()).isEqualTo(WorkoutStatus.FINISHED);
-        assertThat(response.durationMin()).isEqualTo(30); // started 30 min ago
-        assertThat(response.painFlag()).isTrue();
+        assertThat(running.getStatus()).isEqualTo(WorkoutStatus.FINISHED);
+        assertThat(running.isPainFlag()).isTrue();
+        assertThat(recap.durationMin()).isEqualTo(30); // started 30 min ago
         assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
+        // 30 min felt DIFFICILE ⇒ 0.85/min, and the comparison a runner can feel
+        assertThat(recap.load()).isEqualTo(26);
+        assertThat(recap.comparableRunMin()).isEqualTo(37);
+    }
+
+    @Test
+    void recap_countsTheWorkAndOnlyRealRecords() {
+        GymTemplateVariant variant = variant();
+        Exercise squat = squat();
+        WorkoutLog running = inProgress(variant, null);
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+
+        SetLog warmup = new SetLog(running, squat, 0, 1, 8, new BigDecimal("40"), null);
+        warmup.markWarmup(true);
+        SetLog heavy = new SetLog(running, squat, 0, 2, 5, new BigDecimal("90"), null);
+        SetLog lighter = new SetLog(running, squat, 0, 3, 5, new BigDecimal("85"), null);
+        when(setLogRepository.findByWorkoutLogIdOrderByPositionAscSetNumberAsc(running.getId()))
+                .thenReturn(List.of(warmup, heavy, lighter));
+        when(setLogRepository.findRecordWeightBefore(eq(USER), eq(squat.getId()), eq(5), any()))
+                .thenReturn(Optional.of(new BigDecimal("87.5")));
+
+        var recap = service().finish(USER, running.getId(),
+                new FinishWorkoutRequest(60, PerceivedEffort.COMME_PREVU, false, null));
+
+        assertThat(recap.workingSets()).isEqualTo(2);
+        assertThat(recap.warmupSets()).isEqualTo(1);
+        // the 40 kg approach is excluded: 90×5 + 85×5
+        assertThat(recap.tonnageKg()).isEqualByComparingTo("875");
+        // only the 90 beat the standing 87.5, and it is reported once
+        assertThat(recap.records()).hasSize(1);
+        assertThat(recap.records().getFirst().weightKg()).isEqualByComparingTo("90");
+        assertThat(recap.records().getFirst().previousKg()).isEqualByComparingTo("87.5");
     }
 
     @Test

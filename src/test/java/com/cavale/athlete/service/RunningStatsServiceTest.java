@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.user.domain.User;
+import com.cavale.gym.service.GymLoadService;
 import com.cavale.user.service.UserService;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,10 +50,14 @@ class RunningStatsServiceTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private GymLoadService gymLoadService;
+
     private RunningStatsService service() {
         lenient().when(userService.getById(USER)).thenReturn(userWithHr());
+        lenient().when(gymLoadService.dailyLoad(USER)).thenReturn(Map.of());
         return new RunningStatsService(activityRepository, bestEffortRepository,
-                objectiveRepository, userService);
+                objectiveRepository, userService, gymLoadService);
     }
 
     /** An athlete with HR zones set, so VO2max estimates can be computed. */
