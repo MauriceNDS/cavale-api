@@ -418,6 +418,32 @@ class RunningStatsServiceTest {
     }
 
     @Test
+    void weeklyZones_integratesStreamsAndFallsBackToAvgHr() {
+        // TODAY is a Monday — both runs land on it so they share the current ISO week.
+        // 190 max / 50 resting → HRR bounds: Z2 from 134, Z3 from 148, Z4 from 162, Z5 from 176
+        Activity streamed = run(TODAY, 30, "8.0", 50, 150, 60, 1L);
+        streamed.attachStreams(
+                "{\"time\":[0,300,600,900,1200],\"hr\":[140,140,140,170,170],"
+                        + "\"distance\":[0,1000,2000,3000,4000]}");
+        // stream-less run, avg 150 → whole 60 min parked in Z3, flagged estimated
+        Activity plain = run(TODAY, 60, "10.0", 100, 150, 70, 2L);
+
+        RunningStatsResponse stats = stats(List.of(streamed, plain));
+
+        var currentWeek = stats.weeklyZones().getLast();
+        assertThat(currentWeek.weekStart()).isEqualTo(TODAY);
+        assertThat(currentWeek.partlyEstimated()).isTrue();
+        // clamp: 300 s gaps exceed the 30 s cap, so each sample credits 30 s
+        assertThat(currentWeek.seconds().get(1)).isEqualTo(60);        // 2×30 s at 140
+        assertThat(currentWeek.seconds().get(3)).isEqualTo(60);        // 2×30 s at 170
+        assertThat(currentWeek.seconds().get(2)).isEqualTo(3600);      // the avg-HR run
+        assertThat(stats.longRunGuard()).isNotNull();
+        assertThat(stats.longRunGuard().recentLongestKm()).isEqualByComparingTo("10.0");
+        assertThat(stats.longRunGuard().elevatedFromKm()).isEqualByComparingTo("13.0");
+        assertThat(stats.longRunGuard().highFromKm()).isEqualByComparingTo("20.0");
+    }
+
+    @Test
     void allTimeWindow_stretchesSeriesBackToTheFirstActivity() {
         LocalDate ancient = TODAY.minusYears(2);
         List<Activity> activities = List.of(

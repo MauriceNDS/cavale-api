@@ -177,7 +177,9 @@ public class RunningStatsService {
                 trainingStatus(form, acwr),
                 vo2maxTrend(runs, user, today, windows.months()),
                 criticalPace(efforts),
-                durability(runs, today, windows.months()));
+                durability(runs, today, windows.months()),
+                weeklyZones(runs, user, today, windows.weeks()),
+                longRunGuard(all, today));
     }
 
     /* ── Training load (Banister / Strava F&F) ─────────────────────────── */
@@ -507,6 +509,166 @@ public class RunningStatsService {
                 })
                 .filter(point -> point != null)
                 .toList();
+    }
+
+    /* ── Time in HR zones (Karvonen) ───────────────────────────────────── */
+
+    /** Zone boundaries as fractions of HR reserve (or %HRmax without resting HR). */
+    private static final double[] ZONE_BOUNDS = {0.6, 0.7, 0.8, 0.9};
+    /** Auto-pause gaps beyond this are dropped, not credited to a zone. */
+    private static final int ZONE_MAX_GAP_SEC = 30;
+
+    /**
+     * Weekly seconds in Z1…Z5. Streamed runs are integrated sample by
+     * sample; stream-less runs with an average HR park their whole duration
+     * in that HR's zone (partly estimated). Empty without a max HR.
+     */
+    static List<RunningStatsResponse.WeekZones> weeklyZones(List<Activity> activities, User user,
+                                                            LocalDate today, int weekCount) {
+        Integer maxHr = user != null ? user.getMaxHr() : null;
+        if (maxHr == null || maxHr <= 0) {
+            return List.of();
+        }
+        Integer restingHr = user.getRestingHr();
+        boolean reserve = restingHr != null && restingHr > 0 && maxHr > restingHr;
+
+        LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
+        LocalDate firstWeek = currentWeekStart.minusWeeks(weekCount - 1L);
+        Map<LocalDate, int[]> byWeek = new LinkedHashMap<>();
+        Map<LocalDate, Boolean> estimated = new HashMap<>();
+        for (int i = weekCount - 1; i >= 0; i--) {
+            byWeek.put(currentWeekStart.minusWeeks(i), new int[5]);
+        }
+
+        for (Activity activity : activities) {
+            LocalDate week = activity.getDate().with(DayOfWeek.MONDAY);
+            if (week.isBefore(firstWeek) || week.isAfter(currentWeekStart)) {
+                continue;
+            }
+            int[] bucket = byWeek.get(week);
+            if (bucket == null) {
+                continue;
+            }
+            if (activity.getStreamsJson() != null
+                    && addStreamZones(activity.getStreamsJson(), bucket, maxHr, restingHr, reserve)) {
+                continue;
+            }
+            if (activity.getAvgHr() != null && activity.getAvgHr() > 0) {
+                bucket[zoneOf(activity.getAvgHr(), maxHr, restingHr, reserve)]
+                        += activity.getDurationMin() * 60;
+                estimated.put(week, true);
+            }
+        }
+
+        return byWeek.entrySet().stream()
+                .map(entry -> new RunningStatsResponse.WeekZones(entry.getKey(),
+                        java.util.Arrays.stream(entry.getValue()).boxed().toList(),
+                        estimated.getOrDefault(entry.getKey(), false)))
+                .toList();
+    }
+
+    /** @return true when the streams carried usable HR and were integrated. */
+    private static boolean addStreamZones(String streamsJson, int[] bucket, int maxHr,
+                                          Integer restingHr, boolean reserve) {
+        try {
+            JsonNode root = MAPPER.readTree(streamsJson);
+            JsonNode time = root.path("time");
+            JsonNode hr = root.path("hr");
+            int n = Math.min(time.size(), hr.size());
+            if (!time.isArray() || !hr.isArray() || n < 2) {
+                return false;
+            }
+            boolean any = false;
+            for (int i = 1; i < n; i++) {
+                double sample = hr.get(i).asDouble(0);
+                if (sample <= 0) {
+                    continue;
+                }
+                int dt = (int) Math.min(Math.max(0, time.get(i).asDouble() - time.get(i - 1).asDouble()),
+                        ZONE_MAX_GAP_SEC);
+                if (dt == 0) {
+                    continue;
+                }
+                bucket[zoneOf(sample, maxHr, restingHr, reserve)] += dt;
+                any = true;
+            }
+            return any;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static int zoneOf(double hr, int maxHr, Integer restingHr, boolean reserve) {
+        double fraction = reserve ? (hr - restingHr) / (double) (maxHr - restingHr) : hr / maxHr;
+        for (int z = 0; z < ZONE_BOUNDS.length; z++) {
+            if (fraction < ZONE_BOUNDS[z]) {
+                return z;
+            }
+        }
+        return 4;
+    }
+
+    /* ── RUNSAFE long-run guard ────────────────────────────────────────── */
+
+    /**
+     * Distances where the next long run's injury hazard steps up. Runs up to
+     * 1.3× the trailing-30-day longest are normal; 1.3–2.0× is elevated
+     * (+52 % hazard); beyond 2.0× is high (+128 %). The most recent run is
+     * classified against the longest of the 30 days BEFORE it, so a spike
+     * shows even though today's window contains it. Null with no run.
+     */
+    static RunningStatsResponse.LongRunGuard longRunGuard(List<Activity> activities,
+                                                          LocalDate today) {
+        Activity longest = activities.stream()
+                .filter(Activity::isRun)
+                .filter(a -> a.getDistanceKm() != null)
+                .filter(a -> !a.getDate().isBefore(today.minusDays(30)) && !a.getDate().isAfter(today))
+                .max(Comparator.comparing(Activity::getDistanceKm))
+                .orElse(null);
+        if (longest == null) {
+            return null;
+        }
+        double longestKm = longest.getDistanceKm().doubleValue();
+
+        Activity lastRun = activities.stream()
+                .filter(Activity::isRun)
+                .filter(a -> a.getDistanceKm() != null && !a.getDate().isAfter(today))
+                .max(Comparator.comparing(Activity::getDate)
+                        .thenComparing(Activity::getDistanceKm))
+                .orElse(null);
+        BigDecimal lastKm = null;
+        String lastBand = null;
+        if (lastRun != null) {
+            LocalDate priorFrom = lastRun.getDate().minusDays(30);
+            double priorMax = activities.stream()
+                    .filter(Activity::isRun)
+                    .filter(a -> a.getDistanceKm() != null)
+                    .filter(a -> a.getDate().isBefore(lastRun.getDate())
+                            && !a.getDate().isBefore(priorFrom))
+                    .mapToDouble(a -> a.getDistanceKm().doubleValue())
+                    .max().orElse(0);
+            lastKm = lastRun.getDistanceKm().setScale(1, RoundingMode.HALF_UP);
+            lastBand = priorMax > 0 ? guardBand(lastRun.getDistanceKm().doubleValue(), priorMax) : null;
+        }
+
+        return new RunningStatsResponse.LongRunGuard(
+                longest.getDistanceKm().setScale(1, RoundingMode.HALF_UP), longest.getDate(),
+                guardScale(longestKm * 1.3), guardScale(longestKm * 2.0), lastKm, lastBand);
+    }
+
+    /** Where a run sits against a trailing longest: NORMAL ≤ 1.3× &lt; ELEVATED ≤ 2× &lt; HIGH. */
+    private static String guardBand(double km, double trailingLongest) {
+        if (km > trailingLongest * 2.0) {
+            return "HIGH";
+        }
+        if (km > trailingLongest * 1.3) {
+            return "ELEVATED";
+        }
+        return "NORMAL";
+    }
+
+    private static BigDecimal guardScale(double value) {
+        return BigDecimal.valueOf(value).setScale(1, RoundingMode.HALF_UP);
     }
 
     /** First-half vs second-half efficiency (speed ÷ HR) drop, in percent, or null. */

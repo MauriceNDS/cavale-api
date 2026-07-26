@@ -23,10 +23,29 @@ public record RunningStatsResponse(
         TrainingStatus trainingStatus,
         List<Vo2maxPoint> vo2maxTrend,
         CriticalPace criticalPace,
-        List<DurabilityPoint> durability) {
+        List<DurabilityPoint> durability,
+        List<WeekZones> weeklyZones,
+        LongRunGuard longRunGuard) {
 
     /** One day of the impulse-response model (fitness 42 d, fatigue 7 d). */
     public record DayForm(LocalDate date, double fitness, double fatigue, double formScore) {
+    }
+
+    /**
+     * One ISO week of time in HR zones, seconds for Z1…Z5 (Karvonen %HRR,
+     * %HRmax when no resting HR). Runs without streams contribute their
+     * whole duration at their average HR — flagged as partly estimated.
+     */
+    public record WeekZones(LocalDate weekStart, List<Integer> seconds, boolean partlyEstimated) {
+    }
+
+    /**
+     * RUNSAFE long-run guard: distances where the next long run's injury
+     * hazard steps up, from the 30-day longest (1.3× = +52 %, 2× = +128 %).
+     */
+    public record LongRunGuard(BigDecimal recentLongestKm, LocalDate longestOn,
+                               BigDecimal elevatedFromKm, BigDecimal highFromKm,
+                               BigDecimal lastRunKm, String lastRunBand) {
     }
 
     /**

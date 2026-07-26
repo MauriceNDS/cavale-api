@@ -74,7 +74,7 @@ class PlanCoachServiceTest {
                 new BigDecimal("60"), 4);
         return new RunningStatsResponse(List.of(), List.of(),
                 new Acwr(1.0, 50, 50, AcwrZone.OPTIMAL), List.of(week), List.of(), List.of(),
-                List.of(), List.of(), List.of(), null, List.of(), null, List.of());
+                List.of(), List.of(), List.of(), null, List.of(), null, List.of(), List.of(), null);
     }
 
     private static PlanWeek week(TrainingPlan plan, int number, LocalDate monday, WeekType type) {
