@@ -123,14 +123,20 @@ public class CoachInsightService {
                             null, null));
         }
         proposal.resolve(ProposalStatus.APPLIED);
-        return proposal.getInsight();
+        return initialized(proposal.getInsight());
     }
 
     @Transactional
     public WeeklyInsight dismissProposal(UUID userId, UUID proposalId) {
         CoachProposal proposal = ownedProposal(userId, proposalId);
         proposal.resolve(ProposalStatus.DISMISSED);
-        return proposal.getInsight();
+        return initialized(proposal.getInsight());
+    }
+
+    /** Callers map to DTOs after the transaction — load the graph before leaving it. */
+    private static WeeklyInsight initialized(WeeklyInsight insight) {
+        insight.getProposals().size();
+        return insight;
     }
 
     private CoachProposal ownedProposal(UUID userId, UUID proposalId) {

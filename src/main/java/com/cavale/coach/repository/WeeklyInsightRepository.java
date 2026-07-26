@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.domain.Limit;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import com.cavale.coach.domain.WeeklyInsight;
@@ -14,5 +15,7 @@ public interface WeeklyInsightRepository extends JpaRepository<WeeklyInsight, UU
 
     Optional<WeeklyInsight> findByUserIdAndWeekStart(UUID userId, LocalDate weekStart);
 
+    /** Proposals fetched eagerly — callers map to DTOs outside the transaction. */
+    @EntityGraph(attributePaths = "proposals")
     List<WeeklyInsight> findByUserIdOrderByWeekStartDesc(UUID userId, Limit limit);
 }
