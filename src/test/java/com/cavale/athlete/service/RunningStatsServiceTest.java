@@ -416,4 +416,34 @@ class RunningStatsServiceTest {
     private static Acwr acwr(double ratio, AcwrZone zone) {
         return new Acwr(ratio, 0, 0, zone);
     }
+
+    @Test
+    void allTimeWindow_stretchesSeriesBackToTheFirstActivity() {
+        LocalDate ancient = TODAY.minusYears(2);
+        List<Activity> activities = List.of(
+                run(ancient, 60, "10.0", 100, 150, 80, 1L),
+                run(TODAY.minusDays(1), 60, "10.0", 100, 150, 60, 2L));
+        when(activityRepository.findByUserId(USER)).thenReturn(activities);
+        when(bestEffortRepository.findByUserId(USER)).thenReturn(List.of());
+        when(objectiveRepository.findByUserId(USER)).thenReturn(List.of());
+        RunningStatsService service = service();
+
+        RunningStatsResponse defaults = service.getStats(USER, TODAY, null);
+        RunningStatsResponse allTime = service.getStats(USER, TODAY, 0);
+
+        // default window misses the 2-year-old run entirely
+        assertThat(defaults.weeklyVolume().getFirst().weekStart()).isAfter(ancient);
+        assertThat(defaults.form()).hasSize(RunningStatsService.FORM_DAYS);
+
+        // all-time reaches back to (at least) the first activity's week
+        assertThat(allTime.weeklyVolume().getFirst().weekStart())
+                .isBeforeOrEqualTo(ancient);
+        assertThat(allTime.weeklyVolume().stream()
+                .filter(w -> !w.weekStart().isAfter(ancient))
+                .anyMatch(w -> w.runs() == 1)).isTrue();
+        assertThat(allTime.form().size()).isGreaterThan(RunningStatsService.FORM_DAYS);
+        assertThat(allTime.form().getFirst().date()).isBeforeOrEqualTo(ancient);
+        // current-state blocks are unaffected by the window
+        assertThat(allTime.acwr()).isEqualTo(defaults.acwr());
+    }
 }

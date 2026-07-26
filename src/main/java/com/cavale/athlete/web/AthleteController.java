@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cavale.athlete.dto.ActivityDetailResponse;
@@ -56,9 +57,12 @@ public class AthleteController {
 
     @GetMapping("/running-stats")
     @Operation(summary = "Deep running statistics: training load (Banister), weekly effort "
-            + "with target band, ACWR, trail volume, efficiency, duration checkpoints, predictions")
-    public com.cavale.athlete.dto.RunningStatsResponse runningStats(@AuthenticationPrincipal Jwt jwt) {
-        return runningStatsService.getStats(UUID.fromString(jwt.getSubject()));
+            + "with target band, ACWR, trail volume, efficiency, duration checkpoints, predictions. "
+            + "months bounds the series depth: null = 12-month default, 0 = all-time.")
+    public com.cavale.athlete.dto.RunningStatsResponse runningStats(@AuthenticationPrincipal Jwt jwt,
+            @RequestParam(name = "months", required = false) Integer months) {
+        return runningStatsService.getStats(UUID.fromString(jwt.getSubject()),
+                java.time.LocalDate.now(), months);
     }
 
     @GetMapping("/activities")

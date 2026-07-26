@@ -118,13 +118,35 @@ public class RunningStatsService {
         this.userService = userService;
     }
 
+    /** Series window lengths — the defaults, or stretched back to the first activity. */
+    private record Windows(int formDays, int weeks, int months) {
+
+        static final Windows DEFAULT = new Windows(FORM_DAYS, WEEKS, EFFICIENCY_MONTHS);
+
+        static Windows covering(LocalDate first, LocalDate today) {
+            int days = (int) java.time.temporal.ChronoUnit.DAYS.between(first, today) + 1;
+            int weeks = (int) java.time.temporal.ChronoUnit.WEEKS.between(
+                    first.with(DayOfWeek.MONDAY), today.with(DayOfWeek.MONDAY)) + 1;
+            int months = (int) java.time.temporal.ChronoUnit.MONTHS.between(
+                    YearMonth.from(first), YearMonth.from(today)) + 1;
+            return new Windows(Math.max(FORM_DAYS, days), Math.max(WEEKS, weeks),
+                    Math.max(EFFICIENCY_MONTHS, months));
+        }
+    }
+
     @Transactional(readOnly = true)
     public RunningStatsResponse getStats(UUID userId) {
-        return getStats(userId, LocalDate.now());
+        return getStats(userId, LocalDate.now(), null);
     }
 
     @Transactional(readOnly = true)
     public RunningStatsResponse getStats(UUID userId, LocalDate today) {
+        return getStats(userId, today, null);
+    }
+
+    /** @param months series depth in months; null = the 12-month default, 0 = all-time. */
+    @Transactional(readOnly = true)
+    public RunningStatsResponse getStats(UUID userId, LocalDate today, Integer months) {
         // The load curves count every activity (a bike ride is real fatigue);
         // the run-only metrics — volume, pace, predictions — see runs alone.
         List<Activity> all = activityRepository.findByUserId(userId).stream()
@@ -135,23 +157,27 @@ public class RunningStatsService {
         List<Objective> objectives = objectiveRepository.findByUserId(userId);
         User user = userService.getById(userId);
 
+        Windows windows = months != null && months == 0 && !all.isEmpty()
+                ? Windows.covering(all.get(0).getDate(), today)
+                : Windows.DEFAULT;
+
         double weeklyKm = recentWeeklyKm(runs, today);
-        List<DayForm> form = form(all, today);
+        List<DayForm> form = form(all, today, windows.formDays());
         Acwr acwr = acwr(all, today);
         return new RunningStatsResponse(
                 form,
-                weeklyEffort(all, today),
+                weeklyEffort(all, today, windows.weeks()),
                 acwr,
-                weeklyVolume(runs, today),
-                efficiency(runs, today),
+                weeklyVolume(runs, today, windows.weeks()),
+                efficiency(runs, today, windows.months()),
                 checkpoints(runs),
                 roadPredictions(AthleteStatsService.roadRecords(efforts), weeklyKm),
                 trailEstimates(runs, objectives, today),
-                monotony(all, today),
+                monotony(all, today, windows.weeks()),
                 trainingStatus(form, acwr),
-                vo2maxTrend(runs, user, today),
+                vo2maxTrend(runs, user, today, windows.months()),
                 criticalPace(efforts),
-                durability(runs, today));
+                durability(runs, today, windows.months()));
     }
 
     /* ── Training load (Banister / Strava F&F) ─────────────────────────── */
@@ -163,9 +189,9 @@ public class RunningStatsService {
                 : (int) Math.round(activity.getDurationMin() * ESTIMATED_RE_PER_MIN);
     }
 
-    private static List<DayForm> form(List<Activity> activities, LocalDate today) {
+    private static List<DayForm> form(List<Activity> activities, LocalDate today, int formDays) {
         // warm up the averages well before the visible window
-        LocalDate warmupStart = today.minusDays(FORM_DAYS + 3L * (long) FITNESS_TAU);
+        LocalDate warmupStart = today.minusDays(formDays + 3L * (long) FITNESS_TAU);
         Map<LocalDate, Integer> effortByDay = new LinkedHashMap<>();
         for (Activity activity : activities) {
             if (!activity.getDate().isBefore(warmupStart)) {
@@ -177,8 +203,8 @@ public class RunningStatsService {
         double fatigueDecay = Math.exp(-1 / FATIGUE_TAU);
         double fitness = 0;
         double fatigue = 0;
-        List<DayForm> series = new ArrayList<>(FORM_DAYS);
-        LocalDate windowStart = today.minusDays(FORM_DAYS - 1L);
+        List<DayForm> series = new ArrayList<>(formDays);
+        LocalDate windowStart = today.minusDays(formDays - 1L);
         for (LocalDate day = warmupStart; !day.isAfter(today); day = day.plusDays(1)) {
             int effort = effortByDay.getOrDefault(day, 0);
             fitness = fitness * fitnessDecay + effort * (1 - fitnessDecay);
@@ -192,10 +218,11 @@ public class RunningStatsService {
     }
 
     /** Weekly effort with its target band: 0.8–1.3 × the trailing 3-week average. */
-    private static List<WeekEffort> weeklyEffort(List<Activity> activities, LocalDate today) {
+    private static List<WeekEffort> weeklyEffort(List<Activity> activities, LocalDate today,
+                                                 int weekCount) {
         LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
         Map<LocalDate, int[]> weeks = new LinkedHashMap<>(); // [effort, estimatedCount]
-        for (int i = WEEKS + 2; i >= 0; i--) { // +3 weeks of history for the first band
+        for (int i = weekCount + 2; i >= 0; i--) { // +3 weeks of history for the first band
             weeks.put(currentWeekStart.minusWeeks(i), new int[2]);
         }
         for (Activity activity : activities) {
@@ -209,7 +236,7 @@ public class RunningStatsService {
         }
 
         List<Map.Entry<LocalDate, int[]>> entries = List.copyOf(weeks.entrySet());
-        List<WeekEffort> series = new ArrayList<>(WEEKS);
+        List<WeekEffort> series = new ArrayList<>(weekCount);
         for (int i = 3; i < entries.size(); i++) {
             int previous3 = entries.get(i - 1).getValue()[0] + entries.get(i - 2).getValue()[0]
                     + entries.get(i - 3).getValue()[0];
@@ -257,14 +284,15 @@ public class RunningStatsService {
      * scores low (healthy); both are null when a week has no training, or no
      * day-to-day variance at all (standard deviation zero).
      */
-    private static List<WeekMonotony> monotony(List<Activity> activities, LocalDate today) {
+    private static List<WeekMonotony> monotony(List<Activity> activities, LocalDate today,
+                                               int weekCount) {
         Map<LocalDate, Integer> effortByDay = new HashMap<>();
         for (Activity activity : activities) {
             effortByDay.merge(activity.getDate(), dailyEffort(activity), Integer::sum);
         }
         LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
-        List<WeekMonotony> series = new ArrayList<>(WEEKS);
-        for (int i = WEEKS - 1; i >= 0; i--) {
+        List<WeekMonotony> series = new ArrayList<>(weekCount);
+        for (int i = weekCount - 1; i >= 0; i--) {
             LocalDate weekStart = currentWeekStart.minusWeeks(i);
             int total = 0;
             double[] daily = new double[7];
@@ -350,7 +378,7 @@ public class RunningStatsService {
      * sharpens it); without max HR the trend is empty.
      */
     private static List<Vo2maxPoint> vo2maxTrend(List<Activity> activities, User user,
-                                                 LocalDate today) {
+                                                 LocalDate today, int monthCount) {
         Integer maxHr = user != null ? user.getMaxHr() : null;
         if (maxHr == null || maxHr <= 0) {
             return List.of();
@@ -358,7 +386,7 @@ public class RunningStatsService {
         Integer restingHr = user.getRestingHr();
         Map<YearMonth, List<Double>> byMonth = new LinkedHashMap<>();
         YearMonth current = YearMonth.from(today);
-        for (int i = VO2MAX_MONTHS - 1; i >= 0; i--) {
+        for (int i = monthCount - 1; i >= 0; i--) {
             byMonth.put(current.minusMonths(i), new ArrayList<>());
         }
         for (Activity activity : activities) {
@@ -463,8 +491,9 @@ public class RunningStatsService {
      * dropped from the first half to the second; positive means the athlete
      * faded, under ~5 % is durable.
      */
-    private static List<DurabilityPoint> durability(List<Activity> activities, LocalDate today) {
-        LocalDate from = today.minusMonths(DURABILITY_MONTHS);
+    private static List<DurabilityPoint> durability(List<Activity> activities, LocalDate today,
+                                                    int monthCount) {
+        LocalDate from = today.minusMonths(monthCount);
         return activities.stream()
                 .filter(a -> !a.getDate().isBefore(from) && !a.getDate().isAfter(today))
                 .filter(a -> a.getDurationMin() >= DURABILITY_MIN_MIN && a.getStreamsJson() != null)
@@ -529,10 +558,11 @@ public class RunningStatsService {
 
     /* ── Volume & efficiency ───────────────────────────────────────────── */
 
-    private static List<WeekVolume> weeklyVolume(List<Activity> activities, LocalDate today) {
+    private static List<WeekVolume> weeklyVolume(List<Activity> activities, LocalDate today,
+                                                 int weekCount) {
         LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
         Map<LocalDate, List<Activity>> byWeek = new LinkedHashMap<>();
-        for (int i = WEEKS - 1; i >= 0; i--) {
+        for (int i = weekCount - 1; i >= 0; i--) {
             byWeek.put(currentWeekStart.minusWeeks(i), new ArrayList<>());
         }
         for (Activity activity : activities) {
@@ -557,10 +587,11 @@ public class RunningStatsService {
     }
 
     /** Metres per heartbeat on runs with HR — the aerobic-efficiency trend. */
-    private static List<MonthEfficiency> efficiency(List<Activity> activities, LocalDate today) {
+    private static List<MonthEfficiency> efficiency(List<Activity> activities, LocalDate today,
+                                                    int monthCount) {
         Map<YearMonth, List<Activity>> byMonth = new LinkedHashMap<>();
         YearMonth current = YearMonth.from(today);
-        for (int i = EFFICIENCY_MONTHS - 1; i >= 0; i--) {
+        for (int i = monthCount - 1; i >= 0; i--) {
             byMonth.put(current.minusMonths(i), new ArrayList<>());
         }
         for (Activity activity : activities) {
