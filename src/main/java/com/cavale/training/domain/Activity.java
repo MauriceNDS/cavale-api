@@ -45,7 +45,7 @@ public class Activity extends Auditable {
     @Column(nullable = false, length = 10)
     private ActivitySource source;
 
-    /** RUN or CROSS (bike): cross-training feeds load but not run-only stats. */
+    /** RUN, CROSS (bike) or HIKE (trek): non-run work feeds load but not run-only stats. */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private Discipline discipline = Discipline.RUN;
@@ -206,12 +206,12 @@ public class Activity extends Auditable {
         this.recordsAnalyzed = true;
     }
 
-    /** Tag this activity's discipline (RUN or CROSS) — set from its session. */
+    /** Tag this activity's discipline — set from its session or the Strava sport type. */
     public void markDiscipline(Discipline discipline) {
         this.discipline = discipline;
     }
 
-    /** Cross-training (a bike) is excluded from every run-only statistic. */
+    /** Cross-training and hikes are excluded from every run-only statistic. */
     public boolean isRun() {
         return discipline == Discipline.RUN;
     }

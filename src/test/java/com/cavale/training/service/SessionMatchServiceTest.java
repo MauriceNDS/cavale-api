@@ -150,6 +150,22 @@ class SessionMatchServiceTest {
     }
 
     @Test
+    void hike_neverProposedForRunSession_andConversely() {
+        PlannedSession session = runSession(DATE, 240);
+        Activity hike = run(DATE, 240, 1L);
+        hike.markDiscipline(Discipline.HIKE);
+        candidates(hike);
+        noOtherSessions();
+
+        assertThat(service().proposeFor(session)).isEmpty();
+
+        PlannedSession trek = new PlannedSession(session.getWeek(), USER, DATE, 0,
+                Discipline.HIKE, "Trek Chamonix", null, null, 240, 1200, null, null);
+        ReflectionTestUtils.setField(trek, "id", UUID.randomUUID());
+        assertThat(service().proposeFor(trek)).contains(hike);
+    }
+
+    @Test
     void manualActivities_areNeverProposed() {
         PlannedSession session = runSession(DATE, 60);
         Activity manual = run(DATE, 60, 1L);

@@ -6,7 +6,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -18,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivityBestEffort;
+import com.cavale.training.domain.Discipline;
 import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 
@@ -41,7 +41,12 @@ public class StravaSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(StravaSyncService.class);
 
-    static final Set<String> RUN_SPORTS = Set.of("Run", "TrailRun", "VirtualRun");
+    /** Ingested Strava sport types and the discipline each lands as. */
+    static final Map<String, Discipline> SPORT_DISCIPLINES = Map.of(
+            "Run", Discipline.RUN,
+            "TrailRun", Discipline.RUN,
+            "VirtualRun", Discipline.RUN,
+            "Hike", Discipline.HIKE);
     private static final int PAGE_SIZE = 200;
     private static final int MAX_PAGES = 100;
     private static final int ANALYZE_BATCH = 50;
@@ -84,7 +89,7 @@ public class StravaSyncService {
                 break;
             }
             List<StravaDtos.ActivitySummary> runs = batch.stream()
-                    .filter(a -> RUN_SPORTS.contains(a.sportType()))
+                    .filter(a -> SPORT_DISCIPLINES.containsKey(a.sportType()))
                     .toList();
             totalRuns += runs.size();
 
@@ -116,7 +121,7 @@ public class StravaSyncService {
 
         List<StravaDtos.ActivitySummary> runs = stravaClient
                 .listActivities(connection.getAccessToken(), after, now).stream()
-                .filter(a -> RUN_SPORTS.contains(a.sportType()))
+                .filter(a -> SPORT_DISCIPLINES.containsKey(a.sportType()))
                 .toList();
 
         UpsertCounts counts = upsertRuns(userId, runs);
@@ -134,7 +139,7 @@ public class StravaSyncService {
         StravaConnection connection = authService.freshConnection(userId);
         StravaDtos.ActivityDetail detail =
                 stravaClient.getActivity(connection.getAccessToken(), stravaActivityId);
-        if (detail == null || !RUN_SPORTS.contains(detail.sportType())
+        if (detail == null || !SPORT_DISCIPLINES.containsKey(detail.sportType())
                 || detail.startDateLocal() == null || detail.movingTime() == null) {
             return;
         }
@@ -152,6 +157,7 @@ public class StravaSyncService {
                             ? (int) Math.round(detail.totalElevationGain()) : null,
                     toInt(detail.averageHeartrate()),
                     detail.name(), detail.id()));
+            activity.markDiscipline(SPORT_DISCIPLINES.get(detail.sportType()));
         } else {
             activity.refreshFromSource(detail.name(),
                     Math.max(1, Math.round(detail.movingTime() / 60f)),
@@ -258,6 +264,7 @@ public class StravaSyncService {
                 (int) Math.round(run.totalElevationGain()),
                 toInt(run.averageHeartrate()),
                 run.name(), run.id());
+        activity.markDiscipline(SPORT_DISCIPLINES.get(run.sportType()));
         activity.enrich(cadenceSpm(run.averageCadence()), toInt(run.sufferScore()), toInt(run.maxHeartrate()));
         return activity;
     }

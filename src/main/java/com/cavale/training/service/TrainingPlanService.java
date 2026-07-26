@@ -261,6 +261,12 @@ public class TrainingPlanService {
                 throw new IllegalArgumentException("date " + newDate + " is outside the plan range");
             }
             int newOrder = request.orderInDay() != null ? request.orderInDay() : session.getOrderInDay();
+            boolean moves = !newDate.equals(session.getDate()) || newOrder != session.getOrderInDay();
+            if (moves && (session.getStatus() == SessionStatus.DONE
+                    || session.getStatus() == SessionStatus.SKIPPED)) {
+                throw new IllegalArgumentException(
+                        "a " + session.getStatus() + " session cannot be moved");
+            }
             session.moveTo(newDate, newOrder);
             // Keep the session in the week its new date falls in, so weekly
             // progress attributes its load to the right week (not the old one).

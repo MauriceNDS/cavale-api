@@ -5,6 +5,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,9 +46,12 @@ public class SessionMatchService {
         this.sessionRepository = sessionRepository;
     }
 
+    /** Disciplines whose activities arrive from Strava and can realize a session. */
+    private static final Set<Discipline> MATCHABLE = Set.of(Discipline.RUN, Discipline.HIKE);
+
     @Transactional(readOnly = true)
     public Optional<Activity> proposeFor(PlannedSession session) {
-        if (session.getDiscipline() != Discipline.RUN || session.getStatus() != SessionStatus.PLANNED) {
+        if (!MATCHABLE.contains(session.getDiscipline()) || session.getStatus() != SessionStatus.PLANNED) {
             return Optional.empty();
         }
         LocalDate from = session.getDate().minusDays(WINDOW_DAYS);
@@ -62,6 +66,8 @@ public class SessionMatchService {
 
         return candidates.stream()
                 .filter(a -> a.getExternalId() != null)
+                // a hike never realizes a planned run (and vice versa)
+                .filter(a -> a.getDiscipline() == session.getDiscipline())
                 .filter(a -> qualifies(session, a, nearbySessions))
                 .min(Comparator.comparingInt(a -> score(session, a)));
     }
@@ -79,7 +85,7 @@ public class SessionMatchService {
         // The run's own day claims it first: don't steal what fits another slot.
         return nearbySessions.stream().noneMatch(other -> !other.getId().equals(session.getId())
                 && other.getDate().equals(activity.getDate())
-                && other.getDiscipline() == Discipline.RUN
+                && other.getDiscipline() == session.getDiscipline()
                 && other.getStatus() == SessionStatus.PLANNED);
     }
 

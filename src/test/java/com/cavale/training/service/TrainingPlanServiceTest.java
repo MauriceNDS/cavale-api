@@ -272,6 +272,44 @@ class TrainingPlanServiceTest {
     }
 
     @Test
+    void updateSession_rejectsMovingDoneSession() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        session.updateStatus(SessionStatus.DONE);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(LocalDate.of(2026, 10, 11), null, null, null, null, null, null, null, null, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cannot be moved");
+        assertThat(session.getDate()).isEqualTo(LocalDate.of(2026, 10, 10));
+    }
+
+    @Test
+    void updateSession_rejectsMovingSkippedSession() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        session.updateStatus(SessionStatus.SKIPPED);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(LocalDate.of(2026, 10, 11), null, null, null, null, null, null, null, null, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void updateSession_sameDateOnDoneSessionIsNotAMove() {
+        PlannedSession session = sessionOwnedBy(OWNER);
+        session.updateStatus(SessionStatus.DONE);
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+
+        // idempotent re-send of the current date must stay accepted (MCP edits
+        // often echo the whole session back)
+        service().updateSession(OWNER, session.getId(),
+                new UpdateSessionRequest(LocalDate.of(2026, 10, 10), null, null, null, null, null, null, null, null, null, null, null, null));
+
+        assertThat(session.getStatus()).isEqualTo(SessionStatus.DONE);
+    }
+
+    @Test
     void updateSession_hidesForeignSessionAs404() {
         PlannedSession session = sessionOwnedBy(OWNER);
         when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));

@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivityBestEffort;
+import com.cavale.training.domain.Discipline;
 import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 
@@ -94,12 +95,29 @@ class StravaSyncServiceTest {
         Activity imported = captor.getValue();
         assertThat(imported.getExternalId()).isEqualTo(3L);
         assertThat(imported.getSession()).isNull();
+        assertThat(imported.getDiscipline()).isEqualTo(Discipline.RUN);
         // cadence stored as both-legs SPM, relative effort from suffer score
         assertThat(imported.getAvgCadenceSpm()).isEqualByComparingTo("168.0");
         assertThat(imported.getRelativeEffort()).isEqualTo(61);
         assertThat(imported.getMaxHr()).isEqualTo(172);
         // known one enriched, not recreated
         assertThat(known.getAvgCadenceSpm()).isEqualByComparingTo("168.0");
+    }
+
+    @Test
+    void syncHistory_importsHikesAsHikeDiscipline() {
+        when(authService.freshConnection(USER)).thenReturn(connection());
+        when(stravaClient.listActivitiesPage(anyString(), eq(1), anyInt()))
+                .thenReturn(List.of(summary(1L, "Hike")));
+        when(activityRepository.findByExternalIdIn(anyCollection())).thenReturn(List.of());
+
+        StravaSyncService.SyncResult result = service().syncHistory(USER);
+
+        assertThat(result.imported()).isEqualTo(1);
+        ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityRepository).save(captor.capture());
+        assertThat(captor.getValue().getDiscipline()).isEqualTo(Discipline.HIKE);
+        assertThat(captor.getValue().isRun()).isFalse(); // stays out of run-only stats
     }
 
     @Test
@@ -203,6 +221,23 @@ class StravaSyncServiceTest {
         assertThat(known.getDurationMin()).isEqualTo(60);
         verify(activityRepository, never()).save(any());
         verify(bestEffortRepository, never()).save(any()); // unique(activity,distance)
+    }
+
+    @Test
+    void upsertFromStrava_importsHikeAsHikeDiscipline() {
+        when(authService.freshConnection(USER)).thenReturn(connection());
+        when(stravaClient.getActivity(anyString(), eq(9L))).thenReturn(
+                new StravaDtos.ActivityDetail(9L, "Trek Chamonix", "Hike",
+                        LocalDateTime.of(LocalDate.of(2026, 5, 10), LocalTime.of(8, 0)),
+                        18000.0, 14400, 1200.0, 110.0, null, null, 40.0, null));
+        when(activityRepository.findByExternalId(9L)).thenReturn(java.util.Optional.empty());
+        when(activityRepository.save(any(Activity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service().upsertFromStrava(USER, 9L);
+
+        ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityRepository).save(captor.capture());
+        assertThat(captor.getValue().getDiscipline()).isEqualTo(Discipline.HIKE);
     }
 
     @Test

@@ -194,7 +194,7 @@ public class StravaActivityService {
         Instant now = Instant.now();
         return stravaClient.listActivities(connection.getAccessToken(),
                         now.minusSeconds(WINDOW_DAYS * 86400L), now).stream()
-                .filter(a -> StravaSyncService.RUN_SPORTS.contains(a.sportType()))
+                .filter(a -> StravaSyncService.SPORT_DISCIPLINES.containsKey(a.sportType()))
                 .toList();
     }
 
