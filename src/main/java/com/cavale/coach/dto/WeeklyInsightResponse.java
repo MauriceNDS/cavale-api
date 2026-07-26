@@ -3,14 +3,15 @@ package com.cavale.coach.dto;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.cavale.coach.domain.CoachProposal;
 import com.cavale.coach.domain.ProposalKind;
 import com.cavale.coach.domain.ProposalStatus;
 import com.cavale.coach.domain.WeeklyInsight;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public record WeeklyInsightResponse(
@@ -24,17 +25,20 @@ public record WeeklyInsightResponse(
             UUID id,
             ProposalKind kind,
             UUID sessionId,
-            JsonNode payload,
+            /** Kind-specific change as plain key/values (Map — serializes anywhere). */
+            Map<String, Object> payload,
             String rationale,
             ProposalStatus status,
             Instant resolvedAt) {
 
         static ProposalResponse from(CoachProposal proposal, ObjectMapper mapper) {
-            JsonNode payload;
+            Map<String, Object> payload;
             try {
-                payload = mapper.readTree(proposal.getPayload());
+                payload = mapper.readValue(proposal.getPayload(),
+                        new TypeReference<Map<String, Object>>() {
+                        });
             } catch (JsonProcessingException e) {
-                payload = mapper.createObjectNode();
+                payload = Map.of();
             }
             return new ProposalResponse(proposal.getId(), proposal.getKind(),
                     proposal.getSessionId(), payload, proposal.getRationale(),
