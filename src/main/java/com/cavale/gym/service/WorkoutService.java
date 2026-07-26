@@ -140,16 +140,39 @@ public class WorkoutService {
             throw new IllegalArgumentException("Une série enregistre des reps ou des secondes");
         }
         Exercise exercise = exerciseService.getOwned(userId, request.exerciseId());
+        boolean warmup = Boolean.TRUE.equals(request.warmup());
         SetLog set = setLogRepository
                 .findByWorkoutLogIdAndExerciseIdAndSetNumber(workoutLogId, exercise.getId(),
                         request.setNumber())
                 .map(existing -> {
                     existing.updateMeasures(request.reps(), request.weightKg(), request.seconds(),
-                            request.position());
+                            request.position(), warmup);
                     return existing;
                 })
-                .orElseGet(() -> setLogRepository.save(new SetLog(log, exercise, request.position(),
-                        request.setNumber(), request.reps(), request.weightKg(), request.seconds())));
+                .orElseGet(() -> {
+                    SetLog created = setLogRepository.save(new SetLog(log, exercise,
+                            request.position(), request.setNumber(), request.reps(),
+                            request.weightKg(), request.seconds()));
+                    created.markWarmup(warmup);
+                    return created;
+                });
+        // Re-ticking a set to correct it must not silently erase how it felt.
+        if (request.rir() != null) {
+            set.rateReserve(request.rir());
+        }
+        return SetLogResponse.from(set);
+    }
+
+    /**
+     * Answer "how many reps did you have left?" after the fact — the rest
+     * countdown is dead time, so that is where the question gets asked.
+     */
+    @Transactional
+    public SetLogResponse rateSet(UUID userId, UUID setLogId, Integer rir) {
+        SetLog set = setLogRepository.findById(setLogId)
+                .filter(s -> s.getWorkoutLog().getUserId().equals(userId))
+                .orElseThrow(() -> new ResourceNotFoundException("Set", setLogId));
+        set.rateReserve(rir);
         return SetLogResponse.from(set);
     }
 
@@ -225,7 +248,7 @@ public class WorkoutService {
         WorkoutLog log = getOwnedInProgress(userId, workoutLogId);
         TemplateExercise te = blockOf(log, templateExerciseId);
         WorkoutBlockOverride override = overrideOf(log, te);
-        override.adjustSets(request.sets() == prescribedSets(log, te) ? null : request.sets());
+        override.adjustSets(request.sets() == te.getSets() ? null : request.sets());
         return block(log, te, saveOrPrune(override));
     }
 
@@ -314,25 +337,40 @@ public class WorkoutService {
         // the pool and the taken set are shared by every block — one query each
         List<Exercise> pool = exerciseService.list(log.getUserId());
         java.util.Set<UUID> taken = takenExerciseIds(log, null);
-        List<WorkoutBlockResponse> blocks = new java.util.ArrayList<>(log.getTemplateVariant() != null
+        List<TemplateExercise> prescriptions = log.getTemplateVariant() != null
                 ? templateExerciseRepository
-                        .findByVariantIdOrderByPositionAsc(log.getTemplateVariant().getId()).stream()
-                        .map(te -> block(log, te, overrides.get(te.getId()), pool, taken))
-                        .toList()
-                : List.of());
+                        .findByVariantIdOrderByPositionAsc(log.getTemplateVariant().getId())
+                : List.of();
+        List<WorkoutBlockResponse> blocks = new java.util.ArrayList<>(prescriptions.stream()
+                .map(te -> block(log, te, overrides.get(te.getId()), pool, taken))
+                .toList());
         extraBlockRepository.findByWorkoutLogIdOrderByPositionAsc(log.getId())
                 .forEach(extra -> blocks.add(extraBlock(log.getUserId(), extra)));
-        GymTemplateVariant variant = log.getTemplateVariant();
         return new WorkoutDetailResponse(WorkoutLogResponse.from(log, setResponses(log.getId())),
-                blocks,
-                variant != null ? variant.getCircuitLoops() : null,
-                variant != null ? variant.getCircuitRestSec() : null);
+                blocks, circuitLoops(prescriptions), circuitRestSec(prescriptions));
     }
 
-    /** In a circuit every block runs once per loop — the loop count IS the set count. */
-    private static int prescribedSets(WorkoutLog log, TemplateExercise te) {
-        GymTemplateVariant variant = log.getTemplateVariant();
-        return variant != null && variant.isCircuit() ? variant.getCircuitLoops() : te.getSets();
+    /**
+     * The whole variant chained into one group is what used to be a circuit,
+     * and it runs for as many rounds as its longest member has sets. Anything
+     * else — no group, or several — is not a circuit, so this is null and the
+     * blocks are read as plain sets×reps.
+     */
+    private static Integer circuitLoops(List<TemplateExercise> prescriptions) {
+        return singleGroup(prescriptions)
+                ? prescriptions.stream().mapToInt(TemplateExercise::getSets).max().orElse(1)
+                : null;
+    }
+
+    /** Rest after the last member of the round — the old between-loops rest. */
+    private static Integer circuitRestSec(List<TemplateExercise> prescriptions) {
+        return singleGroup(prescriptions) ? prescriptions.getLast().getRestSec() : null;
+    }
+
+    private static boolean singleGroup(List<TemplateExercise> prescriptions) {
+        return prescriptions.size() > 1
+                && prescriptions.stream().allMatch(te -> te.getGroupKey() != null)
+                && prescriptions.stream().map(TemplateExercise::getGroupKey).distinct().count() == 1;
     }
 
     /** Single-block endpoints re-derive the shared context; detail() passes it in. */
@@ -367,7 +405,7 @@ public class WorkoutService {
                 .map(ExerciseResponse::from)
                 .toList();
 
-        int prescribedSets = prescribedSets(log, te);
+        int prescribedSets = te.getSets();
         int sets = override != null && override.getSets() != null
                 ? override.getSets() : prescribedSets;
         return new WorkoutBlockResponse(te.getId(), null, ExerciseResponse.from(exercise),
@@ -375,7 +413,7 @@ public class WorkoutService {
                 override != null && override.isSkipped(),
                 declared.stream().map(ExerciseResponse::from).toList(), suggested,
                 sets, prescribedSets, te.getReps(), te.getSeconds(), te.getRestSec(),
-                te.getIntensityPct(), te.getNote(), lastSets, record);
+                te.getIntensityPct(), te.getNote(), te.getGroupKey(), lastSets, record);
     }
 
     /** A mid-workout addition as a block: same prefills, no alternatives to offer. */
@@ -390,7 +428,7 @@ public class WorkoutService {
                 : null;
         return new WorkoutBlockResponse(null, extra.getId(), ExerciseResponse.from(exercise), null,
                 false, List.of(), List.of(), extra.getSets(), extra.getSets(), extra.getReps(),
-                extra.getSeconds(), extra.getRestSec(), null, extra.getNote(), lastSets, record);
+                extra.getSeconds(), extra.getRestSec(), null, extra.getNote(), null, lastSets, record);
     }
 
     /**

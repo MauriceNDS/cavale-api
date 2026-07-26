@@ -1,5 +1,6 @@
 package com.cavale.gym.domain;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -66,6 +67,22 @@ public class Exercise extends Auditable {
     @Column(name = "running_benefit", columnDefinition = "text")
     private String runningBenefit;
 
+    /**
+     * Smallest load step that is actually loadable on this exercise — the
+     * granularity the live workout's −/+ buttons move by, and the value
+     * suggestions are rounded down to. Null falls back to the equipment's
+     * default (see {@link Equipment#defaultIncrementKg()}).
+     */
+    @Column(name = "increment_kg", precision = 4, scale = 2)
+    private BigDecimal incrementKg;
+
+    /**
+     * A sane starting load, for the first session on this exercise — before
+     * any history exists there is nothing to estimate a 1RM from.
+     */
+    @Column(name = "reference_weight_kg", precision = 5, scale = 1)
+    private BigDecimal referenceWeightKg;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "derived_from_id")
     private Exercise derivedFrom;
@@ -103,6 +120,17 @@ public class Exercise extends Auditable {
         this.description = description;
         this.resourceUrl = resourceUrl;
         this.runningBenefit = runningBenefit;
+    }
+
+    /** How the live workout loads this exercise: step size and a cold-start weight. */
+    public void updateLoading(BigDecimal incrementKg, BigDecimal referenceWeightKg) {
+        this.incrementKg = incrementKg;
+        this.referenceWeightKg = referenceWeightKg;
+    }
+
+    /** The step to move by — the exercise's own, else the equipment's default. */
+    public BigDecimal effectiveIncrementKg() {
+        return incrementKg != null ? incrementKg : equipment.defaultIncrementKg();
     }
 
     public void updateMuscles(Set<Muscle> muscles) {
@@ -154,6 +182,14 @@ public class Exercise extends Auditable {
 
     public String getRunningBenefit() {
         return runningBenefit;
+    }
+
+    public BigDecimal getIncrementKg() {
+        return incrementKg;
+    }
+
+    public BigDecimal getReferenceWeightKg() {
+        return referenceWeightKg;
     }
 
     public Exercise getDerivedFrom() {

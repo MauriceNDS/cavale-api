@@ -242,7 +242,7 @@ class CoachToolsTest {
         when(gymTemplateService.updateExercise(eq(ATHLETE), eq(te.getId()), any())).thenReturn(te);
 
         tools().updateTemplateExercise(te.getId().toString(), exercise.getId().toString(),
-                4, 6, null, 150, 75, "tempo 3-1-1");
+                4, 6, null, 150, 75, "tempo 3-1-1", "A");
 
         ArgumentCaptor<TemplateExerciseRequest> captor =
                 ArgumentCaptor.forClass(TemplateExerciseRequest.class);

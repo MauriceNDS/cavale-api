@@ -38,14 +38,16 @@ public final class TemplateDtos {
             String note) {
     }
 
-    /** Turn a variant into a circuit (loops set) or back into a classic program (loops null). */
-    public record CircuitRequest(
-            @Min(value = 1, message = "A circuit runs at least one loop")
-            @Max(value = 10, message = "At most 10 loops")
-            Integer loops,
-            @Min(value = 0, message = "Rest must not be negative")
-            @Max(value = 900, message = "Rest between loops is at most 15 minutes")
-            Integer restSec) {
+    /** One prescription's superset membership — null key means standalone. */
+    public record GroupAssignment(
+            @NotNull(message = "Prescription is required")
+            UUID templateExerciseId,
+            @Size(max = 4, message = "A group key is at most 4 characters")
+            String groupKey) {
+    }
+
+    /** Rewrites every prescription's grouping at once — the whole variant. */
+    public record GroupsRequest(@NotNull List<GroupAssignment> assignments) {
     }
 
     public record TemplateExerciseRequest(
@@ -63,7 +65,10 @@ public final class TemplateDtos {
             @Max(value = 200, message = "Intensity must be a percentage")
             Integer intensityPct,
             @Size(max = 300, message = "Note must not exceed 300 characters")
-            String note) {
+            String note,
+            /** Superset this prescription belongs to — shared with its neighbours. */
+            @Size(max = 4, message = "A group key is at most 4 characters")
+            String groupKey) {
     }
 
     public record ReorderRequest(@NotNull List<UUID> orderedIds) {
@@ -74,12 +79,11 @@ public final class TemplateDtos {
 
     /* ── Responses ────────────────────────────────────────────────────── */
 
-    public record VariantSummary(UUID id, String label, String note, long exerciseCount,
-                                 Integer circuitLoops, Integer circuitRestSec) {
+    public record VariantSummary(UUID id, String label, String note, long exerciseCount) {
 
         public static VariantSummary from(GymTemplateVariant variant, long exerciseCount) {
             return new VariantSummary(variant.getId(), variant.getLabel(), variant.getNote(),
-                    exerciseCount, variant.getCircuitLoops(), variant.getCircuitRestSec());
+                    exerciseCount);
         }
     }
 
@@ -102,7 +106,7 @@ public final class TemplateDtos {
 
     public record TemplateExerciseResponse(UUID id, int position, ExerciseResponse exercise,
                                            int sets, Integer reps, Integer seconds, Integer restSec,
-                                           Integer intensityPct, String note,
+                                           Integer intensityPct, String note, String groupKey,
                                            List<AlternativeResponse> alternatives) {
 
         public static TemplateExerciseResponse from(TemplateExercise te,
@@ -110,19 +114,18 @@ public final class TemplateDtos {
             return new TemplateExerciseResponse(te.getId(), te.getPosition(),
                     ExerciseResponse.from(te.getExercise()), te.getSets(), te.getReps(),
                     te.getSeconds(), te.getRestSec(), te.getIntensityPct(), te.getNote(),
-                    alternatives);
+                    te.getGroupKey(), alternatives);
         }
     }
 
     public record VariantDetailResponse(UUID id, UUID templateId, String templateName, String label,
-                                        String note, Integer circuitLoops, Integer circuitRestSec,
-                                        List<TemplateExerciseResponse> exercises) {
+                                        String note, List<TemplateExerciseResponse> exercises) {
 
         public static VariantDetailResponse from(GymTemplateVariant variant,
                                                  List<TemplateExerciseResponse> exercises) {
             return new VariantDetailResponse(variant.getId(), variant.getTemplate().getId(),
                     variant.getTemplate().getName(), variant.getLabel(), variant.getNote(),
-                    variant.getCircuitLoops(), variant.getCircuitRestSec(), exercises);
+                    exercises);
         }
     }
 }

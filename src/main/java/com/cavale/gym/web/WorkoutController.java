@@ -8,6 +8,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,6 +21,7 @@ import com.cavale.gym.dto.WorkoutDtos.AddExtraBlockRequest;
 import com.cavale.gym.dto.WorkoutDtos.AdjustSetsRequest;
 import com.cavale.gym.dto.WorkoutDtos.FinishWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.LogSetRequest;
+import com.cavale.gym.dto.WorkoutDtos.RateSetRequest;
 import com.cavale.gym.dto.WorkoutDtos.SetLogResponse;
 import com.cavale.gym.dto.WorkoutDtos.StartWorkoutRequest;
 import com.cavale.gym.dto.WorkoutDtos.SwapBlockRequest;
@@ -70,6 +72,13 @@ public class WorkoutController {
     public SetLogResponse logSet(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID workoutLogId,
                                  @Valid @RequestBody LogSetRequest request) {
         return workoutService.logSet(userId(jwt), workoutLogId, request);
+    }
+
+    @PatchMapping("/sets/{setLogId}/rating")
+    @Operation(summary = "Rate a logged set — reps left in reserve, answered during the rest that follows")
+    public SetLogResponse rateSet(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID setLogId,
+                                  @Valid @RequestBody RateSetRequest request) {
+        return workoutService.rateSet(userId(jwt), setLogId, request.rir());
     }
 
     @DeleteMapping("/sets/{setLogId}")

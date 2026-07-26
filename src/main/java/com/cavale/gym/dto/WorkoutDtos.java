@@ -33,7 +33,15 @@ public final class WorkoutDtos {
             @Min(value = 1, message = "Set number is 1-based") int setNumber,
             @Min(1) Integer reps,
             @Min(0) BigDecimal weightKg,
-            @Min(1) Integer seconds) {
+            @Min(1) Integer seconds,
+            /** An approach set — kept out of every statistic. Absent means a working set. */
+            Boolean warmup,
+            /** Reps left in reserve, 0–4 — usually answered later, during the rest. */
+            @Min(0) @Max(4) Integer rir) {
+    }
+
+    /** Rate a set after the fact, from the rest countdown that follows it. */
+    public record RateSetRequest(@Min(0) @Max(4) Integer rir) {
     }
 
     /** Replace a block's exercise for THIS workout — the prescribed one reverts. */
@@ -64,12 +72,13 @@ public final class WorkoutDtos {
     /* ── Responses ────────────────────────────────────────────────────── */
 
     public record SetLogResponse(UUID id, UUID exerciseId, String exerciseName, int position,
-                                 int setNumber, Integer reps, BigDecimal weightKg, Integer seconds) {
+                                 int setNumber, Integer reps, BigDecimal weightKg, Integer seconds,
+                                 boolean warmup, Integer rir) {
 
         public static SetLogResponse from(SetLog set) {
             return new SetLogResponse(set.getId(), set.getExercise().getId(), set.getExerciseName(),
                     set.getPosition(), set.getSetNumber(), set.getReps(), set.getWeightKg(),
-                    set.getSeconds());
+                    set.getSeconds(), set.isWarmup(), set.getRir());
         }
     }
 
@@ -114,11 +123,19 @@ public final class WorkoutDtos {
             Integer restSec,
             Integer intensityPct,
             String note,
+            /** Superset this block belongs to — shared with its neighbours, null when standalone. */
+            String groupKey,
             List<SetLogResponse> lastSets,
             BigDecimal recordWeightKg) {
     }
 
-    /** Circuit fields are set when the variant is a circuit: blocks run as loops. */
+    /**
+     * Circuit fields are DERIVED from the groups, for the benefit of the
+     * current runner: they are set only when one group holds every block, in
+     * which case loops is the longest member's set count and the rest is the
+     * one taken after the last block. The rewritten runner reads the groups
+     * directly and these go away with it.
+     */
     public record WorkoutDetailResponse(WorkoutLogResponse log, List<WorkoutBlockResponse> blocks,
                                         Integer circuitLoops, Integer circuitRestSec) {
     }

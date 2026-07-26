@@ -16,7 +16,13 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
-/** One face of a template — "Force Max A" — holding the actual exercises. */
+/**
+ * One face of a template — "Force Max A" — holding the actual exercises.
+ *
+ * <p>How the exercises are chained is not the variant's business: it lives
+ * on the prescriptions themselves, which group into supersets. A circuit is
+ * simply the case where one group holds them all.
+ */
 @Entity
 @Table(name = "gym_template_variant")
 public class GymTemplateVariant extends Auditable {
@@ -37,14 +43,6 @@ public class GymTemplateVariant extends Auditable {
     @Column(length = 300)
     private String note;
 
-    /** Loops of a circuit variant — null means a classic sets×reps program. */
-    @Column(name = "circuit_loops")
-    private Integer circuitLoops;
-
-    /** Rest between circuit loops, seconds. */
-    @Column(name = "circuit_rest_sec")
-    private Integer circuitRestSec;
-
     protected GymTemplateVariant() {
     }
 
@@ -57,16 +55,6 @@ public class GymTemplateVariant extends Auditable {
     public void update(String label, String note) {
         this.label = label;
         this.note = note;
-    }
-
-    /** Turn the variant into a circuit (loops ≥ 1) or back into a classic program (null). */
-    public void configureCircuit(Integer loops, Integer restSec) {
-        this.circuitLoops = loops;
-        this.circuitRestSec = loops != null ? restSec : null;
-    }
-
-    public boolean isCircuit() {
-        return circuitLoops != null;
     }
 
     public UUID getId() {
@@ -83,14 +71,6 @@ public class GymTemplateVariant extends Auditable {
 
     public String getNote() {
         return note;
-    }
-
-    public Integer getCircuitLoops() {
-        return circuitLoops;
-    }
-
-    public Integer getCircuitRestSec() {
-        return circuitRestSec;
     }
 
     @Override

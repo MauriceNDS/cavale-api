@@ -1,7 +1,12 @@
 package com.cavale.gym.service;
 
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +19,7 @@ import com.cavale.gym.domain.GymTemplateVariant;
 import com.cavale.gym.domain.TemplateExercise;
 import com.cavale.gym.domain.TemplateExerciseAlternative;
 import com.cavale.gym.dto.TemplateDtos.AlternativeResponse;
+import com.cavale.gym.dto.TemplateDtos.GroupAssignment;
 import com.cavale.gym.dto.TemplateDtos.ReorderRequest;
 import com.cavale.gym.dto.TemplateDtos.TemplateExerciseRequest;
 import com.cavale.gym.dto.TemplateDtos.TemplateExerciseResponse;
@@ -127,11 +133,11 @@ public class GymTemplateService {
     public GymTemplateVariant copyVariant(UUID userId, UUID variantId, VariantRequest request) {
         GymTemplateVariant source = getOwnedVariant(userId, variantId);
         GymTemplateVariant copy = addVariant(userId, source.getTemplate().getId(), request);
-        copy.configureCircuit(source.getCircuitLoops(), source.getCircuitRestSec());
         for (TemplateExercise te : templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId)) {
             TemplateExercise cloned = templateExerciseRepository.save(new TemplateExercise(copy,
                     te.getExercise(), te.getPosition(), te.getSets(), te.getReps(), te.getSeconds(),
                     te.getRestSec(), te.getIntensityPct(), te.getNote()));
+            cloned.assignGroup(te.getGroupKey()); // supersets travel with the copy
             for (TemplateExerciseAlternative alt
                     : alternativeRepository.findByTemplateExerciseIdOrderByPositionAsc(te.getId())) {
                 alternativeRepository.save(new TemplateExerciseAlternative(cloned,
@@ -154,13 +160,53 @@ public class GymTemplateService {
         return variant;
     }
 
-    /** Configure or clear a variant's circuit mode — loops null reverts to sets×reps. */
+    /**
+     * Rewrite which prescriptions are chained into supersets, in one atomic
+     * call — the whole variant every time, so the editor can merge, split
+     * and re-letter in a single request. Members of a group must sit next to
+     * each other, since a superset is by definition performed in rotation;
+     * a key left with a single member is meaningless and is simply dropped.
+     * The group with every exercise in it is what used to be a circuit.
+     */
     @Transactional
-    public GymTemplateVariant configureCircuit(UUID userId, UUID variantId,
-                                               Integer loops, Integer restSec) {
-        GymTemplateVariant variant = getOwnedVariant(userId, variantId);
-        variant.configureCircuit(loops, restSec);
-        return variant;
+    public List<TemplateExerciseResponse> assignGroups(UUID userId, UUID variantId,
+                                                       List<GroupAssignment> assignments) {
+        getOwnedVariant(userId, variantId);
+        List<TemplateExercise> exercises =
+                templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId);
+        Map<UUID, String> wanted = new LinkedHashMap<>();
+        for (GroupAssignment assignment : assignments) {
+            wanted.put(assignment.templateExerciseId(), trimmed(assignment.groupKey()));
+        }
+        if (wanted.size() != exercises.size()
+                || !exercises.stream().map(TemplateExercise::getId).collect(Collectors.toSet())
+                        .equals(wanted.keySet())) {
+            throw new IllegalArgumentException(
+                    "L'assignation doit couvrir exactement les exercices de la variante");
+        }
+
+        List<String> ordered = exercises.stream().map(te -> wanted.get(te.getId())).toList();
+        Set<String> closed = new LinkedHashSet<>();
+        for (int i = 0; i < ordered.size(); i++) {
+            String key = ordered.get(i);
+            if (key == null) {
+                continue;
+            }
+            boolean starting = i == 0 || !key.equals(ordered.get(i - 1));
+            if (starting && !closed.add(key)) {
+                throw new IllegalArgumentException(
+                        "Les exercices d'un même groupe (« " + key + " ») doivent se suivre");
+            }
+        }
+
+        for (int i = 0; i < exercises.size(); i++) {
+            String key = ordered.get(i);
+            boolean alone = key != null
+                    && (i == 0 || !key.equals(ordered.get(i - 1)))
+                    && (i == ordered.size() - 1 || !key.equals(ordered.get(i + 1)));
+            exercises.get(i).assignGroup(alone ? null : key);
+        }
+        return exerciseResponses(variantId);
     }
 
     @Transactional
@@ -203,9 +249,13 @@ public class GymTemplateService {
         Exercise exercise = exerciseService.getOwned(userId, request.exerciseId());
         validateEffort(exercise, request.reps(), request.seconds());
         int position = (int) templateExerciseRepository.countByVariantId(variantId);
-        return templateExerciseRepository.save(new TemplateExercise(variant, exercise, position,
-                request.sets(), request.reps(), request.seconds(), request.restSec(),
-                request.intensityPct(), trimmed(request.note())));
+        TemplateExercise added = templateExerciseRepository.save(new TemplateExercise(variant,
+                exercise, position, request.sets(), request.reps(), request.seconds(),
+                request.restSec(), request.intensityPct(), trimmed(request.note())));
+        // A new prescription lands last, so it can only join the group ending there.
+        added.assignGroup(trimmed(request.groupKey()));
+        normalizeGroups(variantId);
+        return added;
     }
 
     @Transactional
@@ -217,6 +267,8 @@ public class GymTemplateService {
         te.swapExercise(exercise);
         te.updatePrescription(request.sets(), request.reps(), request.seconds(),
                 request.restSec(), request.intensityPct(), trimmed(request.note()));
+        te.assignGroup(trimmed(request.groupKey()));
+        normalizeGroups(te.getVariant().getId());
         return te;
     }
 
@@ -244,6 +296,7 @@ public class GymTemplateService {
         for (TemplateExercise te : exercises) {
             te.moveTo(request.orderedIds().indexOf(te.getId()));
         }
+        normalizeGroups(variantId);
         return exerciseResponses(variantId);
     }
 
@@ -274,6 +327,41 @@ public class GymTemplateService {
     }
 
     /* ── Internals ────────────────────────────────────────────────────── */
+
+    /**
+     * Keep the groups sane after the list has been shuffled: dragging an
+     * exercise out of the middle of a superset splits it rather than
+     * failing, and a key left alone stops being a group at all. The first
+     * run of a key wins; a later, detached run is released.
+     */
+    private void normalizeGroups(UUID variantId) {
+        List<TemplateExercise> exercises =
+                templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId);
+        Set<String> closed = new LinkedHashSet<>();
+        String previous = null;
+        for (TemplateExercise te : exercises) {
+            String key = te.getGroupKey();
+            if (key == null) {
+                previous = null;
+                continue;
+            }
+            if (!key.equals(previous) && !closed.add(key)) {
+                te.assignGroup(null); // this key already had its run earlier
+                previous = null;
+                continue;
+            }
+            previous = key;
+        }
+        for (int i = 0; i < exercises.size(); i++) {
+            String key = exercises.get(i).getGroupKey();
+            boolean alone = key != null
+                    && (i == 0 || !key.equals(exercises.get(i - 1).getGroupKey()))
+                    && (i == exercises.size() - 1 || !key.equals(exercises.get(i + 1).getGroupKey()));
+            if (alone) {
+                exercises.get(i).assignGroup(null);
+            }
+        }
+    }
 
     /** Ordered prescriptions of a variant as DTOs — call inside a transaction. */
     private List<TemplateExerciseResponse> exerciseResponses(UUID variantId) {

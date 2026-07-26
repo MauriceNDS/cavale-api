@@ -251,7 +251,7 @@ class WorkoutServiceTest {
         when(setLogRepository.save(any(SetLog.class))).thenAnswer(inv -> inv.getArgument(0));
 
         SetLogResponse first = service().logSet(USER, running.getId(),
-                new LogSetRequest(squat.getId(), 0, 1, 6, new BigDecimal("85.0"), null));
+                new LogSetRequest(squat.getId(), 0, 1, 6, new BigDecimal("85.0"), null, null, null));
         assertThat(first.weightKg()).isEqualByComparingTo("85.0");
 
         SetLog existing = new SetLog(running, squat, 0, 1, 6, new BigDecimal("85.0"), null);
@@ -259,10 +259,31 @@ class WorkoutServiceTest {
                 squat.getId(), 1)).thenReturn(Optional.of(existing));
 
         SetLogResponse corrected = service().logSet(USER, running.getId(),
-                new LogSetRequest(squat.getId(), 0, 1, 6, new BigDecimal("87.5"), null));
+                new LogSetRequest(squat.getId(), 0, 1, 6, new BigDecimal("87.5"), null, null, null));
 
         assertThat(corrected.weightKg()).isEqualByComparingTo("87.5");
         assertThat(existing.getWeightKg()).isEqualByComparingTo("87.5");
+    }
+
+    @Test
+    void logSet_defaultsToAWorkingSet_andKeepsTheRatingWhenCorrected() {
+        GymTemplateVariant variant = variant();
+        Exercise squat = squat();
+        WorkoutLog running = inProgress(variant, null);
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(exerciseService.getOwned(USER, squat.getId())).thenReturn(squat);
+
+        SetLog existing = new SetLog(running, squat, 0, 1, 6, new BigDecimal("85.0"), null);
+        existing.rateReserve(2);
+        when(setLogRepository.findByWorkoutLogIdAndExerciseIdAndSetNumber(running.getId(),
+                squat.getId(), 1)).thenReturn(Optional.of(existing));
+
+        // the runner omits warmup for an ordinary set, and re-ticks without a rating
+        SetLogResponse corrected = service().logSet(USER, running.getId(),
+                new LogSetRequest(squat.getId(), 0, 1, 6, new BigDecimal("90.0"), null, null, null));
+
+        assertThat(corrected.warmup()).isFalse();
+        assertThat(corrected.rir()).isEqualTo(2); // correcting the load never erases how it felt
     }
 
     @Test
@@ -272,7 +293,7 @@ class WorkoutServiceTest {
         when(workoutLogRepository.findById(done.getId())).thenReturn(Optional.of(done));
 
         assertThatThrownBy(() -> service().logSet(USER, done.getId(),
-                new LogSetRequest(UUID.randomUUID(), 0, 1, 6, null, null)))
+                new LogSetRequest(UUID.randomUUID(), 0, 1, 6, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("terminé");
     }
@@ -398,22 +419,50 @@ class WorkoutServiceTest {
     }
 
     @Test
-    void circuitVariant_loopCountBecomesEverySetCount() {
+    void oneGroupHoldingEverything_readsBackAsACircuit() {
         GymTemplateVariant variant = variant();
-        variant.configureCircuit(3, 60);
-        TemplateExercise te = prescription(variant, squat()); // prescribes 3×6 — ignored in circuit
+        TemplateExercise squat = prescription(variant, squat());   // 3 sets, rest 180
+        TemplateExercise planche = prescription(variant, exercise("Planche"));
+        ReflectionTestUtils.setField(planche, "position", 1);
+        squat.assignGroup("A");
+        planche.assignGroup("A");
         WorkoutLog running = inProgress(variant, null);
 
         when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
         when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(variant.getId()))
-                .thenReturn(List.of(te));
+                .thenReturn(List.of(squat, planche));
 
         WorkoutDetailResponse detail = service().get(USER, running.getId());
 
+        // rounds = the longest member's sets; the rest is the one after the last member
         assertThat(detail.circuitLoops()).isEqualTo(3);
-        assertThat(detail.circuitRestSec()).isEqualTo(60);
-        assertThat(detail.blocks().getFirst().sets()).isEqualTo(3);
-        assertThat(detail.blocks().getFirst().prescribedSets()).isEqualTo(3);
+        assertThat(detail.circuitRestSec()).isEqualTo(180);
+        assertThat(detail.blocks()).extracting(WorkoutBlockResponse::groupKey)
+                .containsExactly("A", "A");
+    }
+
+    @Test
+    void aSupersetIsNotACircuit_whenOtherBlocksStandAlone() {
+        GymTemplateVariant variant = variant();
+        TemplateExercise squat = prescription(variant, squat());
+        TemplateExercise planche = prescription(variant, exercise("Planche"));
+        ReflectionTestUtils.setField(planche, "position", 1);
+        TemplateExercise press = prescription(variant, exercise("Presse"));
+        ReflectionTestUtils.setField(press, "position", 2);
+        squat.assignGroup("A");
+        planche.assignGroup("A");
+        WorkoutLog running = inProgress(variant, null);
+
+        when(workoutLogRepository.findById(running.getId())).thenReturn(Optional.of(running));
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(variant.getId()))
+                .thenReturn(List.of(squat, planche, press));
+
+        WorkoutDetailResponse detail = service().get(USER, running.getId());
+
+        assertThat(detail.circuitLoops()).isNull();
+        assertThat(detail.circuitRestSec()).isNull();
+        assertThat(detail.blocks()).extracting(WorkoutBlockResponse::groupKey)
+                .containsExactly("A", "A", null);
     }
 
     @Test

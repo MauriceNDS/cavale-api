@@ -517,10 +517,15 @@ public class CoachTools {
             @ToolParam(description = "Video or article URL", required = false) String resourceUrl,
             @ToolParam(description = "Why a trail runner needs it, athlete's language", required = false) String runningBenefit,
             @ToolParam(description = "Target muscles", required = false) Set<Muscle> muscles,
+            @ToolParam(description = "Smallest loadable step in kg — omit to use the equipment's "
+                    + "default (barbell 2.5, dumbbell 2, machine/cable 5)", required = false)
+            BigDecimal incrementKg,
+            @ToolParam(description = "A sane starting load in kg, used on the very first session "
+                    + "before any history exists", required = false) BigDecimal referenceWeightKg,
             @ToolParam(description = "Parent exercise UUID when deriving", required = false) String derivedFromId) {
         return ExerciseResponse.from(exerciseService.create(currentUserId(),
                 new ExerciseRequest(name, category, equipment, measure, description, resourceUrl,
-                        runningBenefit, muscles,
+                        runningBenefit, muscles, incrementKg, referenceWeightKg,
                         derivedFromId != null ? UUID.fromString(derivedFromId) : null, null)));
     }
 
@@ -574,39 +579,53 @@ public class CoachTools {
     @Tool(name = "add_template_exercise", description = """
             Append a prescription to a variant: sets × reps (or seconds for \
             SECONDS exercises), optional rest, % of estimated 1RM and note. The \
-            exercise must exist in the library (list_exercises / create_exercise).""")
+            exercise must exist in the library (list_exercises / create_exercise). \
+            To prescribe a SUPERSET, give consecutive prescriptions the same \
+            groupKey: they are then performed in rotation, one set of each per \
+            round, for as many rounds as the longest member has sets. Inside a \
+            group restSec is the short transition to the next partner; on the \
+            LAST member it is the real rest before the next round. One group \
+            holding every exercise of the variant is a circuit.""")
     public TemplateExerciseResponse addTemplateExercise(
             @ToolParam(description = "Variant UUID") String variantId,
             @ToolParam(description = "Exercise UUID") String exerciseId,
             @ToolParam(description = "Number of sets") int sets,
             @ToolParam(description = "Reps per set (rep-based exercises)", required = false) Integer reps,
             @ToolParam(description = "Seconds per set (SECONDS exercises)", required = false) Integer seconds,
-            @ToolParam(description = "Rest between sets, seconds", required = false) Integer restSec,
+            @ToolParam(description = "Rest AFTER this exercise, seconds", required = false) Integer restSec,
             @ToolParam(description = "% of estimated 1RM", required = false) Integer intensityPct,
-            @ToolParam(description = "Note (tempo…), athlete's language", required = false) String note) {
+            @ToolParam(description = "Note (tempo…), athlete's language", required = false) String note,
+            @ToolParam(description = "Superset key, e.g. 'A' — share it with the neighbouring "
+                    + "prescriptions to chain them; omit for a standalone exercise", required = false)
+            String groupKey) {
         return TemplateExerciseResponse.from(gymTemplateService.addExercise(currentUserId(),
                 UUID.fromString(variantId), new TemplateExerciseRequest(UUID.fromString(exerciseId),
-                        sets, reps, seconds, restSec, intensityPct, note)), List.of());
+                        sets, reps, seconds, restSec, intensityPct, note, groupKey)), List.of());
     }
 
     @Tool(name = "update_template_exercise", description = """
             Rewrite a prescription of a program variant — the way to redo gym \
             periodization (change sets × reps, rest, %1RM, note, or swap the \
-            movement). FULL REPLACEMENT: read get_template_variant first and \
-            resend the unchanged values, including the exercise UUID (same one \
-            to keep the movement, another to swap it). Alternatives are kept.""")
+            movement, or chain it into a superset). FULL REPLACEMENT: read \
+            get_template_variant first and resend the unchanged values, \
+            including the exercise UUID (same one to keep the movement, another \
+            to swap it) and the groupKey — omitting it REMOVES the prescription \
+            from its superset. Alternatives are kept.""")
     public TemplateExerciseResponse updateTemplateExercise(
             @ToolParam(description = "Template exercise UUID (from get_template_variant)") String templateExerciseId,
             @ToolParam(description = "Exercise UUID — current one to keep, another to swap") String exerciseId,
             @ToolParam(description = "Number of sets") int sets,
             @ToolParam(description = "Reps per set (rep-based exercises)", required = false) Integer reps,
             @ToolParam(description = "Seconds per set (SECONDS exercises)", required = false) Integer seconds,
-            @ToolParam(description = "Rest between sets, seconds", required = false) Integer restSec,
+            @ToolParam(description = "Rest AFTER this exercise, seconds", required = false) Integer restSec,
             @ToolParam(description = "% of estimated 1RM", required = false) Integer intensityPct,
-            @ToolParam(description = "Note (tempo…), athlete's language", required = false) String note) {
+            @ToolParam(description = "Note (tempo…), athlete's language", required = false) String note,
+            @ToolParam(description = "Superset key shared with the neighbouring prescriptions — "
+                    + "omit to leave the superset", required = false) String groupKey) {
         return TemplateExerciseResponse.from(gymTemplateService.updateExercise(currentUserId(),
                 UUID.fromString(templateExerciseId), new TemplateExerciseRequest(
-                        UUID.fromString(exerciseId), sets, reps, seconds, restSec, intensityPct, note)),
+                        UUID.fromString(exerciseId), sets, reps, seconds, restSec, intensityPct,
+                        note, groupKey)),
                 List.of());
     }
 

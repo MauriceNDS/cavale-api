@@ -54,7 +54,7 @@ class ExerciseServiceTest {
         return new ExerciseRequest(name, ExerciseCategory.FORCE, Equipment.BARBELL,
                 ExerciseMeasure.WEIGHT_REPS, "Descendre sous la parallèle…",
                 "https://youtube.com/watch?v=squat", "Force des quadris pour les descentes",
-                Set.of(Muscle.QUADRICEPS, Muscle.FESSIERS), null, null);
+                Set.of(Muscle.QUADRICEPS, Muscle.FESSIERS), null, null, null, null);
     }
 
     private static Exercise squat() {
@@ -75,7 +75,7 @@ class ExerciseServiceTest {
         ExerciseRequest request = new ExerciseRequest("Squat excentrique", ExerciseCategory.FORCE,
                 Equipment.BARBELL, ExerciseMeasure.WEIGHT_REPS, "Descente en 5 secondes", null,
                 "Excentrique = casse musculaire des descentes longues",
-                Set.of(Muscle.QUADRICEPS), parent.getId(), null);
+                Set.of(Muscle.QUADRICEPS), null, null, parent.getId(), null);
 
         Exercise created = service().create(USER, request);
 
@@ -112,7 +112,7 @@ class ExerciseServiceTest {
         when(exerciseRepository.findById(exercise.getId())).thenReturn(Optional.of(exercise));
 
         ExerciseRequest request = new ExerciseRequest("Squat", ExerciseCategory.FORCE,
-                Equipment.BARBELL, ExerciseMeasure.WEIGHT_REPS, null, null, null, null, null, true);
+                Equipment.BARBELL, ExerciseMeasure.WEIGHT_REPS, null, null, null, null, null, null, null, true);
         service().update(USER, exercise.getId(), request);
 
         assertThat(exercise.isArchived()).isTrue();

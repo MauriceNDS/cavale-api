@@ -30,7 +30,7 @@ import com.cavale.gym.dto.TemplateDtos.TemplateExerciseResponse;
 import com.cavale.gym.dto.TemplateDtos.TemplateRequest;
 import com.cavale.gym.dto.TemplateDtos.TemplateResponse;
 import com.cavale.gym.dto.TemplateDtos.VariantDetailResponse;
-import com.cavale.gym.dto.TemplateDtos.CircuitRequest;
+import com.cavale.gym.dto.TemplateDtos.GroupsRequest;
 import com.cavale.gym.dto.TemplateDtos.VariantRequest;
 import com.cavale.gym.dto.TemplateDtos.VariantSummary;
 import com.cavale.gym.service.GymTemplateService;
@@ -131,15 +131,14 @@ public class GymTemplateController {
         return VariantSummary.from(variant, templateService.getExercises(userId, variantId).size());
     }
 
-    @PutMapping("/variants/{variantId}/circuit")
-    @Operation(summary = "Configure circuit mode (loops + rest between loops); loops null reverts to sets\u00d7reps")
-    public VariantSummary configureCircuit(@AuthenticationPrincipal Jwt jwt,
-                                           @PathVariable UUID variantId,
-                                           @Valid @RequestBody CircuitRequest request) {
-        UUID userId = userId(jwt);
-        GymTemplateVariant variant = templateService.configureCircuit(userId, variantId,
-                request.loops(), request.restSec());
-        return VariantSummary.from(variant, templateService.getExercises(userId, variantId).size());
+    @PutMapping("/variants/{variantId}/groups")
+    @Operation(summary = "Rewrite which prescriptions are chained into supersets \u2014 the whole variant "
+            + "at once. Members of a group must be consecutive; one group holding every exercise is "
+            + "what used to be a circuit.")
+    public List<TemplateExerciseResponse> assignGroups(@AuthenticationPrincipal Jwt jwt,
+                                                       @PathVariable UUID variantId,
+                                                       @Valid @RequestBody GroupsRequest request) {
+        return templateService.assignGroups(userId(jwt), variantId, request.assignments());
     }
 
     @DeleteMapping("/variants/{variantId}")

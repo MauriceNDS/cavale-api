@@ -1,8 +1,10 @@
 package com.cavale.gym.service;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,6 +21,7 @@ import com.cavale.gym.domain.GymTemplate;
 import com.cavale.gym.domain.GymTemplateVariant;
 import com.cavale.gym.domain.TemplateExercise;
 import com.cavale.gym.domain.TemplateExerciseAlternative;
+import com.cavale.gym.dto.TemplateDtos.GroupAssignment;
 import com.cavale.gym.dto.TemplateDtos.ReorderRequest;
 import com.cavale.gym.dto.TemplateDtos.TemplateExerciseRequest;
 import com.cavale.gym.dto.TemplateDtos.TemplateExerciseResponse;
@@ -186,7 +189,7 @@ class GymTemplateServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
 
         TemplateExercise te = service().addExercise(USER, a.getId(),
-                new TemplateExerciseRequest(squat.getId(), 3, 6, null, 180, 75, null));
+                new TemplateExerciseRequest(squat.getId(), 3, 6, null, 180, 75, null, null));
 
         assertThat(te.getPosition()).isEqualTo(2);
         assertThat(te.getReps()).isEqualTo(6);
@@ -201,7 +204,7 @@ class GymTemplateServiceTest {
         when(exerciseService.getOwned(USER, planche.getId())).thenReturn(planche);
 
         assertThatThrownBy(() -> service().addExercise(USER, a.getId(),
-                new TemplateExerciseRequest(planche.getId(), 3, 12, null, 60, null, null)))
+                new TemplateExerciseRequest(planche.getId(), 3, 12, null, 60, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("secondes");
         verify(templateExerciseRepository, never()).save(any());
@@ -227,6 +230,86 @@ class GymTemplateServiceTest {
         assertThat(first.getPosition()).isEqualTo(1);
         assertThat(response).extracting(r -> r.exercise().name())
                 .containsExactly("Squat", "Fentes");
+    }
+
+    @Test
+    void assignGroups_chainsConsecutivePrescriptions() {
+        GymTemplate template = template();
+        GymTemplateVariant a = variant(template, "A");
+        TemplateExercise squat = prescription(a, exercise("Squat", ExerciseMeasure.WEIGHT_REPS), 0);
+        TemplateExercise planche = prescription(a, exercise("Planche", ExerciseMeasure.WEIGHT_REPS), 1);
+        TemplateExercise presse = prescription(a, exercise("Presse", ExerciseMeasure.WEIGHT_REPS), 2);
+        when(variantRepository.findById(a.getId())).thenReturn(Optional.of(a));
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(a.getId()))
+                .thenReturn(List.of(squat, planche, presse));
+
+        service().assignGroups(USER, a.getId(), List.of(
+                new GroupAssignment(squat.getId(), "A"),
+                new GroupAssignment(planche.getId(), "A"),
+                new GroupAssignment(presse.getId(), null)));
+
+        assertThat(squat.getGroupKey()).isEqualTo("A");
+        assertThat(planche.getGroupKey()).isEqualTo("A");
+        assertThat(presse.getGroupKey()).isNull();
+    }
+
+    @Test
+    void assignGroups_rejectsAGroupSplitAcrossTheList() {
+        GymTemplate template = template();
+        GymTemplateVariant a = variant(template, "A");
+        TemplateExercise squat = prescription(a, exercise("Squat", ExerciseMeasure.WEIGHT_REPS), 0);
+        TemplateExercise presse = prescription(a, exercise("Presse", ExerciseMeasure.WEIGHT_REPS), 1);
+        TemplateExercise planche = prescription(a, exercise("Planche", ExerciseMeasure.WEIGHT_REPS), 2);
+        when(variantRepository.findById(a.getId())).thenReturn(Optional.of(a));
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(a.getId()))
+                .thenReturn(List.of(squat, presse, planche));
+
+        // a superset is performed in rotation — its members cannot be strangers
+        assertThatThrownBy(() -> service().assignGroups(USER, a.getId(), List.of(
+                new GroupAssignment(squat.getId(), "A"),
+                new GroupAssignment(presse.getId(), null),
+                new GroupAssignment(planche.getId(), "A"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("se suivre");
+    }
+
+    @Test
+    void assignGroups_dropsAKeyLeftWithASingleMember() {
+        GymTemplate template = template();
+        GymTemplateVariant a = variant(template, "A");
+        TemplateExercise squat = prescription(a, exercise("Squat", ExerciseMeasure.WEIGHT_REPS), 0);
+        TemplateExercise presse = prescription(a, exercise("Presse", ExerciseMeasure.WEIGHT_REPS), 1);
+        when(variantRepository.findById(a.getId())).thenReturn(Optional.of(a));
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(a.getId()))
+                .thenReturn(List.of(squat, presse));
+
+        service().assignGroups(USER, a.getId(), List.of(
+                new GroupAssignment(squat.getId(), "A"),
+                new GroupAssignment(presse.getId(), null)));
+
+        assertThat(squat.getGroupKey()).isNull(); // a superset of one is not a superset
+    }
+
+    @Test
+    void reorder_splitsASupersetItsMembersLeft() {
+        GymTemplate template = template();
+        GymTemplateVariant a = variant(template, "A");
+        TemplateExercise squat = prescription(a, exercise("Squat", ExerciseMeasure.WEIGHT_REPS), 0);
+        TemplateExercise planche = prescription(a, exercise("Planche", ExerciseMeasure.WEIGHT_REPS), 1);
+        TemplateExercise presse = prescription(a, exercise("Presse", ExerciseMeasure.WEIGHT_REPS), 2);
+        squat.assignGroup("A");
+        planche.assignGroup("A");
+        when(variantRepository.findById(a.getId())).thenReturn(Optional.of(a));
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(a.getId()))
+                .thenAnswer(inv -> Stream.of(squat, planche, presse)
+                        .sorted(Comparator.comparingInt(TemplateExercise::getPosition)).toList());
+
+        // drag Presse between the two partners rather than failing the drop
+        service().reorderExercises(USER, a.getId(),
+                new ReorderRequest(List.of(squat.getId(), presse.getId(), planche.getId())));
+
+        assertThat(squat.getGroupKey()).isNull();
+        assertThat(planche.getGroupKey()).isNull();
     }
 
     @Test

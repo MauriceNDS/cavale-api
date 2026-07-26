@@ -57,6 +57,22 @@ public class SetLog extends Auditable {
 
     private Integer seconds;
 
+    /**
+     * An approach set on the way to the working load. Excluded from every
+     * statistic — tonnage, records, 1RM estimates, muscle balance — so that
+     * logging warm-ups honestly never distorts the numbers.
+     */
+    @Column(nullable = false)
+    private boolean warmup;
+
+    /**
+     * Reps left in reserve at the end of the set, 0–4 (4 meaning "3 or
+     * more"). Optional: it is asked during the rest countdown and skipping
+     * costs nothing. When present it says how close to failure the set
+     * really was, which is what makes an estimated 1RM trustworthy.
+     */
+    private Integer rir;
+
     protected SetLog() {
     }
 
@@ -73,11 +89,22 @@ public class SetLog extends Auditable {
     }
 
     /** Autosave correction: re-ticking a set replaces its measures. */
-    public void updateMeasures(Integer reps, BigDecimal weightKg, Integer seconds, int position) {
+    public void updateMeasures(Integer reps, BigDecimal weightKg, Integer seconds, int position,
+                               boolean warmup) {
         this.reps = reps;
         this.weightKg = weightKg;
         this.seconds = seconds;
         this.position = position;
+        this.warmup = warmup;
+    }
+
+    /** Answered during the rest that follows the set — or never. */
+    public void rateReserve(Integer rir) {
+        this.rir = rir;
+    }
+
+    public void markWarmup(boolean warmup) {
+        this.warmup = warmup;
     }
 
     public UUID getId() {
@@ -114,6 +141,14 @@ public class SetLog extends Auditable {
 
     public Integer getSeconds() {
         return seconds;
+    }
+
+    public boolean isWarmup() {
+        return warmup;
+    }
+
+    public Integer getRir() {
+        return rir;
     }
 
     @Override

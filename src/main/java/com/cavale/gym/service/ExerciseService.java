@@ -62,6 +62,7 @@ public class ExerciseService {
         exercise.updateTheory(trimmed(request.description()), trimmed(request.resourceUrl()),
                 trimmed(request.runningBenefit()));
         exercise.updateMuscles(request.muscles());
+        exercise.updateLoading(request.incrementKg(), request.referenceWeightKg());
         if (request.derivedFromId() != null) {
             exercise.deriveFrom(getOwned(userId, request.derivedFromId()));
         }
@@ -81,6 +82,7 @@ public class ExerciseService {
         exercise.updateTheory(trimmed(request.description()), trimmed(request.resourceUrl()),
                 trimmed(request.runningBenefit()));
         exercise.updateMuscles(request.muscles());
+        exercise.updateLoading(request.incrementKg(), request.referenceWeightKg());
         if (request.archived() != null) {
             exercise.updateArchived(request.archived());
         }

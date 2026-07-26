@@ -16,7 +16,17 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
-/** One prescription inside a variant: 3 × 6 squats @ 75 %, 3 min rest. */
+/**
+ * One prescription inside a variant: 3 × 6 squats @ 75 %, 3 min rest.
+ *
+ * <p>Consecutive prescriptions sharing a {@link #groupKey} are performed in
+ * rotation — a superset, or a whole circuit when the group holds every
+ * exercise of the variant. The group runs for as many rounds as its
+ * longest member has sets, and {@link #restSec} keeps its plain meaning
+ * throughout: the rest taken <em>after</em> this exercise. Inside a group
+ * that is the short transition to the next partner; on the last member it
+ * is the real rest before the next round.
+ */
 @Entity
 @Table(name = "template_exercise")
 public class TemplateExercise extends Auditable {
@@ -36,6 +46,10 @@ public class TemplateExercise extends Auditable {
 
     @Column(nullable = false)
     private int position;
+
+    /** Shared by the consecutive members of one superset — null when standalone. */
+    @Column(name = "group_key", length = 4)
+    private String groupKey;
 
     @Column(nullable = false)
     private int sets;
@@ -85,6 +99,11 @@ public class TemplateExercise extends Auditable {
         this.position = position;
     }
 
+    /** Join a superset (key shared with the neighbours) or leave it (null). */
+    public void assignGroup(String groupKey) {
+        this.groupKey = groupKey;
+    }
+
     public void swapExercise(Exercise exercise) {
         this.exercise = exercise;
     }
@@ -103,6 +122,10 @@ public class TemplateExercise extends Auditable {
 
     public int getPosition() {
         return position;
+    }
+
+    public String getGroupKey() {
+        return groupKey;
     }
 
     public int getSets() {
