@@ -44,6 +44,19 @@ public class TrainingPlan extends Auditable {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
+    /** Desired running sessions per week — scaffold input, null = default. */
+    @Column(name = "runs_per_week")
+    private Integer runsPerWeek;
+
+    /** Desired strength sessions per week — scaffold input, null = default. */
+    @Column(name = "gym_per_week")
+    private Integer gymPerWeek;
+
+    /** What this block optimizes for (mostly non-race seasons), null = MAINTAIN. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private PlanFocus focus;
+
     protected TrainingPlan() {
     }
 
@@ -82,6 +95,24 @@ public class TrainingPlan extends Auditable {
 
     public LocalDate getEndDate() {
         return endDate;
+    }
+
+    public Integer getRunsPerWeek() {
+        return runsPerWeek;
+    }
+
+    public Integer getGymPerWeek() {
+        return gymPerWeek;
+    }
+
+    public PlanFocus getFocus() {
+        return focus;
+    }
+
+    public void updatePreferences(Integer runsPerWeek, Integer gymPerWeek, PlanFocus focus) {
+        this.runsPerWeek = runsPerWeek;
+        this.gymPerWeek = gymPerWeek;
+        this.focus = focus;
     }
 
     public void updateStatus(PlanStatus status) {

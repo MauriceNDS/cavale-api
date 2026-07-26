@@ -23,6 +23,7 @@ import com.cavale.training.domain.Objective;
 import com.cavale.training.domain.ObjectiveIntensity;
 import com.cavale.training.domain.ObjectiveKind;
 import com.cavale.training.domain.ObjectiveRole;
+import com.cavale.training.domain.ObjectiveType;
 import com.cavale.training.domain.PlanWeek;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
@@ -33,6 +34,7 @@ import com.cavale.training.dto.PlanRealignResponse;
 import com.cavale.training.dto.PlanRealignResponse.Tier;
 import com.cavale.training.dto.PlanRealignResponse.WeekAdjustment;
 import com.cavale.training.dto.PlanValidationResponse;
+import com.cavale.training.pace.PaceModelService;
 import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
@@ -59,17 +61,23 @@ public class PlanCoachService {
     private final PlannedSessionRepository sessionRepository;
     private final TrainingPlanService planService;
     private final RunningStatsService runningStatsService;
+    private final SessionTemplateService templateService;
+    private final PaceModelService paceModelService;
 
     public PlanCoachService(ObjectiveRepository objectiveRepository,
                             PlanWeekRepository weekRepository,
                             PlannedSessionRepository sessionRepository,
                             TrainingPlanService planService,
-                            RunningStatsService runningStatsService) {
+                            RunningStatsService runningStatsService,
+                            SessionTemplateService templateService,
+                            PaceModelService paceModelService) {
         this.objectiveRepository = objectiveRepository;
         this.weekRepository = weekRepository;
         this.sessionRepository = sessionRepository;
         this.planService = planService;
         this.runningStatsService = runningStatsService;
+        this.templateService = templateService;
+        this.paceModelService = paceModelService;
     }
 
     /* ── P13: scaffold ─────────────────────────────────────────────────── */
@@ -84,6 +92,16 @@ public class PlanCoachService {
      */
     @Transactional
     public List<PlanWeek> scaffold(UUID userId, UUID planId, LocalDate today) {
+        return scaffold(userId, planId, today, false);
+    }
+
+    /**
+     * Scaffold the week skeleton, optionally filling every week with the
+     * deterministic default sessions ({@link SessionTemplateService}) — a plan
+     * usable as-is with zero AI, or a baseline the AI coach then edits.
+     */
+    @Transactional
+    public List<PlanWeek> scaffold(UUID userId, UUID planId, LocalDate today, boolean fillSessions) {
         TrainingPlan plan = planService.getOwnedPlan(userId, planId);
         if (!weekRepository.findByPlanIdOrderByWeekNumber(planId).isEmpty()) {
             throw new IllegalArgumentException(
@@ -93,6 +111,11 @@ public class PlanCoachService {
                 .orElseThrow(() -> new ResourceNotFoundException("Main objective", planId));
 
         LocalDate firstMonday = plan.getStartDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        if (firstMonday.isBefore(plan.getStartDate())) {
+            // weeks are Monday-anchored and addWeek rejects a start outside the
+            // plan — a mid-week season begins with a partial, week-less stub
+            firstMonday = firstMonday.plusWeeks(1);
+        }
         LocalDate raceDate = main.getDate() != null ? main.getDate() : plan.getEndDate();
         LocalDate raceMonday = raceDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         int weeks = (int) Math.min(40, Math.max(1,
@@ -108,10 +131,30 @@ public class PlanCoachService {
                     spec.phase(), spec.type(), BigDecimal.valueOf(spec.km()).setScale(0, RoundingMode.HALF_UP),
                     spec.elevationM() > 0 ? spec.elevationM() : null, null, spec.focus())));
         }
+        if (fillSessions) {
+            var pace = paceModelService.modelFor(userId);
+            for (PlanWeek week : created) {
+                templateService.fillWeek(userId, plan, week, main, pace);
+            }
+        }
         return created;
     }
 
+    /**
+     * The objective's TYPE decides the season's whole shape: a race gets the
+     * classic base→build→peak→taper arc, the non-race types get honest
+     * alternatives instead of a fake race countdown.
+     */
     private List<WeekSpec> periodize(int weeks, Objective main, double baseKm) {
+        return switch (main.getType()) {
+            case RACE -> racePeriodization(weeks, main, baseKm);
+            case FITNESS -> fitnessPeriodization(weeks, main, baseKm);
+            case RECOVERY -> recoveryPeriodization(weeks, main, baseKm);
+            case GENERAL -> maintenancePeriodization(weeks, main, baseKm);
+        };
+    }
+
+    private List<WeekSpec> racePeriodization(int weeks, Objective main, double baseKm) {
         boolean trail = main.getKind() == ObjectiveKind.TRAIL;
         boolean performance = main.getIntensity() == ObjectiveIntensity.PERFORMANCE;
         double dPlusPerKm = trail ? raceDPlusPerKm(main) : 0;
@@ -164,6 +207,66 @@ public class PlanCoachService {
         return specs;
     }
 
+    /**
+     * FITNESS: rolling build/deload cycles ramping toward a sustainable peak —
+     * no taper, no race week, the last week absorbs like any other.
+     */
+    private List<WeekSpec> fitnessPeriodization(int weeks, Objective main, double baseKm) {
+        boolean trail = main.getKind() == ObjectiveKind.TRAIL;
+        boolean performance = main.getIntensity() == ObjectiveIntensity.PERFORMANCE;
+        double dPlusPerKm = trail ? raceDPlusPerKm(main) : 0;
+        double peakKm = baseKm * (performance ? 1.5 : 1.3);
+        int baseCount = Math.max(1, Math.round(weeks * 0.25f));
+
+        List<WeekSpec> specs = new ArrayList<>();
+        for (int i = 0; i < weeks; i++) {
+            double ramp = weeks > 1 ? (double) i / (weeks - 1) : 1;
+            double km = baseKm + (peakKm - baseKm) * ramp;
+            if ((i + 1) % DELOAD_EVERY == 0) {
+                km *= 0.6;
+                specs.add(new WeekSpec(WeekType.DELOAD, "Assimilation", km,
+                        trailElevation(km, dPlusPerKm), phaseFocus("Assimilation")));
+            } else {
+                String phase = i < baseCount ? "Base" : "Développement";
+                specs.add(new WeekSpec(WeekType.BUILD, phase, km,
+                        trailElevation(km, dPlusPerKm), phaseFocus(phase)));
+            }
+        }
+        return specs;
+    }
+
+    /** RECOVERY: capped, gently rising easy volume — no intensity anywhere. */
+    private List<WeekSpec> recoveryPeriodization(int weeks, Objective main, double baseKm) {
+        boolean trail = main.getKind() == ObjectiveKind.TRAIL;
+        double dPlusPerKm = trail ? raceDPlusPerKm(main) : 0;
+
+        List<WeekSpec> specs = new ArrayList<>();
+        for (int i = 0; i < weeks; i++) {
+            double ramp = weeks > 1 ? (double) i / (weeks - 1) : 1;
+            double km = baseKm * (0.4 + 0.35 * ramp);
+            specs.add(new WeekSpec(WeekType.RECOVERY, "Reprise", km,
+                    trailElevation(km, dPlusPerKm), phaseFocus("Reprise")));
+        }
+        return specs;
+    }
+
+    /** GENERAL: steady maintenance at the current volume, deload every 4th week. */
+    private List<WeekSpec> maintenancePeriodization(int weeks, Objective main, double baseKm) {
+        boolean trail = main.getKind() == ObjectiveKind.TRAIL;
+        double dPlusPerKm = trail ? raceDPlusPerKm(main) : 0;
+
+        List<WeekSpec> specs = new ArrayList<>();
+        for (int i = 0; i < weeks; i++) {
+            boolean deload = (i + 1) % DELOAD_EVERY == 0;
+            double km = baseKm * (deload ? 0.7 : 1.0);
+            specs.add(new WeekSpec(deload ? WeekType.DELOAD : WeekType.BUILD,
+                    deload ? "Assimilation" : "Entretien", km,
+                    trailElevation(km, dPlusPerKm),
+                    phaseFocus(deload ? "Assimilation" : "Entretien")));
+        }
+        return specs;
+    }
+
     private static double raceDPlusPerKm(Objective main) {
         if (main.getElevationGainM() != null && main.getDistanceKm() != null
                 && main.getDistanceKm().doubleValue() > 0) {
@@ -181,6 +284,8 @@ public class PlanCoachService {
             case "Base" -> "Base aérobie — volume facile, une touche de qualité";
             case "Spécifique" -> "Spécifique course — allure objectif et dénivelé spécifique";
             case "Assimilation" -> "Semaine allégée — on assimile la charge";
+            case "Reprise" -> "Reprise — volume réduit, aucune intensité, on écoute le corps";
+            case "Entretien" -> "Entretien — régularité et plaisir, volume stable";
             default -> "Développement — volume et seuil en progression";
         };
     }
@@ -250,7 +355,10 @@ public class PlanCoachService {
         }
 
         if (weeks.size() >= 6) {
-            if (weeks.stream().noneMatch(w -> w.getWeekType() == WeekType.TAPER)) {
+            boolean raceSeason = objectiveRepository.findByPlanIdAndRole(planId, ObjectiveRole.MAIN)
+                    .map(o -> o.getType() == ObjectiveType.RACE)
+                    .orElse(true);
+            if (raceSeason && weeks.stream().noneMatch(w -> w.getWeekType() == WeekType.TAPER)) {
                 issues.add("No taper before the race — end with ~2 reduced-volume weeks.");
             }
             if (weeks.stream().noneMatch(w -> w.getWeekType() == WeekType.DELOAD

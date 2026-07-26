@@ -83,6 +83,7 @@ public class TrainingPlanService {
         }
         TrainingPlan plan = new TrainingPlan(userId, request.name().trim(),
                 request.goal(), request.startDate(), request.endDate());
+        plan.updatePreferences(request.runsPerWeek(), request.gymPerWeek(), request.focus());
         if (request.startDate().isAfter(LocalDate.now())) {
             // The next season, planned ahead — it activates when training starts
             plan.updateStatus(PlanStatus.DRAFT);

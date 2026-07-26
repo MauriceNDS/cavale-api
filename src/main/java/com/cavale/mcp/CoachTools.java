@@ -36,6 +36,7 @@ import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.ObjectiveIntensity;
 import com.cavale.training.domain.ObjectiveKind;
 import com.cavale.training.domain.ObjectiveType;
+import com.cavale.training.domain.PlanFocus;
 import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.domain.WeekType;
 import com.cavale.training.dto.CreateObjectiveRequest;
@@ -163,11 +164,15 @@ public class CoachTools {
     @Tool(name = "create_training_plan", description = """
             Create a new season built around one goal. Call get_athlete_context \
             FIRST and respect it (recent race => recovery start; INJURED/SICK => \
-            no hard blocks). Also creates the MAIN objective: pass the race \
-            profile fields when you know them (they drive scaffold_plan's target \
-            loads) — otherwise a placeholder is created and you refine it with \
-            update_objective. Then add weeks (add_week) and sessions \
-            (add_session).""")
+            no hard blocks). Also creates the MAIN objective — and not every \
+            season is a race: objectiveType RECOVERY, FITNESS or GENERAL are \
+            first-class (they change how scaffold_plan periodizes). Pass the \
+            race profile fields when you know them (they drive scaffold_plan's \
+            target loads) — refine later with update_objective. Pass the \
+            athlete's weekly preferences (runsPerWeek, gymPerWeek, focus) — \
+            scaffold_plan's default sessions follow them. Then scaffold_plan \
+            (prefer fillDefaultSessions=true) and edit what needs \
+            athlete-specific work.""")
     public PlanResponse createTrainingPlan(
             @ToolParam(description = "Season name, e.g. 'Saison SaintéLyon 2027'") String name,
             @ToolParam(description = "The goal, e.g. 'SaintéLyon 80 km'", required = false) String goal,
@@ -178,7 +183,10 @@ public class CoachTools {
             @ToolParam(description = "BALANCE or PERFORMANCE (default BALANCE) — how hard to chase it", required = false) ObjectiveIntensity objectiveIntensity,
             @ToolParam(description = "Race distance in km", required = false) BigDecimal distanceKm,
             @ToolParam(description = "Race elevation gain in m", required = false) Integer elevationGainM,
-            @ToolParam(description = "Target finish time in minutes", required = false) Integer targetTimeMin) {
+            @ToolParam(description = "Target finish time in minutes", required = false) Integer targetTimeMin,
+            @ToolParam(description = "Desired running sessions per week (1-7) — drives scaffold's default sessions", required = false) Integer runsPerWeek,
+            @ToolParam(description = "Desired strength sessions per week (0-4)", required = false) Integer gymPerWeek,
+            @ToolParam(description = "Block focus: MAINTAIN, SPEED or ENDURANCE (mostly for non-race seasons)", required = false) PlanFocus focus) {
         CreateObjectiveRequest objective = objectiveType == null && objectiveKind == null
                 && objectiveIntensity == null && distanceKm == null && elevationGainM == null
                 && targetTimeMin == null
@@ -191,20 +199,30 @@ public class CoachTools {
                         null, distanceKm, elevationGainM, targetTimeMin, null, null);
         return PlanResponse.from(planService.createPlan(currentUserId(),
                 new CreatePlanRequest(name, goal, LocalDate.parse(startDate), LocalDate.parse(endDate),
-                        objective)));
+                        runsPerWeek, gymPerWeek, focus, objective)));
     }
 
     @Tool(name = "scaffold_plan", description = """
-            Build the periodized WEEK SKELETON of an EMPTY plan. Create the plan \
+            Build the periodized structure of an EMPTY plan. Create the plan \
             first (create_training_plan), refine its MAIN objective's kind, \
-            intensity and date (update_objective), then scaffold. It lays out \
-            base → build → peak → taper with a deload every ~4th week and \
-            progressive target loads from the athlete's current volume, aware of \
-            road vs trail and balance vs performance. Returns the created weeks — \
-            then fill each with add_session and finish with validate_plan. Fails \
-            if the plan already has weeks.""")
-    public List<WeekResponse> scaffoldPlan(@ToolParam(description = "Plan UUID") String planId) {
-        return coachService.scaffold(currentUserId(), UUID.fromString(planId), LocalDate.now()).stream()
+            intensity and date (update_objective), then scaffold. The objective \
+            TYPE shapes the season: RACE gets base → build → peak → taper, \
+            FITNESS rolling build/deload cycles (no taper), RECOVERY capped easy \
+            weeks, GENERAL steady maintenance — all with progressive target \
+            loads from the athlete's current volume, aware of road vs trail and \
+            balance vs performance. With fillDefaultSessions=true every week is \
+            also filled with sound default sessions (long run, quality by \
+            phase/focus, easy runs, strength) sized by the athlete's own pace \
+            model and the plan's runsPerWeek/gymPerWeek/focus preferences — \
+            PREFER this and then EDIT the sessions that need race-specific or \
+            athlete-specific work, instead of authoring every session yourself. \
+            Without it, fill each week with add_session. Finish with \
+            validate_plan. Fails if the plan already has weeks.""")
+    public List<WeekResponse> scaffoldPlan(
+            @ToolParam(description = "Plan UUID") String planId,
+            @ToolParam(description = "Also generate default sessions for every week (recommended)", required = false) Boolean fillDefaultSessions) {
+        return coachService.scaffold(currentUserId(), UUID.fromString(planId), LocalDate.now(),
+                        Boolean.TRUE.equals(fillDefaultSessions)).stream()
                 .map(WeekResponse::from).toList();
     }
 

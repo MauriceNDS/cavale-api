@@ -3,6 +3,7 @@ package com.cavale.training.dto;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import com.cavale.training.domain.PlanFocus;
 import com.cavale.training.domain.PlanStatus;
 import com.cavale.training.domain.TrainingPlan;
 
@@ -12,10 +13,14 @@ public record PlanResponse(
         String goal,
         PlanStatus status,
         LocalDate startDate,
-        LocalDate endDate) {
+        LocalDate endDate,
+        Integer runsPerWeek,
+        Integer gymPerWeek,
+        PlanFocus focus) {
 
     public static PlanResponse from(TrainingPlan plan) {
         return new PlanResponse(plan.getId(), plan.getName(), plan.getGoal(),
-                plan.getStatus(), plan.getStartDate(), plan.getEndDate());
+                plan.getStatus(), plan.getStartDate(), plan.getEndDate(),
+                plan.getRunsPerWeek(), plan.getGymPerWeek(), plan.getFocus());
     }
 }

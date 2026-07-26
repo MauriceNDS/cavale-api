@@ -172,6 +172,19 @@ class TrainingPlanServiceTest {
     }
 
     @Test
+    void createPlan_storesPreferences() {
+        when(planRepository.save(any(TrainingPlan.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TrainingPlan plan = service().createPlan(OWNER, new CreatePlanRequest(
+                "Saison", null, LocalDate.of(2027, 1, 4), LocalDate.of(2027, 3, 28),
+                4, 2, com.cavale.training.domain.PlanFocus.SPEED, null));
+
+        assertThat(plan.getRunsPerWeek()).isEqualTo(4);
+        assertThat(plan.getGymPerWeek()).isEqualTo(2);
+        assertThat(plan.getFocus()).isEqualTo(com.cavale.training.domain.PlanFocus.SPEED);
+    }
+
+    @Test
     void createPlan_rejectsEndBeforeStart() {
         assertThatThrownBy(() -> service().createPlan(OWNER, new CreatePlanRequest(
                 "Plan", null, LocalDate.of(2026, 11, 29), LocalDate.of(2026, 7, 6))))

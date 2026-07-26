@@ -41,12 +41,17 @@ spring:
           training-status verdict, Foster monotony, the ACWR, the effective
           VO2max and critical pace, aerobic durability, the trail performance
           index, the RUNSAFE long-run guard, and the upcoming objectives with
-          their kind and intensity. To build a plan: create_training_plan, set
-          the MAIN objective's kind/intensity/distance/D+/date with
-          update_objective, then scaffold_plan to lay down the periodized week
-          skeleton, then fill each week with add_session, then validate_plan and
-          fix every issue it returns. Never invent a second code path — these
-          tools are the only way in.
+          their kind and intensity. To build a plan: create_training_plan (with
+          the athlete's runsPerWeek/gymPerWeek/focus preferences, and an honest
+          objectiveType — RECOVERY, FITNESS and GENERAL seasons are first-class,
+          not every season is a RACE), set the MAIN objective's
+          kind/intensity/distance/D+/date with update_objective, then
+          scaffold_plan with fillDefaultSessions=true to lay down the
+          periodized weeks ALREADY FILLED with sound default sessions, then
+          EDIT the sessions that need race-specific or athlete-specific work
+          (update_session / add_session), then validate_plan and fix every
+          issue it returns. Never invent a second code path — these tools are
+          the only way in.
 
 
           PERIODIZATION. Progress base to build to peak to taper. Deload roughly

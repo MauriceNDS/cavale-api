@@ -64,9 +64,15 @@ class PlanCoachServiceTest {
     @Mock
     private RunningStatsService runningStatsService;
 
+    @Mock
+    private SessionTemplateService templateService;
+
+    @Mock
+    private com.cavale.training.pace.PaceModelService paceModelService;
+
     private PlanCoachService service() {
         return new PlanCoachService(objectiveRepository, weekRepository, sessionRepository,
-                planService, runningStatsService);
+                planService, runningStatsService, templateService, paceModelService);
     }
 
     private static RunningStatsResponse statsWithWeeklyKm(String km) {
@@ -120,6 +126,105 @@ class PlanCoachServiceTest {
         // Mondays, 1-based, in order
         assertThat(weeks.getFirst().startDate()).isEqualTo(LocalDate.of(2026, 7, 6));
         assertThat(weeks.getFirst().weekNumber()).isEqualTo(1);
+    }
+
+    @Test
+    void scaffold_fitnessSeasonRollsBuildDeloadWithoutTaperOrRace() {
+        TrainingPlan plan = new TrainingPlan(USER, "Remise en forme", null,
+                LocalDate.of(2026, 7, 6), LocalDate.of(2026, 9, 28));
+        Objective main = new Objective(plan, ObjectiveRole.MAIN, ObjectiveType.FITNESS,
+                "Progresser", LocalDate.of(2026, 9, 28));
+        main.updateKind(ObjectiveKind.ROAD);
+
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of());
+        when(objectiveRepository.findByPlanIdAndRole(PLAN, ObjectiveRole.MAIN)).thenReturn(Optional.of(main));
+        when(runningStatsService.getStats(eq(USER), any())).thenReturn(statsWithWeeklyKm("40"));
+        ArgumentCaptor<CreateWeekRequest> captor = ArgumentCaptor.forClass(CreateWeekRequest.class);
+        when(planService.addWeek(eq(USER), eq(PLAN), captor.capture())).thenReturn(mock(PlanWeek.class));
+
+        service().scaffold(USER, PLAN, TODAY);
+
+        List<CreateWeekRequest> weeks = captor.getAllValues();
+        assertThat(weeks).noneMatch(w -> w.weekType() == WeekType.TAPER);
+        assertThat(weeks).noneMatch(w -> w.weekType() == WeekType.RACE);
+        assertThat(weeks).anyMatch(w -> w.weekType() == WeekType.DELOAD);
+        assertThat(weeks).anyMatch(w -> w.weekType() == WeekType.BUILD);
+        // road objective → no D+ targets
+        assertThat(weeks.getFirst().targetElevationM()).isNull();
+    }
+
+    @Test
+    void scaffold_recoverySeasonKeepsEveryWeekEasyAndCapped() {
+        TrainingPlan plan = new TrainingPlan(USER, "Retour de blessure", null,
+                LocalDate.of(2026, 7, 6), LocalDate.of(2026, 8, 31));
+        Objective main = new Objective(plan, ObjectiveRole.MAIN, ObjectiveType.RECOVERY,
+                "Reprise", LocalDate.of(2026, 8, 31));
+        main.updateKind(ObjectiveKind.ROAD);
+
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of());
+        when(objectiveRepository.findByPlanIdAndRole(PLAN, ObjectiveRole.MAIN)).thenReturn(Optional.of(main));
+        when(runningStatsService.getStats(eq(USER), any())).thenReturn(statsWithWeeklyKm("40"));
+        ArgumentCaptor<CreateWeekRequest> captor = ArgumentCaptor.forClass(CreateWeekRequest.class);
+        when(planService.addWeek(eq(USER), eq(PLAN), captor.capture())).thenReturn(mock(PlanWeek.class));
+
+        service().scaffold(USER, PLAN, TODAY);
+
+        List<CreateWeekRequest> weeks = captor.getAllValues();
+        assertThat(weeks).allMatch(w -> w.weekType() == WeekType.RECOVERY);
+        // capped: every week stays below the athlete's normal volume
+        assertThat(weeks).allSatisfy(w ->
+                assertThat(w.targetVolumeKm()).isLessThan(new BigDecimal("40")));
+    }
+
+    @Test
+    void scaffold_generalSeasonMaintainsSteadyVolume() {
+        TrainingPlan plan = new TrainingPlan(USER, "Entretien", null,
+                LocalDate.of(2026, 7, 6), LocalDate.of(2026, 8, 31));
+        Objective main = new Objective(plan, ObjectiveRole.MAIN, ObjectiveType.GENERAL,
+                "Courir tranquille", null);
+        main.updateKind(ObjectiveKind.TRAIL);
+
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of());
+        when(objectiveRepository.findByPlanIdAndRole(PLAN, ObjectiveRole.MAIN)).thenReturn(Optional.of(main));
+        when(runningStatsService.getStats(eq(USER), any())).thenReturn(statsWithWeeklyKm("40"));
+        ArgumentCaptor<CreateWeekRequest> captor = ArgumentCaptor.forClass(CreateWeekRequest.class);
+        when(planService.addWeek(eq(USER), eq(PLAN), captor.capture())).thenReturn(mock(PlanWeek.class));
+
+        service().scaffold(USER, PLAN, TODAY);
+
+        List<CreateWeekRequest> weeks = captor.getAllValues();
+        assertThat(weeks).noneMatch(w -> w.weekType() == WeekType.TAPER);
+        // steady: all non-deload weeks share the same target
+        List<BigDecimal> normal = weeks.stream()
+                .filter(w -> w.weekType() == WeekType.BUILD)
+                .map(CreateWeekRequest::targetVolumeKm)
+                .distinct()
+                .toList();
+        assertThat(normal).hasSize(1);
+        assertThat(weeks).anyMatch(w -> w.weekType() == WeekType.DELOAD);
+    }
+
+    @Test
+    void scaffold_withFillGeneratesSessionsForEveryWeek() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 7, 6), LocalDate.of(2026, 9, 28));
+        Objective main = new Objective(plan, ObjectiveRole.MAIN, ObjectiveType.RACE, "Trail X",
+                LocalDate.of(2026, 9, 21));
+
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of());
+        when(objectiveRepository.findByPlanIdAndRole(PLAN, ObjectiveRole.MAIN)).thenReturn(Optional.of(main));
+        when(runningStatsService.getStats(eq(USER), any())).thenReturn(statsWithWeeklyKm("50"));
+        when(paceModelService.modelFor(USER)).thenReturn(com.cavale.training.pace.PaceModel.fallback());
+        when(planService.addWeek(eq(USER), eq(PLAN), any())).thenReturn(mock(PlanWeek.class));
+
+        List<PlanWeek> created = service().scaffold(USER, PLAN, TODAY, true);
+
+        org.mockito.Mockito.verify(templateService, org.mockito.Mockito.times(created.size()))
+                .fillWeek(eq(USER), eq(plan), any(), eq(main), any());
     }
 
     /* ── P13: validate ─────────────────────────────────────────────────── */
