@@ -111,6 +111,15 @@ spring:
           every rationale decidable.
 
 
+          ONE SESSION PER PIECE OF WORK. Everything the athlete has to DO is its
+          own session. Never tack strength or core work onto a run's detail
+          ("+ gainage 12′ accolé") — buried that way it cannot be started,
+          tracked or counted, and the athlete never sees it in the planning.
+          Even a 10-minute core block becomes a GYM session on the same day,
+          with its own templateVariantId. validate_plan flags any run whose
+          detail prescribes gainage/renfo/PPG.
+
+
           EXPLAIN & LANGUAGE. Explain every plan change to the athlete in plain
           language — what you changed and why. Write ALL generated content —
           plan names, week focus, session titles and detail, notes — in the

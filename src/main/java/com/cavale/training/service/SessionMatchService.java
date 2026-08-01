@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PlannedSession;
-import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
 
@@ -51,7 +50,7 @@ public class SessionMatchService {
 
     @Transactional(readOnly = true)
     public Optional<Activity> proposeFor(PlannedSession session) {
-        if (!MATCHABLE.contains(session.getDiscipline()) || session.getStatus() != SessionStatus.PLANNED) {
+        if (!MATCHABLE.contains(session.getDiscipline()) || !session.getStatus().isPending()) {
             return Optional.empty();
         }
         LocalDate from = session.getDate().minusDays(WINDOW_DAYS);
@@ -86,7 +85,7 @@ public class SessionMatchService {
         return nearbySessions.stream().noneMatch(other -> !other.getId().equals(session.getId())
                 && other.getDate().equals(activity.getDate())
                 && other.getDiscipline() == session.getDiscipline()
-                && other.getStatus() == SessionStatus.PLANNED);
+                && other.getStatus().isPending());
     }
 
     private static int score(PlannedSession session, Activity activity) {

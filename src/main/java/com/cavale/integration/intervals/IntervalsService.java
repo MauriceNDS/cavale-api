@@ -12,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PlannedSession;
-import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.repository.PlannedSessionRepository;
 import com.cavale.training.workout.WorkoutJson;
 import com.cavale.training.workout.WorkoutParser;
@@ -129,7 +128,7 @@ public class IntervalsService {
         List<IntervalsDtos.EventPayload> events = sessionRepository
                 .findByUserIdAndDateBetweenOrderByDateAscOrderInDayAsc(userId, from, to).stream()
                 .filter(s -> s.getDiscipline() == Discipline.RUN)
-                .filter(s -> s.getStatus() == SessionStatus.PLANNED)
+                .filter(s -> s.getStatus().isPending())
                 .map(this::toEvent)
                 .toList();
         if (events.isEmpty()) {

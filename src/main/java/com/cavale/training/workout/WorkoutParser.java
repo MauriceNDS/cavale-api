@@ -55,6 +55,16 @@ public final class WorkoutParser {
     private static final Pattern STRIDES = Pattern.compile("(\\d+)\\s*(?:[×x]\\s*)?lignes?\\b");
 
     /**
+     * Strength/core work named inside running text. The parser drops it from
+     * the structure (it is its own session, not a block of the run), and
+     * {@code validate_plan} flags the session so the coach splits it out
+     * instead of leaving it buried in a run's description.
+     */
+    public static final Pattern STRENGTH_WORK = Pattern.compile(
+            "\\b(gainage|renfo(?:rcement)?|réathlétisation|ppg)\\b",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    /**
      * @param detail            the imported description text (may be null)
      * @param fallbackZone      the session's zone label, used when the text has no structure
      * @param fallbackDurationMin the session's planned duration, same purpose
@@ -137,7 +147,7 @@ public final class WorkoutParser {
     /** May return null: pure prose, or folded into the previous repeat group. */
     private static Node toNode(String label, List<Node> siblings, Allure sectionDefault) {
         // strength/core work never belongs in a running structure (it's its own session)
-        if (label.toLowerCase().matches(".*\\b(gainage|renfo|réathlétisation)\\b.*")) {
+        if (STRENGTH_WORK.matcher(label).find()) {
             return null;
         }
         if (SERIES_RECOVERY.matcher(label).matches() && !siblings.isEmpty()

@@ -338,11 +338,22 @@ public class PlanCoachService {
         }
 
         for (PlannedSession session : sessions) {
-            if (session.getDiscipline() == Discipline.RUN
-                    && WorkoutParser.parse(session.getDetail(), session.getZone(),
-                            session.getDurationMin()).nodes().isEmpty()) {
+            if (session.getDiscipline() != Discipline.RUN) {
+                continue;
+            }
+            if (WorkoutParser.parse(session.getDetail(), session.getZone(),
+                    session.getDurationMin()).nodes().isEmpty()) {
                 issues.add("Session '" + session.getTitle() + "' on " + session.getDate()
                         + " has no usable workout — give it a detail or a duration.");
+            }
+            // Strength work tacked onto a run's text is invisible in the plan:
+            // it can't be started, tracked or counted. It belongs in its own
+            // GYM session on the same day.
+            if (session.getDetail() != null
+                    && WorkoutParser.STRENGTH_WORK.matcher(session.getDetail()).find()) {
+                issues.add("Run '" + session.getTitle() + "' on " + session.getDate()
+                        + " prescribes strength/core work in its detail — give it its own GYM "
+                        + "session that day (with a templateVariantId) and drop it from the run text.");
             }
         }
 
@@ -384,7 +395,7 @@ public class PlanCoachService {
 
         List<PlannedSession> missed = sessions.stream()
                 .filter(s -> s.getDiscipline() != Discipline.REST)
-                .filter(s -> (s.getStatus() == SessionStatus.PLANNED && s.getDate().isBefore(today))
+                .filter(s -> (s.getStatus().isPending() && s.getDate().isBefore(today))
                         || (s.getStatus() == SessionStatus.SKIPPED && !s.getDate().isBefore(recentFrom)))
                 .toList();
 

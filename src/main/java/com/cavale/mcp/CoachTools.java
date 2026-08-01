@@ -234,9 +234,10 @@ public class CoachTools {
 
     @Tool(name = "validate_plan", description = """
             Structural check on a plan: empty training weeks, sessions with no \
-            usable workout, two hard days back-to-back, a missing taper or \
-            deload. Returns valid=true with an empty issues list when the plan is \
-            sound. Run it after generating and fix every issue before finishing.""")
+            usable workout, strength work buried in a run's detail, two hard days \
+            back-to-back, a missing taper or deload. Returns valid=true with an \
+            empty issues list when the plan is sound. Run it after generating and \
+            fix every issue before finishing.""")
     public PlanValidationResponse validatePlan(@ToolParam(description = "Plan UUID") String planId) {
         return coachService.validate(currentUserId(), UUID.fromString(planId));
     }
@@ -314,7 +315,11 @@ public class CoachTools {
             structured workout (and the watch .fit export) is derived from it. \
             zone examples: 'EF', 'Seuil 60', 'Seuil 30', 'VMA', 'SL'. For GYM \
             sessions, ALWAYS pass templateVariantId (see list_gym_templates) so the \
-            athlete can start the live workout from the session.""")
+            athlete can start the live workout from the session. NEVER tack \
+            strength or core work onto a run's detail ('+ gainage 12′ accolé'): \
+            it is invisible in the plan and cannot be started or tracked. Even a \
+            10-minute core block gets its own GYM session on the same day, with \
+            its own variant.""")
     public SessionResponse addSession(
             @ToolParam(description = "Week UUID") String weekId,
             @ToolParam(description = "Session date, ISO date, inside the week") String date,

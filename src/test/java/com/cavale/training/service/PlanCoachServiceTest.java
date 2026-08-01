@@ -26,6 +26,7 @@ import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.ObjectiveType;
 import com.cavale.training.domain.PlanWeek;
 import com.cavale.training.domain.PlannedSession;
+import com.cavale.training.domain.SessionStatus;
 import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.domain.WeekType;
 import com.cavale.training.dto.CreateWeekRequest;
@@ -256,6 +257,42 @@ class PlanCoachServiceTest {
         assertThat(result.issues()).anySatisfy(i -> assertThat(i).contains("Week 2"));
     }
 
+    /** Core work hidden in a run's text can't be started or tracked — flag it. */
+    @Test
+    void validate_flagsStrengthWorkBuriedInARunsDetail() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 7, 6), LocalDate.of(2026, 7, 12));
+        PlanWeek w1 = week(plan, 1, LocalDate.of(2026, 7, 6), WeekType.BUILD);
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(w1));
+
+        PlannedSession ef = new PlannedSession(w1, USER, LocalDate.of(2026, 7, 8), 0, Discipline.RUN,
+                "Footing EF", "55′ EF. + gainage 12′ accolé (avec Copenhagen plank).", "EF",
+                55, null, null, 3);
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(ef));
+
+        PlanValidationResponse result = service().validate(USER, PLAN);
+
+        assertThat(result.issues()).anySatisfy(i -> assertThat(i)
+                .contains("Footing EF").contains("strength/core work"));
+    }
+
+    @Test
+    void validate_leavesACleanRunAlone() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 7, 6), LocalDate.of(2026, 7, 12));
+        PlanWeek w1 = week(plan, 1, LocalDate.of(2026, 7, 6), WeekType.BUILD);
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(w1));
+
+        PlannedSession ef = new PlannedSession(w1, USER, LocalDate.of(2026, 7, 8), 0, Discipline.RUN,
+                "Footing EF", "55′ EF. FC 133-148, cible 143.", "EF", 55, null, null, 3);
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(ef));
+
+        assertThat(service().validate(USER, PLAN).issues())
+                .noneSatisfy(i -> assertThat(i).contains("strength/core work"));
+    }
+
     /* ── P14: realign ──────────────────────────────────────────────────── */
 
     @Test
@@ -265,10 +302,14 @@ class PlanCoachServiceTest {
         when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
 
         PlanWeek pastWeek = week(plan, 1, LocalDate.of(2026, 7, 6), WeekType.BUILD);
-        // three run sessions earlier this week, still PLANNED and now in the past → missed
+        // three run sessions earlier this week, still owed and now in the past →
+        // missed. The middle one was rescheduled (MOVED): still owed, still missed.
+        PlannedSession rescheduled = new PlannedSession(pastWeek, USER, TODAY.minusDays(3), 0,
+                Discipline.RUN, "Seuil", null, "Seuil 60", 60, null, null, 7);
+        rescheduled.updateStatus(SessionStatus.MOVED);
         List<PlannedSession> missed = List.of(
                 new PlannedSession(pastWeek, USER, TODAY.minusDays(4), 0, Discipline.RUN, "EF", null, "EF", 60, null, null, null),
-                new PlannedSession(pastWeek, USER, TODAY.minusDays(3), 0, Discipline.RUN, "Seuil", null, "Seuil 60", 60, null, null, 7),
+                rescheduled,
                 new PlannedSession(pastWeek, USER, TODAY.minusDays(2), 0, Discipline.RUN, "SL", null, "SL", 60, null, null, null));
         when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(missed);
 

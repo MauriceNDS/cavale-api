@@ -147,6 +147,23 @@ class SessionMatchServiceTest {
         PlannedSession done = runSession(DATE, 60);
         done.updateStatus(SessionStatus.DONE);
         assertThat(service().proposeFor(done)).isEmpty();
+
+        PlannedSession skipped = runSession(DATE, 60);
+        skipped.updateStatus(SessionStatus.SKIPPED);
+        assertThat(service().proposeFor(skipped)).isEmpty();
+    }
+
+    /** MOVED means rescheduled, not done: the run still deserves a proposal. */
+    @Test
+    void movedSession_stillGetsAProposal() {
+        PlannedSession moved = runSession(DATE, 60);
+        moved.moveTo(DATE.plusDays(1), 0);
+        assertThat(moved.getStatus()).isEqualTo(SessionStatus.MOVED);
+
+        candidates(run(moved.getDate(), 60, 1L));
+        noOtherSessions();
+
+        assertThat(service().proposeFor(moved)).map(Activity::getExternalId).contains(1L);
     }
 
     @Test
