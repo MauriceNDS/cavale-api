@@ -254,7 +254,7 @@ public class GymTemplateService {
                 request.restSec(), request.intensityPct(), trimmed(request.note())));
         // A new prescription lands last, so it can only join the group ending there.
         added.assignGroup(trimmed(request.groupKey()));
-        normalizeGroups(variantId);
+        normalizeGroups(variantId, added.getId());
         return added;
     }
 
@@ -268,7 +268,7 @@ public class GymTemplateService {
         te.updatePrescription(request.sets(), request.reps(), request.seconds(),
                 request.restSec(), request.intensityPct(), trimmed(request.note()));
         te.assignGroup(trimmed(request.groupKey()));
-        normalizeGroups(te.getVariant().getId());
+        normalizeGroups(te.getVariant().getId(), te.getId());
         return te;
     }
 
@@ -296,7 +296,7 @@ public class GymTemplateService {
         for (TemplateExercise te : exercises) {
             te.moveTo(request.orderedIds().indexOf(te.getId()));
         }
-        normalizeGroups(variantId);
+        normalizeGroups(variantId, null);
         return exerciseResponses(variantId);
     }
 
@@ -333,8 +333,14 @@ public class GymTemplateService {
      * exercise out of the middle of a superset splits it rather than
      * failing, and a key left alone stops being a group at all. The first
      * run of a key wins; a later, detached run is released.
+     *
+     * @param justAssignedId the prescription whose key the caller just set, or
+     *     null when the caller stated the whole list at once. A superset built
+     *     one prescription at a time (the MCP coach appending them) is
+     *     necessarily alone when its first member lands — releasing it there
+     *     would make the group impossible to ever form.
      */
-    private void normalizeGroups(UUID variantId) {
+    private void normalizeGroups(UUID variantId, UUID justAssignedId) {
         List<TemplateExercise> exercises =
                 templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId);
         Set<String> closed = new LinkedHashSet<>();
@@ -353,12 +359,13 @@ public class GymTemplateService {
             previous = key;
         }
         for (int i = 0; i < exercises.size(); i++) {
-            String key = exercises.get(i).getGroupKey();
+            TemplateExercise te = exercises.get(i);
+            String key = te.getGroupKey();
             boolean alone = key != null
                     && (i == 0 || !key.equals(exercises.get(i - 1).getGroupKey()))
                     && (i == exercises.size() - 1 || !key.equals(exercises.get(i + 1).getGroupKey()));
-            if (alone) {
-                exercises.get(i).assignGroup(null);
+            if (alone && !te.getId().equals(justAssignedId)) {
+                te.assignGroup(null);
             }
         }
     }

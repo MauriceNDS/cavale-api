@@ -253,6 +253,43 @@ class GymTemplateServiceTest {
         assertThat(presse.getGroupKey()).isNull();
     }
 
+    /**
+     * The MCP coach builds a circuit one add_template_exercise at a time. Its
+     * first member is necessarily alone — releasing the key there would make
+     * the group impossible to ever form.
+     */
+    @Test
+    void addExercise_letsASupersetBeBuiltOnePrescriptionAtATime() {
+        GymTemplate template = template();
+        GymTemplateVariant a = variant(template, "A");
+        Exercise deadBug = exercise("Dead bug", ExerciseMeasure.BODYWEIGHT_REPS);
+        Exercise planche = exercise("Planche latérale", ExerciseMeasure.SECONDS);
+        // the variant's content as the service grows it, call after call
+        List<TemplateExercise> stored = new java.util.ArrayList<>();
+        when(variantRepository.findById(a.getId())).thenReturn(Optional.of(a));
+        when(exerciseService.getOwned(eq(USER), any())).thenReturn(deadBug, planche);
+        when(templateExerciseRepository.countByVariantId(a.getId()))
+                .thenAnswer(inv -> (long) stored.size());
+        when(templateExerciseRepository.findByVariantIdOrderByPositionAsc(a.getId()))
+                .thenAnswer(inv -> List.copyOf(stored));
+        when(templateExerciseRepository.save(any(TemplateExercise.class))).thenAnswer(inv -> {
+            TemplateExercise te = inv.getArgument(0);
+            ReflectionTestUtils.setField(te, "id", UUID.randomUUID());
+            stored.add(te);
+            return te;
+        });
+
+        TemplateExercise first = service().addExercise(USER, a.getId(),
+                new TemplateExerciseRequest(deadBug.getId(), 3, 10, null, 15, null, null, "A"));
+        assertThat(first.getGroupKey()).isEqualTo("A"); // alone, but under construction
+
+        TemplateExercise second = service().addExercise(USER, a.getId(),
+                new TemplateExerciseRequest(planche.getId(), 3, null, 30, 45, null, null, "A"));
+
+        assertThat(first.getGroupKey()).isEqualTo("A");
+        assertThat(second.getGroupKey()).isEqualTo("A");
+    }
+
     @Test
     void assignGroups_rejectsAGroupSplitAcrossTheList() {
         GymTemplate template = template();
