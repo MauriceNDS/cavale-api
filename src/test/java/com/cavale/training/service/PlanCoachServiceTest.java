@@ -293,6 +293,24 @@ class PlanCoachServiceTest {
                 .noneSatisfy(i -> assertThat(i).contains("strength/core work"));
     }
 
+    /** A run already done records what WAS prescribed — rewriting it isn't a fix. */
+    @Test
+    void validate_leavesAFinishedRunsTextAlone() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 7, 6), LocalDate.of(2026, 7, 12));
+        PlanWeek w1 = week(plan, 1, LocalDate.of(2026, 7, 6), WeekType.BUILD);
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(w1));
+
+        PlannedSession ef = new PlannedSession(w1, USER, LocalDate.of(2026, 7, 8), 0, Discipline.RUN,
+                "Footing EF", "50′ EF. + gainage accolé (fait le matin).", "EF", 50, null, null, 3);
+        ef.updateStatus(SessionStatus.DONE);
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(ef));
+
+        assertThat(service().validate(USER, PLAN).issues())
+                .noneSatisfy(i -> assertThat(i).contains("strength/core work"));
+    }
+
     /* ── P14: realign ──────────────────────────────────────────────────── */
 
     @Test

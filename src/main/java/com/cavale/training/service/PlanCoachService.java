@@ -348,8 +348,10 @@ public class PlanCoachService {
             }
             // Strength work tacked onto a run's text is invisible in the plan:
             // it can't be started, tracked or counted. It belongs in its own
-            // GYM session on the same day.
-            if (session.getDetail() != null
+            // GYM session on the same day. Only worth flagging while the
+            // session is still owed — a DONE or SKIPPED one records what WAS
+            // prescribed, and rewriting history is not a fix.
+            if (session.getStatus().isPending() && session.getDetail() != null
                     && WorkoutParser.STRENGTH_WORK.matcher(session.getDetail()).find()) {
                 issues.add("Run '" + session.getTitle() + "' on " + session.getDate()
                         + " prescribes strength/core work in its detail — give it its own GYM "
