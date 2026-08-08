@@ -38,6 +38,11 @@ public final class StravaDtos {
     public record LatLngStream(java.util.List<java.util.List<Double>> data) {
     }
 
+    /** Strava's only boolean stream: false while the athlete was stopped. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record BooleanStream(java.util.List<Boolean> data) {
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record StreamSet(
             Stream time,
@@ -47,6 +52,8 @@ public final class StravaDtos {
             @JsonProperty("velocity_smooth") Stream velocitySmooth,
             /** Run cadence, per leg (half the usual SPM figure). */
             Stream cadence,
+            /** Per-sample "was moving" flag — what separates moving from elapsed time. */
+            BooleanStream moving,
             LatLngStream latlng) {
     }
 

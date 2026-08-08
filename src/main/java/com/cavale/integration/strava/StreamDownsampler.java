@@ -18,7 +18,10 @@ final class StreamDownsampler {
     private StreamDownsampler() {
     }
 
-    /** @return JSON {"time":[s],"distance":[m],"hr":[bpm],"alt":[m],"vel":[m/s],"cad":[spm]} or null. */
+    /**
+     * @return JSON {"time":[s],"mtime":[s],"distance":[m],"hr":[bpm],"alt":[m],
+     *         "vel":[m/s],"cad":[spm]} or null.
+     */
     static String toJson(StravaDtos.StreamSet streams) {
         if (streams == null || streams.time() == null || streams.time().data() == null
                 || streams.time().data().size() < 2) {
@@ -28,7 +31,11 @@ final class StreamDownsampler {
         int stride = Math.max(1, size / MAX_POINTS);
 
         Map<String, List<Double>> out = Map.of(
-                "time", sample(streams.time() != null ? streams.time().data() : null, size, stride),
+                "time", sample(streams.time().data(), size, stride),
+                // Cumulative MOVING seconds, integrated at full resolution before
+                // downsampling — a pause between two kept samples would otherwise
+                // be invisible, and pace per km would read minutes too slow.
+                "mtime", sample(movingElapsed(streams), size, stride),
                 "distance", sample(streams.distance() != null ? streams.distance().data() : null, size, stride),
                 "hr", sample(streams.heartrate() != null ? streams.heartrate().data() : null, size, stride),
                 "alt", sample(streams.altitude() != null ? streams.altitude().data() : null, size, stride),
@@ -36,6 +43,33 @@ final class StreamDownsampler {
                 // Strava reports run cadence per leg; ×2 gives the usual SPM figure.
                 "cad", sample(streams.cadence() != null ? streams.cadence().data() : null, size, stride, 2.0));
         return MAPPER.writeValueAsString(out);
+    }
+
+    /**
+     * Running total of the seconds Strava considered the athlete to be moving.
+     * A sample's flag governs the interval that ends at it. Null when the
+     * activity carries no usable {@code moving} stream — consumers then fall
+     * back to their own stationary heuristic.
+     */
+    private static List<Double> movingElapsed(StravaDtos.StreamSet streams) {
+        List<Double> time = streams.time().data();
+        if (streams.moving() == null || streams.moving().data() == null
+                || streams.moving().data().size() != time.size()) {
+            return null;
+        }
+        List<Boolean> moving = streams.moving().data();
+        List<Double> cumulative = new ArrayList<>(time.size());
+        double total = 0;
+        cumulative.add(0.0);
+        for (int i = 1; i < time.size(); i++) {
+            Double now = time.get(i);
+            Double before = time.get(i - 1);
+            if (now != null && before != null && now > before && !Boolean.FALSE.equals(moving.get(i))) {
+                total += now - before;
+            }
+            cumulative.add(total);
+        }
+        return cumulative;
     }
 
     private static List<Double> sample(List<Double> data, int expectedSize, int stride) {
