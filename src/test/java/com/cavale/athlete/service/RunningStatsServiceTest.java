@@ -465,6 +465,26 @@ class RunningStatsServiceTest {
         assertThat(week.seconds().get(0)).isZero();
     }
 
+    /**
+     * Streams synced before moving time was recorded must still be priced by
+     * the pace actually run. Trimming time that DID earn distance would make
+     * every interval read faster than it was — a steady 6:30/km run coming
+     * back as 97 % sprint.
+     */
+    @Test
+    void weeklyAllures_readSteadyRunningCorrectlyWithoutMovingTime() {
+        // 4 km at 6:30/km, no "mtime" key at all.
+        Activity legacy = run(TODAY, 26, "4.0", 0, 140, 60, 1L);
+        legacy.attachStreams(
+                "{\"time\":[0,390,780,1170,1560],"
+                        + "\"distance\":[0,1000,2000,3000,4000],\"alt\":[0,0,0,0,0]}");
+
+        var week = stats(List.of(legacy)).weeklyAllures().getLast();
+
+        assertThat(week.seconds().get(1)).isEqualTo(1560);  // all of it EF
+        assertThat(week.seconds().get(6)).isZero();         // and none of it sprint
+    }
+
     /** A climb is priced at the athlete's own cost per vertical metre. */
     @Test
     void weeklyAllures_creditTheClimbRatherThanCallingItSlow() {

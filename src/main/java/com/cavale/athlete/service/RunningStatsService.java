@@ -703,17 +703,26 @@ public class RunningStatsService {
             }
             boolean hasMoving = mtime.isArray() && mtime.size() == time.size();
             boolean hasAlt = alt.isArray() && alt.size() >= n;
+            // Without a moving-time series, the only tell for a pause is an
+            // interval that lasted far longer than its neighbours: samples are
+            // stride-picked from a 1 Hz file, so they should all span the same
+            // wall time. Anything past 3× the median is recorder downtime.
+            double cap = hasMoving ? Double.MAX_VALUE : 3 * medianInterval(time, n);
+            /** Faster than this is a GPS jump, not running. */
+            double floorSecPerKm = model.secPerKm(Allure.SPRINT) * 0.5;
+
             for (int i = 1; i < n; i++) {
                 double metres = distance.get(i).asDouble() - distance.get(i - 1).asDouble();
                 double elapsed = time.get(i).asDouble() - time.get(i - 1).asDouble();
                 if (metres <= 0 || elapsed <= 0) {
                     continue;
                 }
-                // Moving time when the sync recorded it; otherwise cap the
-                // interval so a pause cannot masquerade as slow running.
+                // Whatever is trimmed here must be time the athlete did NOT
+                // spend covering `metres` — trimming time that earned distance
+                // would simply make the interval read faster than it was run.
                 double seconds = hasMoving
                         ? Math.max(0, mtime.get(i).asDouble() - mtime.get(i - 1).asDouble())
-                        : Math.min(elapsed, ZONE_MAX_GAP_SEC);
+                        : Math.min(elapsed, cap);
                 if (seconds <= 0) {
                     continue;
                 }
@@ -723,11 +732,25 @@ public class RunningStatsService {
                     double climb = Math.max(0, alt.get(i).asDouble() - alt.get(i - 1).asDouble());
                     secPerKm -= model.climbSecPerMeter() * (climb / km);
                 }
+                if (secPerKm < floorSecPerKm) {
+                    continue;
+                }
                 bucket[nearestAllure(secPerKm, model)] += (int) Math.round(seconds);
             }
         } catch (Exception e) {
             // a malformed stream simply contributes nothing
         }
+    }
+
+    /** Typical wall time between two kept samples of this recording. */
+    private static double medianInterval(JsonNode time, int n) {
+        double[] deltas = new double[n - 1];
+        for (int i = 1; i < n; i++) {
+            deltas[i - 1] = Math.max(0, time.get(i).asDouble() - time.get(i - 1).asDouble());
+        }
+        java.util.Arrays.sort(deltas);
+        double median = deltas[deltas.length / 2];
+        return median > 0 ? median : Double.MAX_VALUE / 3;
     }
 
     /**
