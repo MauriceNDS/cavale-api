@@ -5,16 +5,23 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import com.cavale.training.workout.WorkoutFlattener;
 import com.cavale.training.workout.WorkoutStructure.Allure;
 import com.cavale.training.workout.WorkoutStructure.Node;
 
 /**
  * Renders the canonical workout tree in the Intervals.icu workout-builder
  * text syntax, the same tree the .fit exporter encodes. One step per line
- * ("- Allure VMA 3m 110-120% Pace"), loops as "Nx" blocks framed by blank
- * lines. Quality allures target a range of threshold pace (100% = the
- * athlete's threshold configured on intervals.icu), so the watch alerts on
- * the athlete's own zones without Cavale knowing absolute paces.
+ * ("- Allure VMA 5/8 30s 110-120% Pace"). Quality allures target a range of
+ * threshold pace (100% = the athlete's threshold configured on
+ * intervals.icu), so the watch alerts on the athlete's own zones without
+ * Cavale knowing absolute paces.
+ *
+ * <p>Loops are unrolled rather than written as "Nx" blocks: intervals.icu
+ * does turn those into native FIT repeats, but a native repeat carries one
+ * name for all its reps, so the watch cannot say whether you are on the fifth
+ * or the seventh — and two identical 8× blocks in one session look exactly
+ * alike. See {@link WorkoutFlattener}.
  */
 @Component
 public class IntervalsWorkoutMapper {
@@ -43,32 +50,15 @@ public class IntervalsWorkoutMapper {
 
     public String describe(List<Node> nodes) {
         StringBuilder out = new StringBuilder();
-        appendNodes(out, nodes, false);
+        for (WorkoutFlattener.FlatStep step : WorkoutFlattener.flatten(nodes)) {
+            out.append("- ").append(stepLine(step)).append('\n');
+        }
         return out.toString().strip();
     }
 
-    private void appendNodes(StringBuilder out, List<Node> nodes, boolean insideRepeat) {
-        for (Node node : nodes) {
-            if (node.isRepeat()) {
-                if (insideRepeat) {
-                    // Intervals.icu loops don't nest — unroll the inner loop.
-                    for (int i = 0; i < node.count(); i++) {
-                        appendNodes(out, node.children(), true);
-                    }
-                } else {
-                    blankLine(out);
-                    out.append(node.count()).append("x\n");
-                    appendNodes(out, node.children(), true);
-                    blankLine(out);
-                }
-            } else {
-                out.append("- ").append(stepLine(node)).append('\n');
-            }
-        }
-    }
-
-    private static String stepLine(Node node) {
-        StringBuilder line = new StringBuilder(cue(node));
+    private static String stepLine(WorkoutFlattener.FlatStep step) {
+        Node node = step.node();
+        StringBuilder line = new StringBuilder(cue(node, step.repLabel()));
         if (node.seconds() != null) {
             line.append(' ').append(duration(node.seconds()));
         }
@@ -79,7 +69,7 @@ public class IntervalsWorkoutMapper {
         return line.toString();
     }
 
-    private static String cue(Node node) {
+    private static String cue(Node node, String repLabel) {
         String name = ALLURE_NAME.getOrDefault(node.allure(), "Étape");
         if (node.terrain() != null) {
             name += switch (node.terrain()) {
@@ -88,7 +78,9 @@ public class IntervalsWorkoutMapper {
                 case PLAT -> "";
             };
         }
-        return name;
+        // The rep number is the whole point of unrolling — keep it in the name,
+        // which is what the watch puts on screen.
+        return repLabel == null ? name : name + " " + repLabel;
     }
 
     /** 480 → "8m", 90 → "1m30s", 45 → "45s" ("m" means minutes on intervals.icu). */
@@ -101,9 +93,4 @@ public class IntervalsWorkoutMapper {
         return rest == 0 ? minutes + "m" : minutes + "m" + rest + "s";
     }
 
-    private static void blankLine(StringBuilder out) {
-        if (!out.isEmpty() && !out.toString().endsWith("\n\n")) {
-            out.append('\n');
-        }
-    }
 }

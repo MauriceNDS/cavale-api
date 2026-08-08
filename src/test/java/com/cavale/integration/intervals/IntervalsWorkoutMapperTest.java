@@ -28,11 +28,12 @@ class IntervalsWorkoutMapperTest {
 
         assertThat(text).isEqualTo("""
                 - Allure EF 20m 65-78% Pace
-
-                3x
-                - Allure Seuil 60 8m 94-100% Pace
-                - Récup 3m
-
+                - Allure Seuil 60 (1/3) 8m 94-100% Pace
+                - Récup (1/3) 3m
+                - Allure Seuil 60 (2/3) 8m 94-100% Pace
+                - Récup (2/3) 3m
+                - Allure Seuil 60 (3/3) 8m 94-100% Pace
+                - Récup (3/3) 3m
                 - Récup 10m""");
     }
 
@@ -53,9 +54,36 @@ class IntervalsWorkoutMapperTest {
                 .contains("- Allure EF (descente) 1m30s 65-78% Pace");
     }
 
-    /** Intervals.icu loops can't nest — the inner loop is unrolled in place. */
+    /**
+     * The session the athlete could not follow: two identical 8×30s blocks.
+     * Every rep now names its own position, and the two séries are told apart.
+     */
     @Test
-    void nestedRepeatsAreUnrolled() {
+    void twoIdenticalSeriesAreTellableApartRepByRep() {
+        Node block = Node.repeat(3, List.of(
+                Node.step(Allure.VMA, 30, null),
+                Node.step(Allure.LENTE, 60, null)));
+        String text = mapper.describe(List.of(block, Node.step(Allure.LENTE, 120, null), block));
+
+        assertThat(text).isEqualTo("""
+                - Allure VMA (S1 1/3) 30s 110-120% Pace
+                - Récup (S1 1/3) 1m
+                - Allure VMA (S1 2/3) 30s 110-120% Pace
+                - Récup (S1 2/3) 1m
+                - Allure VMA (S1 3/3) 30s 110-120% Pace
+                - Récup (S1 3/3) 1m
+                - Récup 2m
+                - Allure VMA (S2 1/3) 30s 110-120% Pace
+                - Récup (S2 1/3) 1m
+                - Allure VMA (S2 2/3) 30s 110-120% Pace
+                - Récup (S2 2/3) 1m
+                - Allure VMA (S2 3/3) 30s 110-120% Pace
+                - Récup (S2 3/3) 1m""");
+    }
+
+    /** An outer loop repeats its inner série, which keeps counting up. */
+    @Test
+    void nestedRepeatsNumberEachInnerSeries() {
         List<Node> nodes = List.of(
                 Node.repeat(2, List.of(
                         Node.repeat(2, List.of(
@@ -66,11 +94,15 @@ class IntervalsWorkoutMapperTest {
         String text = mapper.describe(nodes);
 
         assertThat(text).isEqualTo("""
-                2x
-                - Allure VMA 30s 110-120% Pace
-                - Récup 1m
-                - Allure VMA 30s 110-120% Pace
-                - Récup 1m
+                - Allure VMA (S1 1/2) 30s 110-120% Pace
+                - Récup (S1 1/2) 1m
+                - Allure VMA (S1 2/2) 30s 110-120% Pace
+                - Récup (S1 2/2) 1m
+                - Récup 3m
+                - Allure VMA (S2 1/2) 30s 110-120% Pace
+                - Récup (S2 1/2) 1m
+                - Allure VMA (S2 2/2) 30s 110-120% Pace
+                - Récup (S2 2/2) 1m
                 - Récup 3m""");
     }
 

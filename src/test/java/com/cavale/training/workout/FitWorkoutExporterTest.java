@@ -49,11 +49,12 @@ class FitWorkoutExporterTest {
 
     /**
      * Round-trip through the FIT SDK decoder: Garmin must see a WORKOUT file
-     * (not a course/activity) whose steps carry the exact timings and whose
-     * repeat structures point at the right first step with the right count.
+     * (not a course/activity) whose steps carry the exact timings, and in
+     * which every rep of every série arrives already numbered — the watch has
+     * no other way to say whether this is the fifth or the seventh.
      */
     @Test
-    void decodesAsAStructuredWorkoutWithTimingsAndNestedRepeats() {
+    void decodesAsAStructuredWorkoutWithEveryRepNumbered() {
         // 20′ EF + 3×(20″ sprint + 1′ récup) + 2×(8×(30″ VMA côte + 1′ récup) + 3′ récup) + 10′ récup
         List<Node> nodes = List.of(
                 Node.step(Allure.EF, 1200, null),
@@ -86,32 +87,37 @@ class FitWorkoutExporterTest {
         assertThat(workout.get().getSport()).isEqualTo(com.garmin.fit.Sport.RUNNING);
         assertThat(workout.get().getNumValidSteps()).isEqualTo(steps.size());
 
-        // 20′ EF warm-up: timed step, milliseconds
+        // Nothing is left for the watch to expand — every rep is its own step.
+        assertThat(steps).noneMatch(s -> s.getDurationType()
+                == com.garmin.fit.WktStepDuration.REPEAT_UNTIL_STEPS_CMPLT);
+        // 1 EF + 3×2 sprint série + 2×(8×2 VMA série + 1 récup) + 1 récup
+        assertThat(steps).hasSize(42);
+
+        // 20′ EF warm-up: timed step, milliseconds, outside any série so unlabelled
         assertThat(steps.get(0).getDurationType()).isEqualTo(com.garmin.fit.WktStepDuration.TIME);
         assertThat(steps.get(0).getDurationValue()).isEqualTo(1_200_000L);
+        assertThat(steps.get(0).getWktStepName()).isEqualTo("Allure EF");
 
-        // 3×(20″ sprint + 1′ récup): steps 1-2 then the repeat pointing back at 1
+        // 3×(20″ sprint + 1′ récup) — the first série, unrolled rep by rep
+        assertThat(steps.get(1).getWktStepName()).isEqualTo("Allure Sprint (S1 1/3)");
         assertThat(steps.get(1).getDurationValue()).isEqualTo(20_000L);
+        assertThat(steps.get(2).getWktStepName()).isEqualTo("Récup (S1 1/3)");
         assertThat(steps.get(2).getIntensity()).isEqualTo(com.garmin.fit.Intensity.REST);
-        var firstRepeat = steps.get(3);
-        assertThat(firstRepeat.getDurationType())
-                .isEqualTo(com.garmin.fit.WktStepDuration.REPEAT_UNTIL_STEPS_CMPLT);
-        assertThat(firstRepeat.getDurationValue()).isEqualTo(1L);
-        assertThat(firstRepeat.getTargetValue()).isEqualTo(3L);
+        assertThat(steps.get(5).getWktStepName()).isEqualTo("Allure Sprint (S1 3/3)");
 
-        // nested 2×(8×(…)+3′): inner repeat closes over steps 4-5, outer over 4-7
-        var innerRepeat = steps.get(6);
-        assertThat(innerRepeat.getDurationValue()).isEqualTo(4L);
-        assertThat(innerRepeat.getTargetValue()).isEqualTo(8L);
-        var outerRepeat = steps.get(8);
-        assertThat(outerRepeat.getDurationValue()).isEqualTo(4L);
-        assertThat(outerRepeat.getTargetValue()).isEqualTo(2L);
+        // 2×(8×(30″ VMA côte + 1′ récup) + 3′): each pass through the inner
+        // série gets its own number, so the two halves never look alike
+        assertThat(steps.get(7).getWktStepName()).isEqualTo("Allure VMA (côte) (S2 1/8)");
+        assertThat(steps.get(7).getDurationValue()).isEqualTo(30_000L);
+        assertThat(steps.get(22).getWktStepName()).isEqualTo("Récup (S2 8/8)");
+        assertThat(steps.get(23).getWktStepName()).isEqualTo("Récup"); // the 3′ between séries
+        assertThat(steps.get(24).getWktStepName()).isEqualTo("Allure VMA (côte) (S3 1/8)");
+        assertThat(steps.get(39).getWktStepName()).isEqualTo("Récup (S3 8/8)");
 
         // final 10′ récup: REST, timed
-        var last = steps.get(9);
+        var last = steps.get(41);
         assertThat(last.getDurationValue()).isEqualTo(600_000L);
         assertThat(last.getIntensity()).isEqualTo(com.garmin.fit.Intensity.REST);
-        assertThat(steps).hasSize(10);
     }
 
     @Test

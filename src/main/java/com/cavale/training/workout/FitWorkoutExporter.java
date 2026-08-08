@@ -27,11 +27,19 @@ import com.garmin.fit.WorkoutStepMesg;
 
 /**
  * Encodes the canonical workout tree as a Garmin .fit WORKOUT file. Every
- * block is a timed step named by its allure; loops become native FIT repeat
- * structures (nesting preserved); récupérations carry REST intensity.
+ * block is a timed step named by its allure and, inside a série, by its rep
+ * number; récupérations carry REST intensity.
+ *
+ * <p>Loops are unrolled rather than encoded as native FIT repeats: a repeat
+ * block carries a single name for all its reps, so mid-session the watch
+ * cannot tell you whether this is the fifth or the seventh. See
+ * {@link WorkoutFlattener}.
  */
 @Component
 public class FitWorkoutExporter {
+
+    /** The FIT profile's cap on wkt_step_name. */
+    private static final int MAX_STEP_NAME = 30;
 
     private static final Map<Allure, String> ALLURE_NAME = Map.of(
             Allure.LENTE, "Récup",
@@ -79,26 +87,22 @@ public class FitWorkoutExporter {
     }
 
     private void appendNodes(List<WorkoutStepMesg> steps, List<Node> nodes) {
-        for (Node node : nodes) {
-            if (node.isRepeat()) {
-                int firstIndex = steps.size();
-                appendNodes(steps, node.children());
-                if (steps.size() > firstIndex) {
-                    steps.add(repeatStep(steps.size(), firstIndex, node.count()));
-                }
+        for (WorkoutFlattener.FlatStep flat : WorkoutFlattener.flatten(nodes)) {
+            Node node = flat.node();
+            Intensity intensity = node.allure() == Allure.LENTE ? Intensity.REST : Intensity.ACTIVE;
+            String name = stepName(node, flat.repLabel());
+            if (node.seconds() != null) {
+                steps.add(timedStep(steps.size(), name, node.seconds(), intensity));
             } else {
-                Intensity intensity = node.allure() == Allure.LENTE ? Intensity.REST : Intensity.ACTIVE;
-                String name = stepName(node);
-                if (node.seconds() != null) {
-                    steps.add(timedStep(steps.size(), name, node.seconds(), intensity));
-                } else {
-                    steps.add(openStep(steps.size(), name, intensity));
-                }
+                steps.add(openStep(steps.size(), name, intensity));
             }
         }
     }
 
-    private static String stepName(Node node) {
+    /** FIT caps a step name at 30 characters. The rep number is the part the
+     *  athlete reads mid-interval, so the allure gives way to it, never the
+     *  other way round. */
+    private static String stepName(Node node, String repLabel) {
         String name = ALLURE_NAME.getOrDefault(node.allure(), "Étape");
         if (node.terrain() != null) {
             name += switch (node.terrain()) {
@@ -107,7 +111,15 @@ public class FitWorkoutExporter {
                 case PLAT -> "";
             };
         }
-        return name.length() > 30 ? name.substring(0, 30) : name;
+        if (repLabel == null) {
+            return name.length() > MAX_STEP_NAME ? name.substring(0, MAX_STEP_NAME) : name;
+        }
+        String suffix = " " + repLabel;
+        int room = MAX_STEP_NAME - suffix.length();
+        if (room <= 0) {
+            return repLabel.substring(0, Math.min(repLabel.length(), MAX_STEP_NAME));
+        }
+        return (name.length() > room ? name.substring(0, room) : name) + suffix;
     }
 
     private static WorkoutStepMesg timedStep(int index, String name, int durationSec, Intensity intensity) {
@@ -120,16 +132,6 @@ public class FitWorkoutExporter {
     private static WorkoutStepMesg openStep(int index, String name, Intensity intensity) {
         WorkoutStepMesg step = base(index, name, intensity);
         step.setDurationType(WktStepDuration.OPEN);
-        return step;
-    }
-
-    private static WorkoutStepMesg repeatStep(int index, int fromIndex, int repeats) {
-        WorkoutStepMesg step = new WorkoutStepMesg();
-        step.setMessageIndex(index);
-        step.setDurationType(WktStepDuration.REPEAT_UNTIL_STEPS_CMPLT);
-        step.setDurationValue((long) fromIndex);
-        step.setTargetType(WktStepTarget.OPEN);
-        step.setTargetValue((long) repeats);
         return step;
     }
 
