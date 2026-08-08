@@ -25,6 +25,7 @@ public record RunningStatsResponse(
         CriticalPace criticalPace,
         List<DurabilityPoint> durability,
         List<WeekZones> weeklyZones,
+        List<WeekAllures> weeklyAllures,
         LongRunGuard longRunGuard) {
 
     /** One day of the impulse-response model (fitness 42 d, fatigue 7 d). */
@@ -37,6 +38,18 @@ public record RunningStatsResponse(
      * whole duration at their average HR — flagged as partly estimated.
      */
     public record WeekZones(LocalDate weekStart, List<Integer> seconds, boolean partlyEstimated) {
+    }
+
+    /**
+     * One ISO week of time per allure, seconds ordered slowest to fastest —
+     * récup, EF, allure course, seuil 60, seuil 30, VMA, sprint.
+     *
+     * <p>Measured off the recording, not off the session's label: a sortie
+     * longue lands as mostly EF with whatever allure course it really
+     * contained. Stopped time is excluded, and each interval's pace is
+     * corrected for the climb it carried.
+     */
+    public record WeekAllures(LocalDate weekStart, List<Integer> seconds) {
     }
 
     /**

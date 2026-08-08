@@ -39,7 +39,10 @@ import com.cavale.training.domain.ActivityBestEffort;
 import com.cavale.training.domain.Objective;
 import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
+import com.cavale.training.pace.PaceModel;
+import com.cavale.training.pace.PaceModelService;
 import com.cavale.training.repository.ObjectiveRepository;
+import com.cavale.training.workout.WorkoutStructure.Allure;
 import com.cavale.user.domain.User;
 import com.cavale.user.service.UserService;
 
@@ -109,17 +112,20 @@ public class RunningStatsService {
     private final ObjectiveRepository objectiveRepository;
     private final UserService userService;
     private final GymLoadService gymLoadService;
+    private final PaceModelService paceModelService;
 
     public RunningStatsService(ActivityRepository activityRepository,
                                ActivityBestEffortRepository bestEffortRepository,
                                ObjectiveRepository objectiveRepository,
                                UserService userService,
-                               GymLoadService gymLoadService) {
+                               GymLoadService gymLoadService,
+                               PaceModelService paceModelService) {
         this.activityRepository = activityRepository;
         this.bestEffortRepository = bestEffortRepository;
         this.objectiveRepository = objectiveRepository;
         this.userService = userService;
         this.gymLoadService = gymLoadService;
+        this.paceModelService = paceModelService;
     }
 
     /**
@@ -208,6 +214,7 @@ public class RunningStatsService {
                 criticalPace(efforts),
                 durability(runs, today, windows.months()),
                 weeklyZones(runs, user, today, windows.weeks()),
+                weeklyAllures(runs, paceModelService.modelFor(userId), today, windows.weeks()),
                 longRunGuard(all, today));
     }
 
@@ -639,6 +646,107 @@ public class RunningStatsService {
             }
         }
         return 4;
+    }
+
+    /* ── Time per allure ───────────────────────────────────────────────── */
+
+    /**
+     * Weekly seconds spent at each allure, read off the streams rather than
+     * off what the session was labelled.
+     *
+     * <p>That distinction is the whole point: a sortie longue is not "SL time",
+     * it is mostly EF with a bit of allure course wherever the athlete pushed,
+     * and only the recording knows which. Every sampling interval is priced by
+     * its own pace — corrected for the climb it contained, using the athlete's
+     * own cost of a vertical metre — and dropped in the nearest allure's
+     * bucket. Stopped time never counts: a red light is not récupération.
+     */
+    static List<RunningStatsResponse.WeekAllures> weeklyAllures(List<Activity> activities,
+                                                                PaceModel model, LocalDate today,
+                                                                int weekCount) {
+        LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
+        LocalDate firstWeek = currentWeekStart.minusWeeks(weekCount - 1L);
+        Map<LocalDate, int[]> byWeek = new LinkedHashMap<>();
+        for (int i = weekCount - 1; i >= 0; i--) {
+            byWeek.put(currentWeekStart.minusWeeks(i), new int[ALLURE_ORDER.size()]);
+        }
+
+        for (Activity activity : activities) {
+            LocalDate week = activity.getDate().with(DayOfWeek.MONDAY);
+            int[] bucket = byWeek.get(week);
+            if (bucket == null || week.isBefore(firstWeek) || activity.getStreamsJson() == null) {
+                continue;
+            }
+            addStreamAllures(activity.getStreamsJson(), bucket, model);
+        }
+
+        return byWeek.entrySet().stream()
+                .map(entry -> new RunningStatsResponse.WeekAllures(entry.getKey(),
+                        java.util.Arrays.stream(entry.getValue()).boxed().toList()))
+                .toList();
+    }
+
+    /** The buckets, slowest first — the order the response's list carries. */
+    static final List<Allure> ALLURE_ORDER = List.of(Allure.LENTE, Allure.EF, Allure.COURSE,
+            Allure.SEUIL60, Allure.SEUIL30, Allure.VMA, Allure.SPRINT);
+
+    private static void addStreamAllures(String streamsJson, int[] bucket, PaceModel model) {
+        try {
+            JsonNode root = MAPPER.readTree(streamsJson);
+            JsonNode time = root.path("time");
+            JsonNode distance = root.path("distance");
+            JsonNode alt = root.path("alt");
+            JsonNode mtime = root.path("mtime");
+            int n = Math.min(time.size(), distance.size());
+            if (!time.isArray() || !distance.isArray() || n < 2) {
+                return;
+            }
+            boolean hasMoving = mtime.isArray() && mtime.size() == time.size();
+            boolean hasAlt = alt.isArray() && alt.size() >= n;
+            for (int i = 1; i < n; i++) {
+                double metres = distance.get(i).asDouble() - distance.get(i - 1).asDouble();
+                double elapsed = time.get(i).asDouble() - time.get(i - 1).asDouble();
+                if (metres <= 0 || elapsed <= 0) {
+                    continue;
+                }
+                // Moving time when the sync recorded it; otherwise cap the
+                // interval so a pause cannot masquerade as slow running.
+                double seconds = hasMoving
+                        ? Math.max(0, mtime.get(i).asDouble() - mtime.get(i - 1).asDouble())
+                        : Math.min(elapsed, ZONE_MAX_GAP_SEC);
+                if (seconds <= 0) {
+                    continue;
+                }
+                double km = metres / 1000.0;
+                double secPerKm = seconds / km;
+                if (hasAlt) {
+                    double climb = Math.max(0, alt.get(i).asDouble() - alt.get(i - 1).asDouble());
+                    secPerKm -= model.climbSecPerMeter() * (climb / km);
+                }
+                bucket[nearestAllure(secPerKm, model)] += (int) Math.round(seconds);
+            }
+        } catch (Exception e) {
+            // a malformed stream simply contributes nothing
+        }
+    }
+
+    /**
+     * The allure whose flat pace this one sits closest to, compared as speeds
+     * so the gaps are judged the way the pace model builds them (a fixed speed
+     * ratio, not a fixed number of seconds).
+     */
+    private static int nearestAllure(double secPerKm, PaceModel model) {
+        double speed = secPerKm > 0 ? 1.0 / secPerKm : 0;
+        int best = 0;
+        double bestGap = Double.MAX_VALUE;
+        for (int i = 0; i < ALLURE_ORDER.size(); i++) {
+            double gap = Math.abs(speed - 1.0 / model.secPerKm(ALLURE_ORDER.get(i)));
+            if (gap < bestGap) {
+                bestGap = gap;
+                best = i;
+            }
+        }
+        return best;
     }
 
     /* ── RUNSAFE long-run guard ────────────────────────────────────────── */

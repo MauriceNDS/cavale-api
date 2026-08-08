@@ -22,6 +22,8 @@ import com.cavale.training.domain.ActivityBestEffort;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
+import com.cavale.training.pace.PaceModel;
+import com.cavale.training.pace.PaceModelService;
 import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.user.domain.User;
 import com.cavale.gym.service.GymLoadService;
@@ -53,11 +55,15 @@ class RunningStatsServiceTest {
     @Mock
     private GymLoadService gymLoadService;
 
+    @Mock
+    private PaceModelService paceModelService;
+
     private RunningStatsService service() {
         lenient().when(userService.getById(USER)).thenReturn(userWithHr());
         lenient().when(gymLoadService.dailyLoad(USER)).thenReturn(Map.of());
+        lenient().when(paceModelService.modelFor(USER)).thenReturn(PaceModel.fallback());
         return new RunningStatsService(activityRepository, bestEffortRepository,
-                objectiveRepository, userService, gymLoadService);
+                objectiveRepository, userService, gymLoadService, paceModelService);
     }
 
     /** An athlete with HR zones set, so VO2max estimates can be computed. */
@@ -421,6 +427,58 @@ class RunningStatsServiceTest {
 
     private static Acwr acwr(double ratio, AcwrZone zone) {
         return new Acwr(ratio, 0, 0, zone);
+    }
+
+    /**
+     * PaceModel.fallback() is EF 6:30/km, so the allure paces are
+     * récup 7:39, EF 6:30, course 6:01, seuil60 5:42, seuil30 5:31,
+     * VMA 4:55, sprint 4:20. Each interval lands in the nearest one.
+     */
+    @Test
+    void weeklyAllures_priceEachIntervalByItsOwnPace() {
+        // 3 km at 6:30/km (EF), then 1 km at 4:55/km (VMA) — moving throughout.
+        Activity streamed = run(TODAY, 25, "4.0", 0, 140, 60, 1L);
+        streamed.attachStreams(
+                "{\"time\":[0,390,780,1170,1465],\"mtime\":[0,390,780,1170,1465],"
+                        + "\"distance\":[0,1000,2000,3000,4000],\"alt\":[0,0,0,0,0]}");
+
+        var week = stats(List.of(streamed)).weeklyAllures().getLast();
+
+        assertThat(week.weekStart()).isEqualTo(TODAY);
+        assertThat(week.seconds().get(1)).isEqualTo(1170);  // EF: 3 × 390 s
+        assertThat(week.seconds().get(5)).isEqualTo(295);   // VMA: the last km
+        assertThat(week.seconds().get(0)).isZero();         // nothing at récup
+    }
+
+    @Test
+    void weeklyAllures_ignoreTimeSpentStandingStill() {
+        // Two 6:30/km kilometres with a 5-minute stop inside the second: the
+        // stop must not drag that kilometre down into the récup bucket.
+        Activity streamed = run(TODAY, 20, "2.0", 0, 140, 60, 1L);
+        streamed.attachStreams(
+                "{\"time\":[0,390,1080],\"mtime\":[0,390,780],"
+                        + "\"distance\":[0,1000,2000],\"alt\":[0,0,0]}");
+
+        var week = stats(List.of(streamed)).weeklyAllures().getLast();
+
+        assertThat(week.seconds().get(1)).isEqualTo(780);   // both km read as EF
+        assertThat(week.seconds().get(0)).isZero();
+    }
+
+    /** A climb is priced at the athlete's own cost per vertical metre. */
+    @Test
+    void weeklyAllures_creditTheClimbRatherThanCallingItSlow() {
+        // 1 km at 8:30/km but climbing 60 m: 4 s/m × 60 m = 240 s of the
+        // 510 s is the hill, leaving 270 s/km — that is VMA-fast on the flat.
+        Activity climbing = run(TODAY, 9, "1.0", 60, 150, 60, 1L);
+        climbing.attachStreams(
+                "{\"time\":[0,510],\"mtime\":[0,510],"
+                        + "\"distance\":[0,1000],\"alt\":[0,60]}");
+
+        var week = stats(List.of(climbing)).weeklyAllures().getLast();
+
+        assertThat(week.seconds().get(0)).isZero();         // not récup
+        assertThat(week.seconds().get(6)).isEqualTo(510);   // sprint-equivalent flat
     }
 
     @Test
