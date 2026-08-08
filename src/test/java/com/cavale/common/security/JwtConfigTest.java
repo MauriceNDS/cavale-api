@@ -71,7 +71,8 @@ class JwtConfigTest {
     @Test
     void stateTokenDecodesLenientlyButNotAsBearer() {
         JwtProperties props = new JwtProperties("state-decoder-test-secret-0123456789abcdef",
-                java.time.Duration.ofHours(24), java.time.Duration.ofDays(180));
+                java.time.Duration.ofHours(24), java.time.Duration.ofDays(180),
+                java.time.Duration.ofDays(60), true);
         JwtConfig config = new JwtConfig(props);
 
         Instant now = Instant.now();

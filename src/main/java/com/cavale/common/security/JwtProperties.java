@@ -5,7 +5,8 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "cavale.security.jwt")
-public record JwtProperties(String secret, Duration ttl, Duration patTtl) {
+public record JwtProperties(String secret, Duration ttl, Duration patTtl, Duration refreshTtl,
+                            boolean secureCookie) {
 
     public JwtProperties {
         if (secret == null || secret.getBytes().length < 32) {
@@ -16,6 +17,9 @@ public record JwtProperties(String secret, Duration ttl, Duration patTtl) {
         }
         if (patTtl == null || patTtl.isNegative() || patTtl.isZero()) {
             throw new IllegalStateException("cavale.security.jwt.pat-ttl must be a positive duration");
+        }
+        if (refreshTtl == null || refreshTtl.isNegative() || refreshTtl.isZero()) {
+            throw new IllegalStateException("cavale.security.jwt.refresh-ttl must be a positive duration");
         }
     }
 }

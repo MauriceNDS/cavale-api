@@ -150,6 +150,14 @@ cavale:
       ttl: ${CAVALE_JWT_TTL:PT24H}
       # personal access tokens (MCP client credential) — long-lived by design
       pat-ttl: ${CAVALE_JWT_PAT_TTL:P180D}
+      # How long a signed-in device stays signed in without touching the app.
+      # The refresh token rotates on every use, so this is an idle timeout
+      # rather than a hard session lifetime.
+      refresh-ttl: ${CAVALE_JWT_REFRESH_TTL:P60D}
+      # The refresh cookie is Secure everywhere it is served over HTTPS.
+      # Only a plain-HTTP local dev server needs this turned off, or the
+      # browser silently drops the cookie and the athlete is logged out.
+      secure-cookie: ${CAVALE_JWT_SECURE_COOKIE:true}
   strava:
     # Create an API application at strava.com/settings/api, then set these.
     client-id: ${CAVALE_STRAVA_CLIENT_ID:}

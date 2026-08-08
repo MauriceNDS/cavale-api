@@ -11,6 +11,7 @@ import com.cavale.user.config.AdminProperties;
 import com.cavale.user.domain.AccountStatus;
 import com.cavale.user.domain.User;
 import com.cavale.user.dto.UpdateProfileRequest;
+import com.cavale.user.repository.RefreshTokenRepository;
 import com.cavale.user.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,12 +30,16 @@ class UserServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private RefreshTokenRepository refreshTokenRepository;
+
     private UserService userService() {
         return userService(new AdminProperties(java.util.List.of()));
     }
 
     private UserService userService(AdminProperties adminProperties) {
-        return new UserService(userRepository, passwordEncoder, adminProperties);
+        return new UserService(userRepository, passwordEncoder, adminProperties,
+                refreshTokenRepository);
     }
 
     @Test

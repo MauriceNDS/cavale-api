@@ -19,6 +19,7 @@ import com.cavale.integration.strava.StravaException;
 import com.cavale.training.service.PlanImportException;
 import com.cavale.user.service.EmailAlreadyUsedException;
 import com.cavale.user.service.InvalidCredentialsException;
+import com.cavale.user.service.InvalidRefreshTokenException;
 import com.cavale.user.service.UserNotFoundException;
 
 /**
@@ -54,6 +55,14 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
         problem.setTitle("Authentication failed");
         problem.setDetail(ex.getMessage());
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    ProblemDetail handleInvalidRefreshToken(InvalidRefreshTokenException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        problem.setTitle("Session expired");
+        problem.setDetail("Sign in again to continue.");
         return problem;
     }
 

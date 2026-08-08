@@ -16,6 +16,7 @@ import com.cavale.user.domain.User;
 import com.cavale.user.dto.UpdateCredentialsRequest;
 import com.cavale.user.dto.UpdateProfileRequest;
 import com.cavale.user.dto.UpdateStatusRequest;
+import com.cavale.user.repository.RefreshTokenRepository;
 import com.cavale.user.repository.UserRepository;
 
 @Service
@@ -24,12 +25,15 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AdminProperties adminProperties;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                       AdminProperties adminProperties) {
+                       AdminProperties adminProperties,
+                       RefreshTokenRepository refreshTokenRepository) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.adminProperties = adminProperties;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     @Transactional
@@ -153,10 +157,19 @@ public class UserService {
         return user;
     }
 
-    /** Invalidate every token for the account (leaked-PAT kill switch). */
+    /**
+     * Invalidate every credential for the account (leaked-PAT kill switch).
+     *
+     * <p>Bumping the token version alone would not be enough: a live refresh
+     * token would simply mint a new access token stamped with the NEW version
+     * and sail past the gate. The refresh chain has to be cut in the same
+     * breath. Uses the repository rather than RefreshTokenService, which
+     * depends on this class.
+     */
     @Transactional
     public void revokeTokens(UUID id) {
         getById(id).revokeTokens();
+        refreshTokenRepository.revokeAllForUser(id, java.time.Instant.now());
     }
 
     @Transactional

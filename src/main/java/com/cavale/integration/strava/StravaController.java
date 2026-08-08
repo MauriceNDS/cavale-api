@@ -19,8 +19,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cavale.user.service.RefreshTokenService;
+import com.cavale.user.web.RefreshCookie;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 
 @RestController
 @RequestMapping("/api/strava")
@@ -33,17 +37,22 @@ public class StravaController {
     private final StravaConnectionRepository connectionRepository;
     private final StravaProperties properties;
     private final StravaClient stravaClient;
+    private final RefreshTokenService refreshTokenService;
+    private final RefreshCookie refreshCookie;
 
     public StravaController(StravaAuthService authService, StravaActivityService activityService,
                             StravaSyncService syncService,
                             StravaConnectionRepository connectionRepository, StravaProperties properties,
-                            StravaClient stravaClient) {
+                            StravaClient stravaClient, RefreshTokenService refreshTokenService,
+                            RefreshCookie refreshCookie) {
         this.authService = authService;
         this.activityService = activityService;
         this.syncService = syncService;
         this.connectionRepository = connectionRepository;
         this.properties = properties;
         this.stravaClient = stravaClient;
+        this.refreshTokenService = refreshTokenService;
+        this.refreshCookie = refreshCookie;
     }
 
     public record StravaStatus(boolean configured, boolean connected, Long athleteId, Instant lastSyncAt) {
@@ -68,9 +77,15 @@ public class StravaController {
     @Operation(summary = "OAuth callback (redirects back to the web app)")
     public ResponseEntity<Void> callback(@RequestParam(required = false) String code,
                                          @RequestParam(required = false) String state,
-                                         @RequestParam(required = false) String error) {
-        String redirect = authService.handleCallback(code, state, error);
-        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(redirect)).build();
+                                         @RequestParam(required = false) String error,
+                                         HttpServletResponse response) {
+        StravaAuthService.CallbackResult result = authService.handleCallback(code, state, error);
+        // Signing in through Strava is a sign-in like any other — it earns the
+        // same refresh cookie, or the athlete would be back here in 24 hours.
+        if (result.signedInUserId() != null) {
+            refreshCookie.set(response, refreshTokenService.issueFor(result.signedInUserId()));
+        }
+        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(result.redirect())).build();
     }
 
     @GetMapping("/activities")

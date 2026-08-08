@@ -17,11 +17,13 @@ import com.cavale.user.dto.AuthResponse;
 import com.cavale.user.dto.UserResponse;
 import com.cavale.user.repository.UserRepository;
 import com.cavale.user.service.InvalidCredentialsException;
+import com.cavale.user.service.RefreshTokenService;
 import com.cavale.user.service.TokenService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 
@@ -40,12 +42,17 @@ public class DevLoginController {
     private final DevLoginProperties properties;
     private final UserRepository userRepository;
     private final TokenService tokenService;
+    private final RefreshTokenService refreshTokenService;
+    private final RefreshCookie refreshCookie;
 
     public DevLoginController(DevLoginProperties properties, UserRepository userRepository,
-                              TokenService tokenService) {
+                              TokenService tokenService, RefreshTokenService refreshTokenService,
+                              RefreshCookie refreshCookie) {
         this.properties = properties;
         this.userRepository = userRepository;
         this.tokenService = tokenService;
+        this.refreshTokenService = refreshTokenService;
+        this.refreshCookie = refreshCookie;
     }
 
     @PostConstruct
@@ -67,7 +74,8 @@ public class DevLoginController {
 
     @PostMapping
     @Operation(summary = "Dev only: authenticate by email, no password")
-    public AuthResponse login(@Valid @RequestBody DevLoginRequest request) {
+    public AuthResponse login(@Valid @RequestBody DevLoginRequest request,
+                              HttpServletResponse response) {
         if (!properties.enabled()) {
             throw new InvalidCredentialsException();
         }
@@ -75,6 +83,7 @@ public class DevLoginController {
                 .filter(u -> !u.isDemo())
                 .orElseThrow(InvalidCredentialsException::new);
         log.info("Dev login for {}", user.getEmail());
+        refreshCookie.set(response, refreshTokenService.issueFor(user.getId()));
         return new AuthResponse(tokenService.issueFor(user), UserResponse.from(user));
     }
 }

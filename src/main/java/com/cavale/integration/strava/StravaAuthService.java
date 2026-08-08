@@ -80,9 +80,20 @@ public class StravaAuthService {
         return buildAuthorizeUrl(issueState(PURPOSE_LOGIN, "anonymous"));
     }
 
-    /** @return the frontend URL to redirect the browser to */
+    /**
+     * Where to send the browser next, plus — when the athlete signed IN through
+     * Strava rather than merely connecting an account — who they turned out to
+     * be, so the caller can hand them a refresh cookie like any other door.
+     */
+    public record CallbackResult(String redirect, UUID signedInUserId) {
+
+        static CallbackResult redirectOnly(String redirect) {
+            return new CallbackResult(redirect, null);
+        }
+    }
+
     @Transactional
-    public String handleCallback(String code, String state, String error) {
+    public CallbackResult handleCallback(String code, String state, String error) {
         String purpose;
         String subject;
         try {
@@ -93,26 +104,26 @@ public class StravaAuthService {
                 throw new IllegalArgumentException("wrong token purpose");
             }
         } catch (JwtException | IllegalArgumentException | NullPointerException e) {
-            return properties.frontendRedirect() + "?strava=error";
+            return CallbackResult.redirectOnly(properties.frontendRedirect() + "?strava=error");
         }
 
         boolean isLogin = PURPOSE_LOGIN.equals(purpose);
         if (error != null || code == null) {
-            return isLogin
+            return CallbackResult.redirectOnly(isLogin
                     ? properties.frontendLoginRedirect() + "#error"
-                    : properties.frontendRedirect() + "?strava=error";
+                    : properties.frontendRedirect() + "?strava=error");
         }
 
         StravaDtos.TokenResponse token = stravaClient.exchangeCode(code);
         return isLogin ? completeLogin(token) : completeConnect(UUID.fromString(subject), token);
     }
 
-    private String completeConnect(UUID userId, StravaDtos.TokenResponse token) {
+    private CallbackResult completeConnect(UUID userId, StravaDtos.TokenResponse token) {
         upsertConnection(userId, token);
-        return properties.frontendRedirect() + "?strava=connected";
+        return CallbackResult.redirectOnly(properties.frontendRedirect() + "?strava=connected");
     }
 
-    private String completeLogin(StravaDtos.TokenResponse token) {
+    private CallbackResult completeLogin(StravaDtos.TokenResponse token) {
         long athleteId = token.athlete().id();
         User user = connectionRepository.findByAthleteId(athleteId)
                 .map(connection -> userRepository.findById(connection.getUserId()).orElseThrow())
@@ -121,7 +132,8 @@ public class StravaAuthService {
         upsertConnection(user.getId(), token);
         String cavaleJwt = tokenService.issueFor(user);
         // fragment (#), not query: it stays out of server logs and referrers
-        return properties.frontendLoginRedirect() + "#token=" + cavaleJwt;
+        return new CallbackResult(properties.frontendLoginRedirect() + "#token=" + cavaleJwt,
+                user.getId());
     }
 
     /**

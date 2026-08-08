@@ -8,6 +8,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.cavale.user.service.RefreshTokenService;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -43,6 +45,12 @@ class AuthControllerTest {
 
     @MockitoBean
     private JwtDecoder jwtDecoder;
+
+    @MockitoBean
+    private RefreshTokenService refreshTokenService;
+
+    @MockitoBean
+    private RefreshCookie refreshCookie;
 
     private static User userWithId(UUID id) {
         User user = new User("alice@cavale.run", "$2a$hashed", "Alice");

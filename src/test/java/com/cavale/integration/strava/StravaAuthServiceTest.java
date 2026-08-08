@@ -101,7 +101,7 @@ class StravaAuthServiceTest {
         when(connectionRepository.findByUserId(any())).thenReturn(Optional.empty());
         when(tokenService.issueFor(any(User.class))).thenReturn("cavale-jwt");
 
-        String redirect = service.handleCallback("the-code", state, null);
+        String redirect = service.handleCallback("the-code", state, null).redirect();
 
         assertThat(redirect).isEqualTo("http://localhost:5173/auth/strava#token=cavale-jwt");
         verify(userRepository).save(any(User.class));
@@ -128,7 +128,7 @@ class StravaAuthServiceTest {
         when(connectionRepository.findByUserId(existingUserId)).thenReturn(Optional.of(connection));
         when(tokenService.issueFor(existingUser)).thenReturn("cavale-jwt-2");
 
-        String redirect = service.handleCallback("the-code", state, null);
+        String redirect = service.handleCallback("the-code", state, null).redirect();
 
         assertThat(redirect).endsWith("#token=cavale-jwt-2");
         verify(userRepository, never()).save(any());
@@ -136,7 +136,7 @@ class StravaAuthServiceTest {
 
     @Test
     void callback_withTamperedState_redirectsToError() {
-        String redirect = service().handleCallback("code", "not-a-valid-state", null);
+        String redirect = service().handleCallback("code", "not-a-valid-state", null).redirect();
 
         assertThat(redirect).isEqualTo("http://localhost:5173/settings?strava=error");
         verify(stravaClient, never()).exchangeCode(anyString());
@@ -147,7 +147,7 @@ class StravaAuthServiceTest {
         StravaAuthService service = service();
         String state = extractState(service.loginUrl());
 
-        String redirect = service.handleCallback(null, state, "access_denied");
+        String redirect = service.handleCallback(null, state, "access_denied").redirect();
 
         assertThat(redirect).isEqualTo("http://localhost:5173/auth/strava#error");
         verify(stravaClient, never()).exchangeCode(anyString());
