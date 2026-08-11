@@ -71,7 +71,10 @@ public record PaceModel(Map<Allure, Integer> flatSecPerKm, double climbSecPerMet
         double v6 = dPrimeM != null && dPrimeM >= 80 && dPrimeM <= 600
                 ? vCp + dPrimeM / 360.0
                 : vCp * 1.12;
-        v6 = Math.max(v6, vCp * 1.05); // VMA meaningfully faster than threshold
+        // Meaningfully faster than threshold, but a noisy D' (the 2-parameter
+        // fit over few distances inflates it) must not produce fantasy
+        // interval paces: physiological vVO2max sits ~5-15% above CS.
+        v6 = Math.clamp(v6, vCp * 1.05, vCp * 1.15);
         int vma = (int) Math.round(1000.0 / v6);
 
         Map<Allure, Integer> paces = new EnumMap<>(Allure.class);
