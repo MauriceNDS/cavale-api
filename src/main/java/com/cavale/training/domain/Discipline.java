@@ -1,5 +1,5 @@
 package com.cavale.training.domain;
 
 public enum Discipline {
-    RUN, GYM, REST, CROSS, HIKE
+    RUN, GYM, CROSS, HIKE
 }

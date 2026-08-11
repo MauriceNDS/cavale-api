@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.training.domain.Activity;
-import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.Objective;
 import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.PlanWeek;
@@ -37,7 +36,7 @@ import com.cavale.training.repository.PlannedSessionRepository;
  * Read model for the objective page: target-vs-actual aggregates over one
  * plan. Actual volume/D+ come from recorded activities; actual duration
  * falls back to the planned duration for DONE sessions without one (gym
- * sessions are validated by status alone). REST days never count as sessions.
+ * sessions are validated by status alone).
  */
 @Service
 public class PlanProgressService {
@@ -128,7 +127,6 @@ public class PlanProgressService {
     private static WeekProgress weekProgress(PlanWeek week, List<PlannedSession> sessions,
                                              Map<UUID, Activity> activities, PaceModel paceModel,
                                              LocalDate today) {
-        List<PlannedSession> real = withoutRest(sessions);
         boolean current = !today.isBefore(week.getStartDate())
                 && today.isBefore(week.getStartDate().plusDays(DAYS_PER_WEEK));
         return new WeekProgress(
@@ -139,22 +137,21 @@ public class PlanProgressService {
                 week.getPhase(),
                 current,
                 week.getTargetVolumeKm(),
-                estimatedVolumeKm(real, paceModel),
+                estimatedVolumeKm(sessions, paceModel),
                 week.getTargetElevationM(),
                 week.getTargetLoadUa(),
-                plannedDurationMin(real),
-                actualVolumeKm(real, activities),
-                actualElevationM(real, activities),
-                actualDurationMin(real, activities),
-                real.size(),
-                countByStatus(real, SessionStatus.DONE),
-                countByStatus(real, SessionStatus.SKIPPED));
+                plannedDurationMin(sessions),
+                actualVolumeKm(sessions, activities),
+                actualElevationM(sessions, activities),
+                actualDurationMin(sessions, activities),
+                sessions.size(),
+                countByStatus(sessions, SessionStatus.DONE),
+                countByStatus(sessions, SessionStatus.SKIPPED));
     }
 
     private static ProgressTotals totals(List<PlanWeek> weeks, List<PlannedSession> sessions,
                                          Map<UUID, Activity> activities, LocalDate today) {
-        List<PlannedSession> real = withoutRest(sessions);
-        List<PlannedSession> past = real.stream().filter(s -> s.getDate().isBefore(today)).toList();
+        List<PlannedSession> past = sessions.stream().filter(s -> s.getDate().isBefore(today)).toList();
 
         BigDecimal plannedVolumeToDate = BigDecimal.ZERO;
         BigDecimal plannedElevationToDate = BigDecimal.ZERO;
@@ -171,14 +168,14 @@ public class PlanProgressService {
         }
 
         return new ProgressTotals(
-                real.size(),
-                countByStatus(real, SessionStatus.DONE),
-                countByStatus(real, SessionStatus.SKIPPED),
+                sessions.size(),
+                countByStatus(sessions, SessionStatus.DONE),
+                countByStatus(sessions, SessionStatus.SKIPPED),
                 past.size(),
                 countByStatus(past, SessionStatus.DONE),
-                actualVolumeKm(real, activities),
-                actualElevationM(real, activities),
-                actualDurationMin(real, activities),
+                actualVolumeKm(sessions, activities),
+                actualElevationM(sessions, activities),
+                actualDurationMin(sessions, activities),
                 plannedVolumeToDate.setScale(1, RoundingMode.HALF_UP),
                 plannedElevationToDate.setScale(0, RoundingMode.HALF_UP).intValue(),
                 targetVolume,
@@ -191,10 +188,6 @@ public class PlanProgressService {
         long boundedDays = Math.clamp(elapsedDays, 0, DAYS_PER_WEEK);
         return BigDecimal.valueOf(boundedDays)
                 .divide(BigDecimal.valueOf(DAYS_PER_WEEK), 4, RoundingMode.HALF_UP);
-    }
-
-    private static List<PlannedSession> withoutRest(List<PlannedSession> sessions) {
-        return sessions.stream().filter(s -> s.getDiscipline() != Discipline.REST).toList();
     }
 
     private static int countByStatus(List<PlannedSession> sessions, SessionStatus status) {

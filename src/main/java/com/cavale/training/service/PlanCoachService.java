@@ -396,7 +396,6 @@ public class PlanCoachService {
         LocalDate recentFrom = today.minusWeeks(3);
 
         List<PlannedSession> missed = sessions.stream()
-                .filter(s -> s.getDiscipline() != Discipline.REST)
                 .filter(s -> (s.getStatus().isPending() && s.getDate().isBefore(today))
                         || (s.getStatus() == SessionStatus.SKIPPED && !s.getDate().isBefore(recentFrom)))
                 .toList();

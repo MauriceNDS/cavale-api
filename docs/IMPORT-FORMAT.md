@@ -47,7 +47,7 @@ error (with line number) rolls back everything. Returns
 | `focus` | | opt | | free text |
 | `date` | | | ✓ | must fall in the plan range |
 | `order_in_day` | | | opt | default 0; two-a-days |
-| `discipline` | | | ✓ | `RUN\|GYM\|REST\|CROSS` |
+| `discipline` | | | ✓ | `RUN\|GYM\|CROSS\|HIKE` |
 | `title` | | | ✓ | ≤200 |
 | `detail` | | | opt | free text (warm-up / body / cool-down) |
 | `zone` | | | opt | ≤30 (e.g. `EF`, `Seuil 60`) |

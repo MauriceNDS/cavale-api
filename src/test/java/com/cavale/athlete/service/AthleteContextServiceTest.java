@@ -199,16 +199,14 @@ class AthleteContextServiceTest {
         PlannedSession skipped = new PlannedSession(week, USER, lastMonday.plusDays(4), 0,
                 Discipline.RUN, "Seuil", null, "Seuil 60", 70, null, null, null);
         skipped.updateStatus(SessionStatus.SKIPPED);
-        PlannedSession rest = new PlannedSession(week, USER, lastMonday.plusDays(5), 0,
-                Discipline.REST, "Repos", null, null, null, null, null, null);
         when(sessionRepository.findByUserIdAndDateBetweenOrderByDateAscOrderInDayAsc(
-                eq(USER), any(), any())).thenReturn(List.of(done, skipped, rest));
+                eq(USER), any(), any())).thenReturn(List.of(done, skipped));
 
         AthleteContextResponse context = service().getContext(USER, TODAY);
 
         AthleteContextResponse.WeekLoad lastWeek = context.recentWeeks().get(4); // 6 weeks, index 4 = W-1
         assertThat(lastWeek.weekStart()).isEqualTo(lastMonday);
-        assertThat(lastWeek.plannedSessions()).isEqualTo(2); // REST never counts
+        assertThat(lastWeek.plannedSessions()).isEqualTo(2);
         assertThat(lastWeek.doneSessions()).isEqualTo(1);
         assertThat(lastWeek.skippedSessions()).isEqualTo(1);
         assertThat(lastWeek.runs()).isEqualTo(2);

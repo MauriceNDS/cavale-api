@@ -308,7 +308,8 @@ public class CoachTools {
     }
 
     @Tool(name = "add_session", description = """
-            Add one session to a week. discipline: RUN, GYM, REST, CROSS or HIKE \
+            Add one session to a week. discipline: RUN, GYM, CROSS or HIKE \
+            — never plan rest days as sessions, days without a session ARE rest \
             (a planned trek — give it duration and elevation). For RUN \
             sessions, write `detail` in the athlete's preferred language using the workout notation the parser \
             understands, e.g. '20′ EF + 3×10′ Seuil 60 (récup 3′) + 10′ EF' — the \
@@ -359,7 +360,7 @@ public class CoachTools {
             the fields to change; a blank detail/zone clears the value. For RUN \
             sessions the structured workout is re-derived from the new detail \
             text (same notation as add_session). Setting DONE without measures \
-            is for GYM/REST sessions; the athlete validates runs from the app. \
+            is for GYM sessions; the athlete validates runs from the app. \
             A DONE or SKIPPED session cannot be moved to another date.""")
     public SessionResponse updateSession(
             @ToolParam(description = "Session UUID") String sessionId,

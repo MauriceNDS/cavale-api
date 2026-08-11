@@ -94,7 +94,6 @@ class PlanProgressServiceTest {
         PlannedSession run1 = session(week1, LocalDate.of(2026, 6, 30), Discipline.RUN, 60, SessionStatus.DONE);
         PlannedSession gym1 = session(week1, LocalDate.of(2026, 7, 1), Discipline.GYM, 50, SessionStatus.DONE);
         PlannedSession skipped1 = session(week1, LocalDate.of(2026, 7, 3), Discipline.RUN, 45, SessionStatus.SKIPPED);
-        PlannedSession rest1 = session(week1, LocalDate.of(2026, 7, 5), Discipline.REST, null, SessionStatus.PLANNED);
         PlannedSession run2 = session(week2, LocalDate.of(2026, 7, 7), Discipline.RUN, 70, SessionStatus.DONE);
         PlannedSession future2 = session(week2, LocalDate.of(2026, 7, 10), Discipline.RUN, 80, SessionStatus.PLANNED);
 
@@ -109,7 +108,7 @@ class PlanProgressServiceTest {
         when(planService.getOwnedPlan(OWNER, plan.getId())).thenReturn(plan);
         when(weekRepository.findByPlanIdOrderByWeekNumber(plan.getId())).thenReturn(List.of(week1, week2));
         when(sessionRepository.findByWeekPlanId(plan.getId()))
-                .thenReturn(List.of(run1, gym1, skipped1, rest1, run2, future2));
+                .thenReturn(List.of(run1, gym1, skipped1, run2, future2));
         when(activityRepository.findBySessionIdIn(anyList())).thenReturn(List.of(activityRun1, activityRun2));
         when(objectiveRepository.findByPlanId(plan.getId())).thenReturn(List.of(main, secondary));
 
@@ -121,7 +120,6 @@ class PlanProgressServiceTest {
         assertThat(progress.currentWeekNumber()).isEqualTo(2);
         assertThat(progress.daysToObjective()).isEqualTo(10);
 
-        // REST days never count as sessions
         assertThat(progress.totals().sessionsPlanned()).isEqualTo(5);
         assertThat(progress.totals().sessionsDone()).isEqualTo(3);
         assertThat(progress.totals().sessionsSkipped()).isEqualTo(1);
@@ -145,7 +143,7 @@ class PlanProgressServiceTest {
         assertThat(row1.current()).isFalse();
         assertThat(row1.actualVolumeKm()).isEqualByComparingTo("10.50");
         assertThat(row1.actualDurationMin()).isEqualTo(115);
-        // 60 + 50 + 45 prescribed (REST excluded)
+        // 60 + 50 + 45 prescribed
         assertThat(row1.plannedDurationMin()).isEqualTo(155);
         assertThat(row1.sessionsPlanned()).isEqualTo(3);
         assertThat(row1.sessionsDone()).isEqualTo(2);

@@ -49,7 +49,7 @@ build — don't treat this as final, treat it as the map.
   adherence, current week, countdown.
 
 **PlannedSession** — one scheduled training day (the calendar atom).
-- `id`, `planId`, `userId`, `date`, `discipline` (RUN | GYM | REST | CROSS)
+- `id`, `planId`, `userId`, `date`, `discipline` (RUN | GYM | CROSS | HIKE)
 - `title`, `description`, `status` (PLANNED | DONE | SKIPPED | MOVED)
 - running detail (when discipline = RUN):
   `runType` (EASY | LONG | TEMPO | INTERVALS | HILLS | RECOVERY),

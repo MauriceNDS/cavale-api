@@ -24,7 +24,6 @@ import com.cavale.athlete.dto.AthleteHubResponse.DistanceRecord;
 import com.cavale.athlete.dto.RunningStatsResponse;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.ActivityBestEffort;
-import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.Objective;
 import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.PlanWeek;
@@ -303,7 +302,6 @@ public class AthleteContextService {
 
             List<PlannedSession> planned = sessions.stream()
                     .filter(s -> !s.getDate().isBefore(weekStart) && !s.getDate().isAfter(weekEnd))
-                    .filter(s -> s.getDiscipline() != Discipline.REST)
                     .toList();
             List<Activity> runs = activities.stream()
                     .filter(Activity::isRun)
