@@ -93,7 +93,9 @@ public class PlannedSessionController {
         PlannedSession session = planService.getOwnedSession(userId, sessionId);
         Activity activity = planService.getActivitiesForSessions(java.util.List.of(session))
                 .get(session.getId());
-        return SessionResponse.from(session, activity);
+        Integer gymMin = planService.getWorkoutDurationsForSessions(java.util.List.of(session))
+                .get(session.getId());
+        return SessionResponse.from(session, activity, gymMin);
     }
 
     @GetMapping("/{sessionId}/streams")

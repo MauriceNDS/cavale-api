@@ -40,8 +40,9 @@ public class CalendarController {
         UUID userId = UUID.fromString(jwt.getSubject());
         List<PlannedSession> sessions = planService.getCalendar(userId, from, to);
         Map<UUID, Activity> activities = planService.getActivitiesForSessions(sessions);
+        Map<UUID, Integer> gymDurations = planService.getWorkoutDurationsForSessions(sessions);
         return sessions.stream()
-                .map(s -> SessionResponse.from(s, activities.get(s.getId())))
+                .map(s -> SessionResponse.from(s, activities.get(s.getId()), gymDurations.get(s.getId())))
                 .toList();
     }
 }

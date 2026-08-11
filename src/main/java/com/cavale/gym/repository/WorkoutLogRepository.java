@@ -36,4 +36,6 @@ public interface WorkoutLogRepository extends JpaRepository<WorkoutLog, UUID> {
             org.springframework.data.domain.Pageable pageable);
 
     Optional<WorkoutLog> findBySessionId(UUID sessionId);
+
+    List<WorkoutLog> findBySessionIdIn(List<UUID> sessionIds);
 }

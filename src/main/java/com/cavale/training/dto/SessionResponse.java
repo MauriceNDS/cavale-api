@@ -27,6 +27,8 @@ public record SessionResponse(
         Integer rpeMin,
         Integer rpeMax,
         SessionStatus status,
+        /** Real minutes once DONE — the activity's for a run, the workout log's for gym. */
+        Integer actualDurationMin,
         ActivitySummary activity,
         List<WorkoutStructure.Node> workout,
         String structureNotes,
@@ -35,10 +37,14 @@ public record SessionResponse(
         String variantLabel) {
 
     public static SessionResponse from(PlannedSession session) {
-        return from(session, null);
+        return from(session, null, null);
     }
 
     public static SessionResponse from(PlannedSession session, Activity activity) {
+        return from(session, activity, null);
+    }
+
+    public static SessionResponse from(PlannedSession session, Activity activity, Integer gymDurationMin) {
         List<WorkoutStructure.Node> workout = List.of();
         String notes = null;
         if (session.getDiscipline() == Discipline.RUN) {
@@ -52,6 +58,7 @@ public record SessionResponse(
                 session.getOrderInDay(), session.getDiscipline(), session.getTitle(), session.getDetail(),
                 session.getComment(), session.getZone(), session.getDurationMin(), session.getElevationM(),
                 session.getRpeMin(), session.getRpeMax(), session.getStatus(),
+                activity != null ? Integer.valueOf(activity.getDurationMin()) : gymDurationMin,
                 activity != null ? ActivitySummary.from(activity) : null,
                 workout, notes,
                 variant != null ? variant.getId() : null,

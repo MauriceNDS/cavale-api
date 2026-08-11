@@ -61,9 +61,12 @@ class AthleteStatsServiceTest {
     @Mock
     private StravaConnectionRepository connectionRepository;
 
+    @Mock
+    private com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository;
+
     private AthleteStatsService service() {
         return new AthleteStatsService(userService, activityRepository, bestEffortRepository,
-                planRepository, objectiveRepository, connectionRepository);
+                planRepository, objectiveRepository, connectionRepository, workoutLogRepository);
     }
 
     private static Activity run(LocalDate date, int minutes, String km, Integer elevation,
@@ -213,7 +216,7 @@ class AthleteStatsServiceTest {
                 run(TODAY.minusWeeks(1), 60, "12.00", 300, 148, 52, null),    // last week
                 run(TODAY.minusWeeks(30), 60, "10.00", 100, 150, 40, null));  // outside window
 
-        List<WeeklyStat> weekly = AthleteStatsService.weekly(activities, TODAY);
+        List<WeeklyStat> weekly = AthleteStatsService.weekly(activities, java.util.Map.of(), TODAY);
 
         assertThat(weekly).hasSize(26);
         WeeklyStat current = weekly.getLast();

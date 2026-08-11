@@ -100,19 +100,22 @@ public class AthleteStatsService {
     private final TrainingPlanRepository planRepository;
     private final ObjectiveRepository objectiveRepository;
     private final StravaConnectionRepository connectionRepository;
+    private final com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository;
 
     public AthleteStatsService(UserService userService,
                                ActivityRepository activityRepository,
                                ActivityBestEffortRepository bestEffortRepository,
                                TrainingPlanRepository planRepository,
                                ObjectiveRepository objectiveRepository,
-                               StravaConnectionRepository connectionRepository) {
+                               StravaConnectionRepository connectionRepository,
+                               com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository) {
         this.userService = userService;
         this.activityRepository = activityRepository;
         this.bestEffortRepository = bestEffortRepository;
         this.planRepository = planRepository;
         this.objectiveRepository = objectiveRepository;
         this.connectionRepository = connectionRepository;
+        this.workoutLogRepository = workoutLogRepository;
     }
 
     @Transactional(readOnly = true)
@@ -141,7 +144,7 @@ public class AthleteStatsService {
                                 .filter(a -> a.getDate().getYear() == today.getYear()).toList()),
                         totals(activities)),
                 monthly(activities, today),
-                weekly(activities, today),
+                weekly(activities, gymMinutesByWeek(userId), today),
                 weeklyEffort(activities, today),
                 syncState(userId));
     }
@@ -349,8 +352,24 @@ public class AthleteStatsService {
         return stats;
     }
 
+    /** Real strength minutes per ISO week (Monday start), from finished workout logs. */
+    private Map<LocalDate, Integer> gymMinutesByWeek(UUID userId) {
+        Map<LocalDate, Integer> byWeek = new java.util.HashMap<>();
+        for (var log : workoutLogRepository.findByUserIdAndStatusOrderByStartedAtDesc(
+                userId, com.cavale.gym.domain.WorkoutStatus.FINISHED)) {
+            if (log.getDurationMin() == null) {
+                continue;
+            }
+            LocalDate weekStart = LocalDate.ofInstant(log.getStartedAt(), com.cavale.common.AppTime.ZONE)
+                    .with(DayOfWeek.MONDAY);
+            byWeek.merge(weekStart, log.getDurationMin(), Integer::sum);
+        }
+        return byWeek;
+    }
+
     /** The last 26 ISO weeks (Monday start), oldest first, empty weeks included. */
-    static List<WeeklyStat> weekly(List<Activity> activities, LocalDate today) {
+    static List<WeeklyStat> weekly(List<Activity> activities, Map<LocalDate, Integer> gymMinutes,
+                                   LocalDate today) {
         LocalDate currentWeekStart = today.with(DayOfWeek.MONDAY);
         Map<LocalDate, List<Activity>> byWeek = new LinkedHashMap<>();
         for (int i = WEEKS_STATS_BACK - 1; i >= 0; i--) {
@@ -368,7 +387,8 @@ public class AthleteStatsService {
             List<Activity> runs = entry.getValue();
             PeriodTotals totals = totals(runs);
             stats.add(new WeeklyStat(entry.getKey(), totals.runs(),
-                    totals.distanceKm(), totals.durationMin(), totals.elevationM(),
+                    totals.distanceKm(), totals.durationMin(),
+                    gymMinutes.getOrDefault(entry.getKey(), 0), totals.elevationM(),
                     avgPaceSecPerKm(runs), weightedAvgHr(runs), weightedAvgCadence(runs),
                     relativeEffortSum(runs)));
         }

@@ -108,6 +108,8 @@ public record AthleteHubResponse(
             int runs,
             BigDecimal distanceKm,
             int durationMin,
+            /** Real minutes of finished strength work that week — shown beside the run hours, never merged. */
+            int gymDurationMin,
             int elevationM,
             Integer avgPaceSecPerKm,
             Integer avgHr,

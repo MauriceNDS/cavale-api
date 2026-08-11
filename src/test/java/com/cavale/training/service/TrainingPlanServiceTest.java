@@ -68,9 +68,13 @@ class TrainingPlanServiceTest {
     @Mock
     private ShoeService shoeService;
 
+    @Mock
+    private com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository;
+
     private TrainingPlanService service() {
         return new TrainingPlanService(planRepository, weekRepository, sessionRepository,
-                activityRepository, objectiveRepository, gymTemplateService, shoeService);
+                activityRepository, objectiveRepository, gymTemplateService, shoeService,
+                workoutLogRepository);
     }
 
     private static final UUID OWNER = UUID.randomUUID();

@@ -55,6 +55,7 @@ public class TrainingPlanService {
     private final ObjectiveRepository objectiveRepository;
     private final GymTemplateService gymTemplateService;
     private final ShoeService shoeService;
+    private final com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository;
 
     public TrainingPlanService(TrainingPlanRepository planRepository,
                                PlanWeekRepository weekRepository,
@@ -62,7 +63,8 @@ public class TrainingPlanService {
                                ActivityRepository activityRepository,
                                ObjectiveRepository objectiveRepository,
                                GymTemplateService gymTemplateService,
-                               ShoeService shoeService) {
+                               ShoeService shoeService,
+                               com.cavale.gym.repository.WorkoutLogRepository workoutLogRepository) {
         this.planRepository = planRepository;
         this.weekRepository = weekRepository;
         this.sessionRepository = sessionRepository;
@@ -70,6 +72,7 @@ public class TrainingPlanService {
         this.objectiveRepository = objectiveRepository;
         this.gymTemplateService = gymTemplateService;
         this.shoeService = shoeService;
+        this.workoutLogRepository = workoutLogRepository;
     }
 
     /**
@@ -365,6 +368,23 @@ public class TrainingPlanService {
         List<UUID> ids = sessions.stream().map(PlannedSession::getId).toList();
         return activityRepository.findBySessionIdIn(ids).stream()
                 .collect(Collectors.toMap(a -> a.getSession().getId(), a -> a));
+    }
+
+    /**
+     * Real minutes spent on each GYM session, from its finished workout log —
+     * the estimate stays on the session, the truth lives on the log.
+     */
+    public Map<UUID, Integer> getWorkoutDurationsForSessions(List<PlannedSession> sessions) {
+        List<UUID> gymIds = sessions.stream()
+                .filter(s -> s.getDiscipline() == Discipline.GYM)
+                .map(PlannedSession::getId)
+                .toList();
+        if (gymIds.isEmpty()) return Map.of();
+        return workoutLogRepository.findBySessionIdIn(gymIds).stream()
+                .filter(w -> w.getStatus() == com.cavale.gym.domain.WorkoutStatus.FINISHED
+                        && w.getDurationMin() != null)
+                .collect(Collectors.toMap(w -> w.getSession().getId(),
+                        com.cavale.gym.domain.WorkoutLog::getDurationMin));
     }
 
     @Transactional
