@@ -41,8 +41,20 @@ class PaceContextServiceTest {
     @Mock
     private ObjectiveRepository objectiveRepository;
 
+    @Mock
+    private com.cavale.user.service.UserService userService;
+
+    @Mock
+    private com.cavale.training.repository.ActivityRepository activityRepository;
+
     private PaceContextService service() {
-        return new PaceContextService(paceModelService, planRepository, objectiveRepository);
+        com.cavale.user.domain.User user = new com.cavale.user.domain.User("a@b.c", "x", "Ops");
+        org.mockito.Mockito.lenient().when(userService.getById(USER)).thenReturn(user);
+        org.mockito.Mockito.lenient().when(activityRepository.findObservedMaxHr(
+                org.mockito.ArgumentMatchers.eq(USER), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(190);
+        return new PaceContextService(paceModelService, planRepository, objectiveRepository,
+                userService, activityRepository);
     }
 
     private static TrainingPlan activePlan() {

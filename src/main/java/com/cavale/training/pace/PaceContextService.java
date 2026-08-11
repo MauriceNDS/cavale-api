@@ -13,8 +13,11 @@ import com.cavale.training.domain.ObjectiveRole;
 import com.cavale.training.domain.PlanStatus;
 import com.cavale.training.domain.TrainingPlan;
 import com.cavale.training.dto.PaceContextResponse;
+import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.training.repository.TrainingPlanRepository;
+import com.cavale.user.domain.User;
+import com.cavale.user.service.UserService;
 
 /**
  * The athlete's current paces, packaged for display: the fitted
@@ -30,13 +33,19 @@ public class PaceContextService {
     private final PaceModelService paceModelService;
     private final TrainingPlanRepository planRepository;
     private final ObjectiveRepository objectiveRepository;
+    private final UserService userService;
+    private final ActivityRepository activityRepository;
 
     public PaceContextService(PaceModelService paceModelService,
                               TrainingPlanRepository planRepository,
-                              ObjectiveRepository objectiveRepository) {
+                              ObjectiveRepository objectiveRepository,
+                              UserService userService,
+                              ActivityRepository activityRepository) {
         this.paceModelService = paceModelService;
         this.planRepository = planRepository;
         this.objectiveRepository = objectiveRepository;
+        this.userService = userService;
+        this.activityRepository = activityRepository;
     }
 
     @Transactional(readOnly = true)
@@ -44,7 +53,17 @@ public class PaceContextService {
         PaceModel model = paceModelService.modelFor(userId);
         Objective main = currentMainObjective(userId, today);
         boolean road = main != null && main.getKind() == ObjectiveKind.ROAD;
-        return PaceContextResponse.of(model, road, road ? goalPaceSecPerKm(main) : null);
+
+        // HR anchor: the profile's max HR when the athlete set one, else the
+        // highest plausible beat seen in the last year of activities.
+        User user = userService.getById(userId);
+        Integer maxHr = user.getMaxHr();
+        boolean fromProfile = maxHr != null;
+        if (maxHr == null) {
+            maxHr = activityRepository.findObservedMaxHr(userId, today.minusDays(365));
+        }
+        return PaceContextResponse.of(model, road, road ? goalPaceSecPerKm(main) : null,
+                maxHr, fromProfile);
     }
 
     /** MAIN objective of the ACTIVE season (else the season covering today). */

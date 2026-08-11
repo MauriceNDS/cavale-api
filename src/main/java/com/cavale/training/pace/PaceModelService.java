@@ -2,6 +2,7 @@ package com.cavale.training.pace;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -9,7 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.cavale.common.AppTime;
 import com.cavale.training.domain.Activity;
+import com.cavale.training.domain.ActivityBestEffort;
 import com.cavale.training.domain.Discipline;
+import com.cavale.training.repository.ActivityBestEffortRepository;
 import com.cavale.training.repository.ActivityRepository;
 
 /**
@@ -43,10 +46,20 @@ public class PaceModelService {
     /** Below this spread of climb-per-km the slope is noise, not signal. */
     private static final double MIN_CLIMB_SPREAD = 3.0;
 
-    private final ActivityRepository activityRepository;
+    /** CP fit guards: recency window, then plausibility of the fitted speed. */
+    private static final int CP_WINDOW_DAYS = 180;
+    private static final int CP_WIDE_WINDOW_DAYS = 365;
+    private static final int CP_MIN_DISTANCES = 3;
+    private static final double CP_MIN_SPEED_MPS = 2.2;
+    private static final double CP_MAX_SPEED_MPS = 7.0;
 
-    public PaceModelService(ActivityRepository activityRepository) {
+    private final ActivityRepository activityRepository;
+    private final ActivityBestEffortRepository bestEffortRepository;
+
+    public PaceModelService(ActivityRepository activityRepository,
+                            ActivityBestEffortRepository bestEffortRepository) {
         this.activityRepository = activityRepository;
+        this.bestEffortRepository = bestEffortRepository;
     }
 
     @Transactional(readOnly = true)
@@ -66,7 +79,72 @@ public class PaceModelService {
         if (easy.size() < MIN_EASY_RUNS) {
             return PaceModel.fallback();
         }
-        return fit(easy);
+        PaceModel efModel = fit(easy);
+        return withCriticalSpeed(efModel, userId, today);
+    }
+
+    /**
+     * Anchors the quality end on the critical speed fitted over recent
+     * road-like best efforts. Distrusted (ratio fallback) when the fit is
+     * degenerate or not meaningfully faster than the easy pace.
+     */
+    private PaceModel withCriticalSpeed(PaceModel efModel, UUID userId, LocalDate today) {
+        CpFit fit = cpFit(userId, today.minusDays(CP_WINDOW_DAYS));
+        if (fit == null) {
+            fit = cpFit(userId, today.minusDays(CP_WIDE_WINDOW_DAYS));
+        }
+        if (fit == null) {
+            return efModel;
+        }
+        int cpSecPerKm = (int) Math.round(1000.0 / fit.speedMps());
+        int efSecPerKm = efModel.secPerKm(com.cavale.training.workout.WorkoutStructure.Allure.EF);
+        if (cpSecPerKm >= efSecPerKm * 0.97) {
+            return efModel; // a threshold barely faster than easy is noise, not fitness
+        }
+        return PaceModel.anchored(efSecPerKm, cpSecPerKm, fit.dPrimeM(),
+                efModel.climbSecPerMeter(), efModel.sampleSize());
+    }
+
+    private record CpFit(double speedMps, Double dPrimeM) {
+    }
+
+    /**
+     * 2-parameter critical-speed fit (distance = CS × time + D′) over the
+     * fastest road-like effort at each distance, same least-squares as the
+     * stats page. Null when the data can't support it.
+     */
+    private CpFit cpFit(UUID userId, LocalDate from) {
+        Map<Integer, Integer> bestByDistance = new java.util.HashMap<>();
+        for (ActivityBestEffort effort : bestEffortRepository.findByUserId(userId)) {
+            if (effort.getActivity().getDate().isBefore(from)
+                    || !com.cavale.athlete.service.AthleteStatsService.isRoadLike(effort)) {
+                continue;
+            }
+            bestByDistance.merge(effort.getDistanceM(), effort.getElapsedSec(), Math::min);
+        }
+        if (bestByDistance.size() < CP_MIN_DISTANCES) {
+            return null;
+        }
+        int n = bestByDistance.size();
+        double sumT = 0, sumD = 0, sumTT = 0, sumTD = 0;
+        for (Map.Entry<Integer, Integer> entry : bestByDistance.entrySet()) {
+            double t = entry.getValue();
+            double d = entry.getKey();
+            sumT += t;
+            sumD += d;
+            sumTT += t * t;
+            sumTD += t * d;
+        }
+        double denom = n * sumTT - sumT * sumT;
+        if (denom <= 0) {
+            return null;
+        }
+        double speed = (n * sumTD - sumT * sumD) / denom;
+        double dPrime = (sumD - speed * sumT) / n;
+        if (speed < CP_MIN_SPEED_MPS || speed > CP_MAX_SPEED_MPS) {
+            return null;
+        }
+        return new CpFit(speed, dPrime > 0 ? dPrime : null);
     }
 
     private static boolean usable(Activity activity) {

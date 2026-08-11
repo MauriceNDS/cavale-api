@@ -209,7 +209,7 @@ public class AthleteStatsService {
     }
 
     /** A split counts as road-like when its parent run stays under the trail D+/km. */
-    static boolean isRoadLike(ActivityBestEffort effort) {
+    public static boolean isRoadLike(ActivityBestEffort effort) {
         Activity activity = effort.getActivity();
         BigDecimal km = activity.getDistanceKm();
         if (km == null || km.signum() <= 0) {

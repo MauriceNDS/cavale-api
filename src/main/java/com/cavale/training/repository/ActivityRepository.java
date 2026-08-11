@@ -13,6 +13,16 @@ import com.cavale.training.domain.Activity;
 
 public interface ActivityRepository extends JpaRepository<Activity, UUID> {
 
+    /** Highest plausible HR seen in the window — artefact spikes above 230 excluded. */
+    @org.springframework.data.jpa.repository.Query("""
+            select max(a.maxHr) from Activity a
+            where a.userId = :userId and a.date >= :from
+              and a.maxHr between 120 and 230
+            """)
+    Integer findObservedMaxHr(@org.springframework.data.repository.query.Param("userId") java.util.UUID userId,
+                              @org.springframework.data.repository.query.Param("from") java.time.LocalDate from);
+
+
     Optional<Activity> findBySessionId(UUID sessionId);
 
     List<Activity> findBySessionIdIn(Collection<UUID> sessionIds);

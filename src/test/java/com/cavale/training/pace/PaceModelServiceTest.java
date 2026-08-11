@@ -30,10 +30,15 @@ class PaceModelServiceTest {
     @Mock
     private ActivityRepository activityRepository;
 
+    @Mock
+    private com.cavale.training.repository.ActivityBestEffortRepository bestEffortRepository;
+
     private PaceModel model(List<Activity> runs) {
         when(activityRepository.findByUserIdAndDisciplineAndDateGreaterThanEqual(
                 eq(USER), eq(Discipline.RUN), any(LocalDate.class))).thenReturn(runs);
-        return new PaceModelService(activityRepository).modelFor(USER);
+        org.mockito.Mockito.lenient().when(bestEffortRepository.findByUserId(USER))
+                .thenReturn(List.of()); // no efforts: quality paces stay ratio-derived
+        return new PaceModelService(activityRepository, bestEffortRepository).modelFor(USER);
     }
 
     /** A 10 km run whose pace follows flat + slope×climb exactly. */
