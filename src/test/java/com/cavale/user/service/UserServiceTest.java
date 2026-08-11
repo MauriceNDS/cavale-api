@@ -108,13 +108,14 @@ class UserServiceTest {
         when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
 
         userService().updateProfile(id, new UpdateProfileRequest("  Alice B ",
-                new java.math.BigDecimal("62.5"), 168, java.time.LocalDate.of(1995, 3, 14), 192, 48, null, null));
+                new java.math.BigDecimal("62.5"), 168, java.time.LocalDate.of(1995, 3, 14), 192, 48, 170, null, null));
 
         assertThat(user.getDisplayName()).isEqualTo("Alice B");
         assertThat(user.getWeightKg()).isEqualByComparingTo("62.5");
         assertThat(user.getHeightCm()).isEqualTo(168);
         assertThat(user.getMaxHr()).isEqualTo(192);
         assertThat(user.getRestingHr()).isEqualTo(48);
+        assertThat(user.getLthr()).isEqualTo(170);
         // untouched when the request leaves them null
         assertThat(user.isGymEnabled()).isTrue();
         assertThat(user.getPreferredLanguage()).isEqualTo("fr");
@@ -123,7 +124,7 @@ class UserServiceTest {
     @Test
     void updateProfile_rejectsRestingHrAboveMaxHr() {
         assertThatThrownBy(() -> userService().updateProfile(java.util.UUID.randomUUID(),
-                new UpdateProfileRequest("Alice", null, null, null, 180, 185, null, null)))
+                new UpdateProfileRequest("Alice", null, null, null, 180, 185, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -134,7 +135,7 @@ class UserServiceTest {
         when(userRepository.findById(id)).thenReturn(java.util.Optional.of(user));
 
         userService().updateProfile(id, new UpdateProfileRequest("Alice",
-                null, null, null, null, null, null, "en"));
+                null, null, null, null, null, null, null, "en"));
 
         assertThat(user.getPreferredLanguage()).isEqualTo("en");
     }

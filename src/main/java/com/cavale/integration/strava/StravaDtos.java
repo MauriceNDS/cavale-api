@@ -74,7 +74,9 @@ public final class StravaDtos {
             /** strides per minute, ONE leg — double it for SPM */
             @JsonProperty("average_cadence") Double averageCadence,
             /** Strava's relative effort */
-            @JsonProperty("suffer_score") Double sufferScore) {
+            @JsonProperty("suffer_score") Double sufferScore,
+            /** 1 = race (runs) — a designated max effort. */
+            @JsonProperty("workout_type") Integer workoutType) {
     }
 
     /** A fastest split inside one activity (1k, 5k, Half-Marathon…). */
@@ -102,6 +104,7 @@ public final class StravaDtos {
             @JsonProperty("average_cadence") Double averageCadence,
             @JsonProperty("max_heartrate") Double maxHeartrate,
             @JsonProperty("suffer_score") Double sufferScore,
+            @JsonProperty("workout_type") Integer workoutType,
             @JsonProperty("best_efforts") List<BestEffort> bestEfforts) {
     }
 

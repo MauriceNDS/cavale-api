@@ -69,7 +69,7 @@ class RunningStatsServiceTest {
     /** An athlete with HR zones set, so VO2max estimates can be computed. */
     private static User userWithHr() {
         User user = new User("a@b.c", "hash", "Arsène");
-        user.updateProfile("Arsène", null, null, null, 190, 50);
+        user.updateProfile("Arsène", null, null, null, 190, 50, null);
         return user;
     }
 

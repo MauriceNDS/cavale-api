@@ -64,7 +64,7 @@ class StravaSyncServiceTest {
     private static StravaDtos.ActivitySummary summary(long id, String sport) {
         return new StravaDtos.ActivitySummary(id, "Sortie " + id, sport,
                 LocalDateTime.of(LocalDate.of(2026, 5, 10), LocalTime.of(8, 0)),
-                12000, 3600, 250, 148.0, 172.0, 84.0, 61.0);
+                12000, 3600, 250, 148.0, 172.0, 84.0, 61.0, null);
     }
 
     /** Full activity detail as one Strava GET /activities/{id} returns it. */
@@ -72,7 +72,7 @@ class StravaSyncServiceTest {
                                             Double sufferScore, List<StravaDtos.BestEffort> efforts) {
         return new StravaDtos.ActivityDetail(id, name, "Run",
                 LocalDateTime.of(LocalDate.of(2026, 5, 10), LocalTime.of(8, 0)),
-                12000.0, 3600, 250.0, 148.0, cadence, maxHr, sufferScore, efforts);
+                12000.0, 3600, 250.0, 148.0, cadence, maxHr, sufferScore, null, efforts);
     }
 
     @Test
@@ -229,7 +229,7 @@ class StravaSyncServiceTest {
         when(stravaClient.getActivity(anyString(), eq(9L))).thenReturn(
                 new StravaDtos.ActivityDetail(9L, "Trek Chamonix", "Hike",
                         LocalDateTime.of(LocalDate.of(2026, 5, 10), LocalTime.of(8, 0)),
-                        18000.0, 14400, 1200.0, 110.0, null, null, 40.0, null));
+                        18000.0, 14400, 1200.0, 110.0, null, null, 40.0, null, null));
         when(activityRepository.findByExternalId(9L)).thenReturn(java.util.Optional.empty());
         when(activityRepository.save(any(Activity.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -246,7 +246,7 @@ class StravaSyncServiceTest {
         when(stravaClient.getActivity(anyString(), eq(9L))).thenReturn(
                 new StravaDtos.ActivityDetail(9L, "Sortie vélo", "Ride",
                         LocalDateTime.of(LocalDate.of(2026, 5, 10), LocalTime.of(8, 0)),
-                        40000.0, 5400, 400.0, 130.0, null, null, null, List.of()));
+                        40000.0, 5400, 400.0, 130.0, null, null, null, null, List.of()));
 
         service().upsertFromStrava(USER, 9L);
 

@@ -34,6 +34,10 @@ public record UpdateProfileRequest(
         @Positive(message = "Resting HR must be positive")
         Integer restingHr,
 
+        /** Lactate-threshold HR from a field test (avg HR, last 20′ of a 30′ TT). */
+        @Positive(message = "LTHR must be positive")
+        Integer lthr,
+
         /** null = unchanged; false hides the strength side in the UI. */
         Boolean gymEnabled,
 

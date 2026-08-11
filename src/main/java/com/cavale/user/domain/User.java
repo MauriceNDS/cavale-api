@@ -52,6 +52,10 @@ public class User extends Auditable {
     @Column(name = "resting_hr")
     private Integer restingHr;
 
+    /** Lactate-threshold HR from a field test — the preferred HR-zone anchor. */
+    @Column(name = "lthr")
+    private Integer lthr;
+
     /* Availability — what a coach (human or MCP) may plan around. */
 
     @Enumerated(EnumType.STRING)
@@ -123,13 +127,14 @@ public class User extends Auditable {
 
     /** Full replacement of the athlete profile (the form always sends everything). */
     public void updateProfile(String displayName, BigDecimal weightKg, Integer heightCm,
-                              LocalDate birthDate, Integer maxHr, Integer restingHr) {
+                              LocalDate birthDate, Integer maxHr, Integer restingHr, Integer lthr) {
         this.displayName = displayName;
         this.weightKg = weightKg;
         this.heightCm = heightCm;
         this.birthDate = birthDate;
         this.maxHr = maxHr;
         this.restingHr = restingHr;
+        this.lthr = lthr;
     }
 
     public UUID getId() {
@@ -162,6 +167,10 @@ public class User extends Auditable {
 
     public Integer getMaxHr() {
         return maxHr;
+    }
+
+    public Integer getLthr() {
+        return lthr;
     }
 
     public Integer getRestingHr() {

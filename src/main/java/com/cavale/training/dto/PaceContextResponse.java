@@ -22,13 +22,15 @@ public record PaceContextResponse(
         /** HR anchor for the zone bands — profile override, else observed max. */
         Integer maxHr,
         boolean maxHrFromProfile,
+        /** Lactate-threshold HR from a field test — preferred zone anchor when set. */
+        Integer lthr,
         boolean roadContext,
         Integer goalPaceSecPerKm) {
 
     public static PaceContextResponse of(PaceModel model, boolean roadContext, Integer goalPaceSecPerKm,
-                                         Integer maxHr, boolean maxHrFromProfile) {
+                                         Integer maxHr, boolean maxHrFromProfile, Integer lthr) {
         return new PaceContextResponse(model.flatSecPerKm(), model.climbSecPerMeter(),
                 model.sampleSize(), model.personal(), model.thresholdAnchored(), model.cpSecPerKm(),
-                maxHr, maxHrFromProfile, roadContext, goalPaceSecPerKm);
+                maxHr, maxHrFromProfile, lthr, roadContext, goalPaceSecPerKm);
     }
 }

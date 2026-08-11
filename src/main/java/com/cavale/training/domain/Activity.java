@@ -190,6 +190,20 @@ public class Activity extends Auditable {
     }
 
     /** Fill hub metrics; never erases a value already present. */
+    @jakarta.persistence.Column(name = "is_race", nullable = false)
+    private boolean race;
+
+    /** Strava workout_type 1 = a race for runs — a designated max effort. */
+    public void flagRace(Integer workoutType) {
+        if (workoutType != null && workoutType == 1) {
+            this.race = true;
+        }
+    }
+
+    public boolean isRace() {
+        return race;
+    }
+
     public void enrich(BigDecimal avgCadenceSpm, Integer relativeEffort, Integer maxHr) {
         if (this.avgCadenceSpm == null) {
             this.avgCadenceSpm = avgCadenceSpm;

@@ -52,6 +52,22 @@ public class PaceModelService {
     private static final int CP_MIN_DISTANCES = 3;
     private static final double CP_MIN_SPEED_MPS = 2.2;
     private static final double CP_MAX_SPEED_MPS = 7.0;
+    /**
+     * The 2-parameter model is only valid on 2-40 minute efforts. Longer
+     * "best efforts" are an ultra runner's training paces, not max efforts,
+     * and their leverage drags the fitted speed down to easy pace.
+     */
+    private static final int CP_MIN_EFFORT_SEC = 120;
+    private static final int CP_MAX_EFFORT_SEC = 2400;
+
+    /** A recent designated max effort (race or field test) beats the regression. */
+    private static final int TEST_ANCHOR_DAYS = 56;
+    private static final java.util.regex.Pattern TEST_NAME = java.util.regex.Pattern
+            .compile("(?i)test|lthr|\\btt\\b|race|comp[ée]t");
+    private static final int TEST_MIN_EFFORT_SEC = 900;
+    private static final int TEST_MAX_EFFORT_SEC = 2700;
+    /** Riegel pace-drift exponent: pace30 = pace × (1800/t)^RIEGEL. */
+    private static final double RIEGEL = 0.0566;
 
     private final ActivityRepository activityRepository;
     private final ActivityBestEffortRepository bestEffortRepository;
@@ -89,20 +105,51 @@ public class PaceModelService {
      * degenerate or not meaningfully faster than the easy pace.
      */
     private PaceModel withCriticalSpeed(PaceModel efModel, UUID userId, LocalDate today) {
-        CpFit fit = cpFit(userId, today.minusDays(CP_WINDOW_DAYS));
+        List<ActivityBestEffort> efforts = bestEffortRepository.findByUserId(userId);
+        CpFit fit = cpFit(efforts, today.minusDays(CP_WINDOW_DAYS));
         if (fit == null) {
-            fit = cpFit(userId, today.minusDays(CP_WIDE_WINDOW_DAYS));
+            fit = cpFit(efforts, today.minusDays(CP_WIDE_WINDOW_DAYS));
         }
-        if (fit == null) {
+        // A fresh designated max effort (race / field test) is ground truth —
+        // it overrides the regression while it lasts, then ages out of scope
+        // and the fit (which contains its points anyway) takes back over.
+        Integer anchor = testAnchorSecPerKm(efforts, today.minusDays(TEST_ANCHOR_DAYS));
+        Integer cpSecPerKm = anchor != null ? anchor
+                : fit != null ? (int) Math.round(1000.0 / fit.speedMps()) : null;
+        if (cpSecPerKm == null) {
             return efModel;
         }
-        int cpSecPerKm = (int) Math.round(1000.0 / fit.speedMps());
         int efSecPerKm = efModel.secPerKm(com.cavale.training.workout.WorkoutStructure.Allure.EF);
         if (cpSecPerKm >= efSecPerKm * 0.97) {
             return efModel; // a threshold barely faster than easy is noise, not fitness
         }
-        return PaceModel.anchored(efSecPerKm, cpSecPerKm, fit.dPrimeM(),
+        return PaceModel.anchored(efSecPerKm, cpSecPerKm, fit != null ? fit.dPrimeM() : null,
                 efModel.climbSecPerMeter(), efModel.sampleSize());
+    }
+
+    /**
+     * Best 30-minute pace projected (Riegel) from the strongest 15-45′ effort
+     * inside a race or test activity — null when none is recent enough.
+     */
+    private static Integer testAnchorSecPerKm(List<ActivityBestEffort> efforts, LocalDate from) {
+        double best = Double.MAX_VALUE;
+        for (ActivityBestEffort effort : efforts) {
+            Activity activity = effort.getActivity();
+            boolean designated = activity.isRace()
+                    || (activity.getName() != null && TEST_NAME.matcher(activity.getName()).find());
+            if (activity.getDate().isBefore(from)
+                    || effort.getElapsedSec() < TEST_MIN_EFFORT_SEC
+                    || effort.getElapsedSec() > TEST_MAX_EFFORT_SEC
+                    || effort.getDistanceM() <= 0
+                    || !designated
+                    || !com.cavale.athlete.service.AthleteStatsService.isRoadLike(effort)) {
+                continue;
+            }
+            double paceSecPerKm = effort.getElapsedSec() * 1000.0 / effort.getDistanceM();
+            double pace30 = paceSecPerKm * Math.pow(1800.0 / effort.getElapsedSec(), RIEGEL);
+            best = Math.min(best, pace30);
+        }
+        return best < Double.MAX_VALUE ? (int) Math.round(best) : null;
     }
 
     private record CpFit(double speedMps, Double dPrimeM) {
@@ -113,10 +160,12 @@ public class PaceModelService {
      * fastest road-like effort at each distance, same least-squares as the
      * stats page. Null when the data can't support it.
      */
-    private CpFit cpFit(UUID userId, LocalDate from) {
+    private CpFit cpFit(List<ActivityBestEffort> efforts, LocalDate from) {
         Map<Integer, Integer> bestByDistance = new java.util.HashMap<>();
-        for (ActivityBestEffort effort : bestEffortRepository.findByUserId(userId)) {
+        for (ActivityBestEffort effort : efforts) {
             if (effort.getActivity().getDate().isBefore(from)
+                    || effort.getElapsedSec() < CP_MIN_EFFORT_SEC
+                    || effort.getElapsedSec() > CP_MAX_EFFORT_SEC
                     || !com.cavale.athlete.service.AthleteStatsService.isRoadLike(effort)) {
                 continue;
             }

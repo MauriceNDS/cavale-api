@@ -63,7 +63,7 @@ public class PaceContextService {
             maxHr = activityRepository.findObservedMaxHr(userId, today.minusDays(365));
         }
         return PaceContextResponse.of(model, road, road ? goalPaceSecPerKm(main) : null,
-                maxHr, fromProfile);
+                maxHr, fromProfile, user.getLthr());
     }
 
     /** MAIN objective of the ACTIVE season (else the season covering today). */

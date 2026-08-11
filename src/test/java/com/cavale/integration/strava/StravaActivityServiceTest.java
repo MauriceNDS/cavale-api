@@ -73,7 +73,7 @@ class StravaActivityServiceTest {
     private static StravaDtos.ActivitySummary run(long id, LocalDate date, int minutes, String sport) {
         return new StravaDtos.ActivitySummary(id, "Sortie " + id, sport,
                 LocalDateTime.of(date, LocalTime.of(8, 0)), 10500, minutes * 60, 180, 149.2,
-                171.0, 82.5, 55.0);
+                171.0, 82.5, 55.0, null);
     }
 
     private static PlannedSession runSession(LocalDate date) {

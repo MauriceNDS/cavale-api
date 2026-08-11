@@ -104,8 +104,11 @@ public class UserService {
             throw new IllegalArgumentException("Resting HR must be below max HR");
         }
         User user = getById(id);
+        if (request.lthr() != null && request.maxHr() != null && request.lthr() >= request.maxHr()) {
+            throw new IllegalArgumentException("LTHR must be below max HR");
+        }
         user.updateProfile(request.displayName().trim(), request.weightKg(), request.heightCm(),
-                request.birthDate(), request.maxHr(), request.restingHr());
+                request.birthDate(), request.maxHr(), request.restingHr(), request.lthr());
         if (request.gymEnabled() != null) {
             user.updateGymEnabled(request.gymEnabled());
         }

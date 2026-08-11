@@ -169,6 +169,7 @@ public class StravaSyncService {
         }
         activity.enrich(cadenceSpm(detail.averageCadence()),
                 toInt(detail.sufferScore()), toInt(detail.maxHeartrate()));
+        activity.flagRace(detail.workoutType());
 
         if (!activity.isRecordsAnalyzed()) {
             for (StravaDtos.BestEffort effort : detail.bestEfforts() != null
@@ -209,6 +210,7 @@ public class StravaSyncService {
             if (known != null) {
                 known.enrich(cadenceSpm(run.averageCadence()),
                         toInt(run.sufferScore()), toInt(run.maxHeartrate()));
+                known.flagRace(run.workoutType());
                 updated++;
                 continue;
             }
@@ -242,6 +244,7 @@ public class StravaSyncService {
             if (detail != null) {
                 activity.enrich(cadenceSpm(detail.averageCadence()),
                         toInt(detail.sufferScore()), toInt(detail.maxHeartrate()));
+                activity.flagRace(detail.workoutType());
                 for (StravaDtos.BestEffort effort : detail.bestEfforts() != null
                         ? detail.bestEfforts() : List.<StravaDtos.BestEffort>of()) {
                     bestEffortRepository.save(new ActivityBestEffort(activity, effort.name(),
@@ -266,6 +269,7 @@ public class StravaSyncService {
                 run.name(), run.id());
         activity.markDiscipline(SPORT_DISCIPLINES.get(run.sportType()));
         activity.enrich(cadenceSpm(run.averageCadence()), toInt(run.sufferScore()), toInt(run.maxHeartrate()));
+        activity.flagRace(run.workoutType());
         return activity;
     }
 

@@ -156,6 +156,7 @@ public class StravaActivityService {
             activity.enrich(StravaSyncService.cadenceSpm(detail.averageCadence()),
                     detail.sufferScore() != null ? (int) Math.round(detail.sufferScore()) : null,
                     detail.maxHeartrate() != null ? (int) Math.round(detail.maxHeartrate()) : null);
+            activity.flagRace(detail.workoutType());
             for (StravaDtos.BestEffort effort : detail.bestEfforts() != null
                     ? detail.bestEfforts() : List.<StravaDtos.BestEffort>of()) {
                 bestEffortRepository.save(new ActivityBestEffort(activity, effort.name(),
