@@ -18,6 +18,7 @@ import com.cavale.common.Strings;
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.Shoe;
+import com.cavale.training.dto.ShoeOverviewResponse;
 import com.cavale.training.dto.ShoeRequest;
 import com.cavale.training.dto.ShoeResponse;
 import com.cavale.training.dto.ShoeStatsResponse;
@@ -93,7 +94,36 @@ public class ShoeService {
     public ShoeStatsResponse stats(UUID userId, UUID shoeId) {
         getOwned(userId, shoeId);
         List<Activity> runs = activityRepository.findByUserIdAndShoeIdOrderByDateAsc(userId, shoeId);
+        return statsOf(runs);
+    }
 
+    /**
+     * Every pair with its stats in one read — the shoes page compares them
+     * side by side. recentKm covers the last 90 days, for rotation share.
+     */
+    @Transactional(readOnly = true)
+    public List<ShoeOverviewResponse> overview(UUID userId) {
+        LocalDate recentFrom = LocalDate.now(AppTime.ZONE).minusDays(90);
+        Map<UUID, List<Activity>> runsByShoe = activityRepository.findByUserId(userId).stream()
+                .filter(a -> a.getShoeId() != null)
+                .sorted(java.util.Comparator.comparing(Activity::getDate))
+                .collect(Collectors.groupingBy(Activity::getShoeId));
+        return shoeRepository.findByUserIdOrderByRetiredAscCreatedAtDesc(userId).stream()
+                .map(shoe -> {
+                    List<Activity> runs = runsByShoe.getOrDefault(shoe.getId(), List.of());
+                    BigDecimal recentKm = runs.stream()
+                            .filter(a -> !a.getDate().isBefore(recentFrom) && a.getDistanceKm() != null)
+                            .map(Activity::getDistanceKm)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .setScale(1, RoundingMode.HALF_UP);
+                    ShoeStatsResponse stats = statsOf(runs);
+                    return new ShoeOverviewResponse(
+                            ShoeResponse.from(shoe, stats.totalKm()), stats, recentKm);
+                })
+                .toList();
+    }
+
+    private static ShoeStatsResponse statsOf(List<Activity> runs) {
         BigDecimal totalKm = BigDecimal.ZERO;
         int totalElevation = 0;
         long totalMin = 0;

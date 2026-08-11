@@ -63,6 +63,12 @@ public class ShoeController {
         shoeService.delete(UUID.fromString(jwt.getSubject()), shoeId);
     }
 
+    @GetMapping("/overview")
+    @Operation(summary = "Every pair with its stats and recent rotation share, in one read")
+    public List<com.cavale.training.dto.ShoeOverviewResponse> overview(@AuthenticationPrincipal Jwt jwt) {
+        return shoeService.overview(UUID.fromString(jwt.getSubject()));
+    }
+
     @GetMapping("/{shoeId}/stats")
     @Operation(summary = "One pair's life in numbers: runs, km, D+, pace, last six months")
     public ShoeStatsResponse stats(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID shoeId) {
