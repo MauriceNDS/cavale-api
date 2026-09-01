@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PlannedSession;
+import com.cavale.training.workout.SessionDuration;
 import com.cavale.training.workout.WorkoutJson;
 import com.cavale.training.workout.WorkoutParser;
 import com.cavale.training.workout.WorkoutStructure.Allure;
@@ -46,7 +47,7 @@ public final class SessionKmEstimator {
         }
 
         double flatKm = flatKm(nodes, model);
-        int totalSec = totalSeconds(nodes);
+        int totalSec = SessionDuration.totalSeconds(nodes);
 
         // Pre-structure sessions whose blocks cover far less than the planned
         // duration: the missing time is easy running (parser guarantees this
@@ -78,17 +79,5 @@ public final class SessionKmEstimator {
             }
         }
         return km;
-    }
-
-    private static int totalSeconds(List<Node> nodes) {
-        int total = 0;
-        for (Node node : nodes) {
-            if (node.isRepeat()) {
-                total += node.count() * totalSeconds(node.children());
-            } else if (node.seconds() != null) {
-                total += node.seconds();
-            }
-        }
-        return total;
     }
 }

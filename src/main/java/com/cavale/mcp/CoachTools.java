@@ -3,6 +3,7 @@ package com.cavale.mcp;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.ai.tool.annotation.Tool;
@@ -56,6 +57,7 @@ import com.cavale.training.dto.UpdateObjectiveRequest;
 import com.cavale.training.dto.UpdateSessionRequest;
 import com.cavale.training.dto.UpdateWeekRequest;
 import com.cavale.training.dto.WeekResponse;
+import com.cavale.training.pace.WeekEstimateService;
 import com.cavale.training.service.ObjectiveService;
 import com.cavale.training.service.PlanCoachService;
 import com.cavale.training.service.TrainingPlanService;
@@ -77,12 +79,14 @@ public class CoachTools {
     private final CourseService courseService;
     private final PlanCoachService coachService;
     private final CoachInsightService insightService;
+    private final WeekEstimateService weekEstimateService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public CoachTools(AthleteContextService contextService, TrainingPlanService planService,
                       ObjectiveService objectiveService, ExerciseService exerciseService,
                       GymTemplateService gymTemplateService, CourseService courseService,
-                      PlanCoachService coachService, CoachInsightService insightService) {
+                      PlanCoachService coachService, CoachInsightService insightService,
+                      WeekEstimateService weekEstimateService) {
         this.contextService = contextService;
         this.planService = planService;
         this.objectiveService = objectiveService;
@@ -91,6 +95,7 @@ public class CoachTools {
         this.courseService = courseService;
         this.coachService = coachService;
         this.insightService = insightService;
+        this.weekEstimateService = weekEstimateService;
     }
 
     /* ── Read ──────────────────────────────────────────────────────────── */
@@ -127,10 +132,19 @@ public class CoachTools {
         return planService.listPlans(currentUserId()).stream().map(PlanResponse::from).toList();
     }
 
-    @Tool(name = "get_plan_weeks", description = "The weeks of a plan, in order, with their type, phase and targets.")
+    @Tool(name = "get_plan_weeks", description = """
+            The weeks of a plan, in order, with their type, phase and targets. \
+            targetVolumeKm is the coach's intent; estimatedVolumeKm is what the \
+            prescribed session times will actually produce at the athlete's paces.""")
     public List<WeekResponse> getPlanWeeks(@ToolParam(description = "Plan UUID") String planId) {
-        return planService.getWeeks(currentUserId(), UUID.fromString(planId)).stream()
-                .map(WeekResponse::from).toList();
+        UUID userId = currentUserId();
+        UUID plan = UUID.fromString(planId);
+        // same estimates the REST plan detail carries — a coach reading the
+        // plan through MCP must see the same numbers as the athlete's screen
+        Map<UUID, BigDecimal> estimates = weekEstimateService.estimatesForPlan(userId, plan);
+        return planService.getWeeks(userId, plan).stream()
+                .map(week -> WeekResponse.from(week, estimates.get(week.getId())))
+                .toList();
     }
 
     @Tool(name = "get_week_sessions", description = "The sessions of one week, with their structured workout.")

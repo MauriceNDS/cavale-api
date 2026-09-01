@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -27,6 +28,7 @@ import com.cavale.training.dto.PlanResponse;
 import com.cavale.training.pace.PaceModel;
 import com.cavale.training.pace.PaceModelService;
 import com.cavale.training.pace.SessionKmEstimator;
+import com.cavale.training.workout.SessionDuration;
 import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.training.repository.PlanWeekRepository;
@@ -209,8 +211,9 @@ public class PlanProgressService {
     /** Sum of the week's prescribed durations, or null when no session carries one. */
     private static Integer plannedDurationMin(List<PlannedSession> sessions) {
         int total = sessions.stream()
-                .filter(s -> s.getDurationMin() != null)
-                .mapToInt(PlannedSession::getDurationMin)
+                .map(SessionDuration::plannedMinutes)
+                .filter(Objects::nonNull)
+                .mapToInt(Integer::intValue)
                 .sum();
         return total > 0 ? total : null;
     }

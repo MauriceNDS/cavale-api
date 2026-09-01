@@ -10,7 +10,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -40,6 +43,7 @@ import com.cavale.training.repository.ActivityRepository;
 import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
+import com.cavale.training.workout.SessionDuration;
 import com.cavale.training.workout.WorkoutParser;
 import com.cavale.training.workout.WorkoutStructure.Allure;
 
@@ -346,6 +350,19 @@ public class PlanCoachService {
                 issues.add("Session '" + session.getTitle() + "' on " + session.getDate()
                         + " has no usable workout — give it a detail or a duration.");
             }
+            // durationMin summarises the workout structure — when the two
+            // disagree the session shows one time on its card and another in
+            // the week ring. The structure is the truth (SessionDuration);
+            // a drift means the stored minutes are stale prose.
+            Integer drift = SessionDuration.durationDriftSeconds(session);
+            if (drift != null && Math.abs(drift) > DURATION_DRIFT_TOLERANCE_SEC) {
+                issues.add("Session '" + session.getTitle() + "' on " + session.getDate()
+                        + " says " + session.getDurationMin() + " min but its blocks total "
+                        + Math.round(SessionDuration.plannedSeconds(session) / 60f)
+                        + " min — fix the detail text or the duration so they agree.");
+            }
+            titleDurationIssue(session).ifPresent(issues::add);
+
             // Strength work tacked onto a run's text is invisible in the plan:
             // it can't be started, tracked or counted. It belongs in its own
             // GYM session on the same day. Only worth flagging while the
@@ -384,7 +401,84 @@ public class PlanCoachService {
                 issues.add("No deload week — insert a lighter week roughly every 4th week.");
             }
         }
+        // A recovery week carrying more prescribed load than the build week
+        // next to it is an inverted pair, not periodization — the classic
+        // shape of two target values typed into the wrong rows.
+        for (int i = 1; i < weeks.size(); i++) {
+            PlanWeek previous = weeks.get(i - 1);
+            PlanWeek current = weeks.get(i);
+            PlanWeek light = isLightWeek(previous.getWeekType()) ? previous
+                    : isLightWeek(current.getWeekType()) ? current : null;
+            PlanWeek heavy = light == previous ? current : previous;
+            if (light == null || !isHeavyWeek(heavy.getWeekType())
+                    || light.getTargetLoadUa() == null || heavy.getTargetLoadUa() == null) {
+                continue;
+            }
+            if (light.getTargetLoadUa() > heavy.getTargetLoadUa()) {
+                issues.add("Week " + light.getWeekNumber() + " (" + light.getWeekType()
+                        + ") targets " + light.getTargetLoadUa() + " UA, more than week "
+                        + heavy.getWeekNumber() + " (" + heavy.getWeekType() + ") at "
+                        + heavy.getTargetLoadUa() + " UA — the two targets look swapped.");
+            }
+        }
+
         return PlanValidationResponse.of(issues);
+    }
+
+    /** A minute of rounding is fine; more means the two numbers disagree. */
+    private static final int DURATION_DRIFT_TOLERANCE_SEC = 60;
+
+    /** Times written into a title ("SL trail 3h + 30′ allure course"). */
+    private static final Pattern TITLE_DURATION = Pattern.compile(
+            "(?:(\\d+)h(\\d+)?)|(?:(?:\\d+[-–])?(\\d+)\\s*(?:[′\']|min\\b))");
+
+    /** A repeat marker means the times are per-rep, not a total to add up. */
+    private static final Pattern TITLE_REPEAT = Pattern.compile("\\d+\\s*[×x]");
+
+    /**
+     * "SL trail 3h + 30′ allure course" reads as 3h30 and is actually 3h00 —
+     * the leading number is the TOTAL, the second one a block inside it. Only
+     * titles that spell out several times without a repeat marker can be
+     * misread this way, so only those are checked.
+     */
+    private static Optional<String> titleDurationIssue(PlannedSession session) {
+        String title = session.getTitle();
+        Integer planned = SessionDuration.plannedSeconds(session);
+        if (planned == null || TITLE_REPEAT.matcher(title).find()) {
+            return Optional.empty();
+        }
+        Matcher matcher = TITLE_DURATION.matcher(title);
+        int sum = 0;
+        int count = 0;
+        while (matcher.find()) {
+            sum += matcher.group(1) != null
+                    ? Integer.parseInt(matcher.group(1)) * 3600
+                            + (matcher.group(2) != null ? Integer.parseInt(matcher.group(2)) * 60 : 0)
+                    : Integer.parseInt(matcher.group(3)) * 60;
+            count++;
+        }
+        if (count < 2 || Math.abs(sum - planned) <= 5 * 60) {
+            return Optional.empty();
+        }
+        return Optional.of("Title '" + title + "' on " + session.getDate() + " reads as "
+                + formatSeconds(sum) + " but the session is " + formatSeconds(planned)
+                + " — the leading time is the total, not the first part. Write it as "
+                + "\"… dont …\" or drop the times from the title.");
+    }
+
+    private static String formatSeconds(int seconds) {
+        int minutes = Math.round(seconds / 60f);
+        return minutes >= 60 ? minutes / 60 + "h" + String.format("%02d", minutes % 60)
+                : minutes + " min";
+    }
+
+    /** Week types ordered by how much load they are meant to carry. */
+    private static boolean isLightWeek(WeekType type) {
+        return type == WeekType.DELOAD || type == WeekType.RECOVERY || type == WeekType.TAPER;
+    }
+
+    private static boolean isHeavyWeek(WeekType type) {
+        return type == WeekType.BUILD || type == WeekType.SHOCK;
     }
 
     /* ── P14: realign (forward-rebuild) ───────────────────────────────── */

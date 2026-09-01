@@ -112,7 +112,7 @@ public final class WorkoutParser {
         // course"): when the parsed structure covers far less than the session
         // duration, the missing time becomes a leading EF block
         if (fallbackDurationMin != null && !nodes.isEmpty()) {
-            int structureSec = totalSeconds(nodes);
+            int structureSec = SessionDuration.totalSeconds(nodes);
             int gap = fallbackDurationMin * 60 - structureSec;
             if (gap >= 20 * 60) {
                 nodes.add(0, Node.step(Allure.EF, gap, null));
@@ -260,18 +260,6 @@ public final class WorkoutParser {
             }
         }
         return null;
-    }
-
-    private static int totalSeconds(List<Node> nodes) {
-        int total = 0;
-        for (Node node : nodes) {
-            if (node.isRepeat()) {
-                total += node.count() * totalSeconds(node.children());
-            } else if (node.seconds() != null) {
-                total += node.seconds();
-            }
-        }
-        return total;
     }
 
     private static Integer toSeconds(Matcher dur) {

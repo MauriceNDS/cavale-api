@@ -8,6 +8,7 @@ import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.Discipline;
 import com.cavale.training.domain.PlannedSession;
 import com.cavale.training.domain.SessionStatus;
+import com.cavale.training.workout.SessionDuration;
 import com.cavale.training.workout.WorkoutJson;
 import com.cavale.training.workout.WorkoutParser;
 import com.cavale.training.workout.WorkoutStructure;
@@ -23,6 +24,12 @@ public record SessionResponse(
         String comment,
         String zone,
         Integer durationMin,
+        /**
+         * The prescribed duration to DISPLAY: the stored workout structure's
+         * own total for a RUN that has blocks, else {@code durationMin}.
+         * Computed server-side so no view has to pick a field for itself.
+         */
+        Integer plannedDurationMin,
         Integer elevationM,
         Integer rpeMin,
         Integer rpeMax,
@@ -56,7 +63,8 @@ public record SessionResponse(
         var variant = session.getTemplateVariant(); // EAGER pair — safe outside the tx
         return new SessionResponse(session.getId(), session.getWeek().getId(), session.getDate(),
                 session.getOrderInDay(), session.getDiscipline(), session.getTitle(), session.getDetail(),
-                session.getComment(), session.getZone(), session.getDurationMin(), session.getElevationM(),
+                session.getComment(), session.getZone(), session.getDurationMin(),
+                SessionDuration.plannedMinutes(session), session.getElevationM(),
                 session.getRpeMin(), session.getRpeMax(), session.getStatus(),
                 activity != null ? Integer.valueOf(activity.getDurationMin()) : gymDurationMin,
                 activity != null ? ActivitySummary.from(activity) : null,

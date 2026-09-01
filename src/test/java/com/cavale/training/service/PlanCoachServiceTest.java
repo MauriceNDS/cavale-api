@@ -36,6 +36,8 @@ import com.cavale.training.dto.PlanValidationResponse;
 import com.cavale.training.repository.ObjectiveRepository;
 import com.cavale.training.repository.PlanWeekRepository;
 import com.cavale.training.repository.PlannedSessionRepository;
+import com.cavale.training.workout.WorkoutJson;
+import com.cavale.training.workout.WorkoutParser;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -310,6 +312,114 @@ class PlanCoachServiceTest {
 
         assertThat(service().validate(USER, PLAN).issues())
                 .noneSatisfy(i -> assertThat(i).contains("strength/core work"));
+    }
+
+    /**
+     * The athlete's report: durationMin and the stored blocks were two
+     * independent numbers, so the same session read 80′ in one place and 76′
+     * in another. validate_plan now says so out loud.
+     */
+    @Test
+    void validate_flagsASessionWhoseMinutesDisagreeWithItsBlocks() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 8, 31), LocalDate.of(2026, 9, 6));
+        PlanWeek w1 = week(plan, 1, LocalDate.of(2026, 8, 31), WeekType.BUILD);
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(w1));
+
+        String detail = "20′ EF + 2×20′ Allure course (récup 3′) + 10′ EF";
+        PlannedSession tempo = new PlannedSession(w1, USER, LocalDate.of(2026, 9, 2), 0,
+                Discipline.RUN, "Tempo allure course", detail, "Allure course", 80, null, null, 7);
+        tempo.updateWorkoutJson(WorkoutJson.write(WorkoutParser.parse(detail, "Allure course", 80).nodes()));
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(tempo));
+
+        assertThat(service().validate(USER, PLAN).issues()).anySatisfy(i -> assertThat(i)
+                .contains("Tempo allure course").contains("80 min").contains("76 min"));
+    }
+
+    @Test
+    void validate_leavesASessionWhoseMinutesMatchItsBlocksAlone() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 8, 31), LocalDate.of(2026, 9, 6));
+        PlanWeek w1 = week(plan, 1, LocalDate.of(2026, 8, 31), WeekType.BUILD);
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(w1));
+
+        String detail = "20′ EF + 2×20′ Allure course (récup 3′) + 10′ EF";
+        PlannedSession tempo = new PlannedSession(w1, USER, LocalDate.of(2026, 9, 2), 0,
+                Discipline.RUN, "Tempo allure course", detail, "Allure course", 76, null, null, 7);
+        tempo.updateWorkoutJson(WorkoutJson.write(WorkoutParser.parse(detail, "Allure course", 76).nodes()));
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(tempo));
+
+        assertThat(service().validate(USER, PLAN).issues())
+                .noneSatisfy(i -> assertThat(i).contains("its blocks total"));
+    }
+
+    /** "SL trail 3h + 30′ allure course" reads as 3h30 and is a 3h session. */
+    @Test
+    void validate_flagsATitleWhoseTimesAddUpToSomethingElse() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 8, 31), LocalDate.of(2026, 9, 6));
+        PlanWeek w1 = week(plan, 1, LocalDate.of(2026, 8, 31), WeekType.BUILD);
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(w1));
+
+        String detail = "30′ Allure course en fin de sortie.";
+        PlannedSession sl = new PlannedSession(w1, USER, LocalDate.of(2026, 9, 4), 0, Discipline.RUN,
+                "SL trail 3h + 30′ allure course", detail, "EF", 180, 900, null, 6);
+        sl.updateWorkoutJson(WorkoutJson.write(WorkoutParser.parse(detail, "EF", 180).nodes()));
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(sl));
+
+        assertThat(service().validate(USER, PLAN).issues()).anySatisfy(i -> assertThat(i)
+                .contains("reads as 3h30").contains("the session is 3h00"));
+    }
+
+    /** "8×45″ en côte" states a per-rep time, not a total — never flag it. */
+    @Test
+    void validate_leavesRepeatTitlesAlone() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 9, 14), LocalDate.of(2026, 9, 20));
+        PlanWeek w1 = week(plan, 1, LocalDate.of(2026, 9, 14), WeekType.BUILD);
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(w1));
+
+        String detail = "Échauffement : 20′ EF + 3 lignes droites. Corps : 8 × 45″ en côte forte à "
+                + "effort VMA, récup = descente en trot. Retour au calme : 10′ EF.";
+        PlannedSession test = new PlannedSession(w1, USER, LocalDate.of(2026, 9, 17), 0,
+                Discipline.RUN, "★ TEST FCMAX — 8×45″ en côte", detail, "VMA", 48, null, null, 9);
+        test.updateWorkoutJson(WorkoutJson.write(WorkoutParser.parse(detail, "VMA", 48).nodes()));
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(test));
+
+        assertThat(service().validate(USER, PLAN).issues())
+                .noneSatisfy(i -> assertThat(i).contains("reads as"));
+    }
+
+    /**
+     * S16 DELOAD carried 2913 UA and S17 BUILD 1238 — the two targets typed
+     * into the wrong rows. A recovery week never out-loads its build neighbour.
+     */
+    @Test
+    void validate_flagsARecoveryWeekLoadedHeavierThanItsBuildNeighbour() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 11, 2), LocalDate.of(2026, 11, 15));
+        PlanWeek deload = new PlanWeek(plan, 16, LocalDate.of(2026, 11, 2), "Assimilation",
+                WeekType.DELOAD, new BigDecimal("54.0"), 1500, 2913, null);
+        PlanWeek build = new PlanWeek(plan, 17, LocalDate.of(2026, 11, 9), "Développement",
+                WeekType.BUILD, new BigDecimal("72.0"), 2000, 1238, null);
+        ReflectionTestUtils.setField(deload, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(build, "id", UUID.randomUUID());
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(deload, build));
+
+        PlannedSession a = new PlannedSession(deload, USER, LocalDate.of(2026, 11, 3), 0,
+                Discipline.RUN, "EF", "45′ EF", "EF", 45, null, null, 3);
+        PlannedSession b = new PlannedSession(build, USER, LocalDate.of(2026, 11, 10), 0,
+                Discipline.RUN, "EF", "60′ EF", "EF", 60, null, null, 3);
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(a, b));
+
+        assertThat(service().validate(USER, PLAN).issues()).anySatisfy(i -> assertThat(i)
+                .contains("Week 16").contains("DELOAD").contains("2913")
+                .contains("week 17").contains("1238").contains("swapped"));
     }
 
     /* ── P14: realign ──────────────────────────────────────────────────── */
