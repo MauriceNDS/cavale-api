@@ -11,6 +11,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+
 import com.cavale.common.exception.ConflictException;
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.demo.DemoUnavailableException;
@@ -37,6 +40,27 @@ public class GlobalExceptionHandler {
         Map<String, String> errors = new LinkedHashMap<>();
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
             errors.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage());
+        }
+        problem.setProperty("errors", errors);
+        return problem;
+    }
+
+    /**
+     * Bean Validation raised on a SERVICE method rather than a controller
+     * argument — the MCP front door calls services directly, so its inputs
+     * only meet the constraints here. Same body as the controller case so both
+     * doors answer identically.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    ProblemDetail handleConstraintViolation(ConstraintViolationException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problem.setTitle("Validation failed");
+        problem.setDetail("One or more fields are invalid.");
+
+        Map<String, String> errors = new LinkedHashMap<>();
+        for (ConstraintViolation<?> violation : ex.getConstraintViolations()) {
+            String path = violation.getPropertyPath().toString();
+            errors.putIfAbsent(path.substring(path.lastIndexOf('.') + 1), violation.getMessage());
         }
         problem.setProperty("errors", errors);
         return problem;

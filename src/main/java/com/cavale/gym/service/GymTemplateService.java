@@ -10,6 +10,9 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.Valid;
 
 import com.cavale.common.exception.ResourceNotFoundException;
 import com.cavale.gym.domain.Exercise;
@@ -38,6 +41,7 @@ import com.cavale.gym.repository.TemplateExerciseRepository;
  * creation can't flood the library either.
  */
 @Service
+@Validated
 public class GymTemplateService {
 
     private final GymTemplateRepository templateRepository;
@@ -73,7 +77,7 @@ public class GymTemplateService {
     }
 
     @Transactional
-    public GymTemplate createTemplate(UUID userId, TemplateRequest request) {
+    public GymTemplate createTemplate(UUID userId, @Valid TemplateRequest request) {
         String name = request.name().trim();
         if (templateRepository.existsByUserIdAndNameIgnoreCase(userId, name)) {
             throw new IllegalArgumentException("Un programme nommé « " + name + " » existe déjà");
@@ -85,7 +89,7 @@ public class GymTemplateService {
     }
 
     @Transactional
-    public GymTemplate updateTemplate(UUID userId, UUID templateId, TemplateRequest request) {
+    public GymTemplate updateTemplate(UUID userId, UUID templateId, @Valid TemplateRequest request) {
         GymTemplate template = getOwnedTemplate(userId, templateId);
         String name = request.name().trim();
         if (!template.getName().equalsIgnoreCase(name)
@@ -119,7 +123,7 @@ public class GymTemplateService {
     }
 
     @Transactional
-    public GymTemplateVariant addVariant(UUID userId, UUID templateId, VariantRequest request) {
+    public GymTemplateVariant addVariant(UUID userId, UUID templateId, @Valid VariantRequest request) {
         GymTemplate template = getOwnedTemplate(userId, templateId);
         String label = request.label().trim();
         if (variantRepository.existsByTemplateIdAndLabelIgnoreCase(templateId, label)) {
@@ -130,7 +134,7 @@ public class GymTemplateService {
 
     /** Duplicate a variant with all its exercises and alternatives — how B is born from A. */
     @Transactional
-    public GymTemplateVariant copyVariant(UUID userId, UUID variantId, VariantRequest request) {
+    public GymTemplateVariant copyVariant(UUID userId, UUID variantId, @Valid VariantRequest request) {
         GymTemplateVariant source = getOwnedVariant(userId, variantId);
         GymTemplateVariant copy = addVariant(userId, source.getTemplate().getId(), request);
         for (TemplateExercise te : templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId)) {
@@ -148,7 +152,7 @@ public class GymTemplateService {
     }
 
     @Transactional
-    public GymTemplateVariant updateVariant(UUID userId, UUID variantId, VariantRequest request) {
+    public GymTemplateVariant updateVariant(UUID userId, UUID variantId, @Valid VariantRequest request) {
         GymTemplateVariant variant = getOwnedVariant(userId, variantId);
         String label = request.label().trim();
         if (!variant.getLabel().equalsIgnoreCase(label)
@@ -244,7 +248,7 @@ public class GymTemplateService {
     }
 
     @Transactional
-    public TemplateExercise addExercise(UUID userId, UUID variantId, TemplateExerciseRequest request) {
+    public TemplateExercise addExercise(UUID userId, UUID variantId, @Valid TemplateExerciseRequest request) {
         GymTemplateVariant variant = getOwnedVariant(userId, variantId);
         Exercise exercise = exerciseService.getOwned(userId, request.exerciseId());
         validateEffort(exercise, request.reps(), request.seconds());
@@ -260,7 +264,7 @@ public class GymTemplateService {
 
     @Transactional
     public TemplateExercise updateExercise(UUID userId, UUID templateExerciseId,
-                                           TemplateExerciseRequest request) {
+                                           @Valid TemplateExerciseRequest request) {
         TemplateExercise te = getOwnedTemplateExercise(userId, templateExerciseId);
         Exercise exercise = exerciseService.getOwned(userId, request.exerciseId());
         validateEffort(exercise, request.reps(), request.seconds());
@@ -284,7 +288,7 @@ public class GymTemplateService {
      */
     @Transactional
     public List<TemplateExerciseResponse> reorderExercises(UUID userId, UUID variantId,
-                                                           ReorderRequest request) {
+                                                           @Valid ReorderRequest request) {
         getOwnedVariant(userId, variantId);
         List<TemplateExercise> exercises =
                 templateExerciseRepository.findByVariantIdOrderByPositionAsc(variantId);

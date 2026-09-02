@@ -374,6 +374,49 @@ class PlanCoachServiceTest {
                 .contains("reads as 3h30").contains("the session is 3h00"));
     }
 
+    /**
+     * "3h dont 30′" is the wording the issue itself asks for, so it has to
+     * clear the issue — the rule used to sum the two times whatever the
+     * wording, which made its own advice impossible to follow.
+     */
+    @Test
+    void validate_acceptsATitleThatAnnouncesItsTotalWithDont() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 8, 31), LocalDate.of(2026, 9, 6));
+        PlanWeek w1 = week(plan, 1, LocalDate.of(2026, 8, 31), WeekType.BUILD);
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(w1));
+
+        String detail = "30′ Allure course en fin de sortie.";
+        PlannedSession sl = new PlannedSession(w1, USER, LocalDate.of(2026, 9, 4), 0, Discipline.RUN,
+                "SL trail 3h dont 30′ allure course", detail, "EF", 180, 900, null, 6);
+        sl.updateWorkoutJson(WorkoutJson.write(WorkoutParser.parse(detail, "EF", 180).nodes()));
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(sl));
+
+        assertThat(service().validate(USER, PLAN).issues())
+                .noneSatisfy(i -> assertThat(i).contains("reads as"))
+                .noneSatisfy(i -> assertThat(i).contains("announces"));
+    }
+
+    /** With "dont", the LEADING time is the claim — and it can still be wrong. */
+    @Test
+    void validate_flagsADontTitleWhoseLeadingTimeIsNotTheSessionDuration() {
+        TrainingPlan plan = new TrainingPlan(USER, "Saison", null,
+                LocalDate.of(2026, 8, 31), LocalDate.of(2026, 9, 6));
+        PlanWeek w1 = week(plan, 1, LocalDate.of(2026, 8, 31), WeekType.BUILD);
+        when(planService.getOwnedPlan(USER, PLAN)).thenReturn(plan);
+        when(weekRepository.findByPlanIdOrderByWeekNumber(PLAN)).thenReturn(List.of(w1));
+
+        String detail = "30′ Allure course en fin de sortie.";
+        PlannedSession sl = new PlannedSession(w1, USER, LocalDate.of(2026, 9, 4), 0, Discipline.RUN,
+                "SL trail 4h dont 30′ allure course", detail, "EF", 180, 900, null, 6);
+        sl.updateWorkoutJson(WorkoutJson.write(WorkoutParser.parse(detail, "EF", 180).nodes()));
+        when(sessionRepository.findByWeekPlanId(PLAN)).thenReturn(List.of(sl));
+
+        assertThat(service().validate(USER, PLAN).issues()).anySatisfy(i -> assertThat(i)
+                .contains("announces 4h00").contains("the session is 3h00"));
+    }
+
     /** "8×45″ en côte" states a per-rep time, not a total — never flag it. */
     @Test
     void validate_leavesRepeatTitlesAlone() {

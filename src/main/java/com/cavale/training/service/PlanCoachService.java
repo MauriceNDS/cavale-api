@@ -436,10 +436,24 @@ public class PlanCoachService {
     private static final Pattern TITLE_REPEAT = Pattern.compile("\\d+\\s*[×x]");
 
     /**
+     * "… dont …" says the later times sit INSIDE the first one, so the title
+     * announces a total instead of a sum. This is the very wording the issue
+     * tells the coach to use, so it has to be understood here — otherwise the
+     * advice can never be followed and the issue stays forever.
+     */
+    private static final Pattern TITLE_CONTAINS = Pattern.compile("\\bdont\\b",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    /** Titles round loosely ("SL 3h" for a 2h55 session), so only a real gap counts. */
+    private static final int TITLE_DURATION_TOLERANCE_SEC = 5 * 60;
+
+    /**
      * "SL trail 3h + 30′ allure course" reads as 3h30 and is actually 3h00 —
      * the leading number is the TOTAL, the second one a block inside it. Only
      * titles that spell out several times without a repeat marker can be
-     * misread this way, so only those are checked.
+     * misread this way, so only those are checked. Written "3h dont 30′" the
+     * title is unambiguous, and then it is the LEADING time alone that has to
+     * match the session.
      */
     private static Optional<String> titleDurationIssue(PlannedSession session) {
         String title = session.getTitle();
@@ -450,15 +464,30 @@ public class PlanCoachService {
         Matcher matcher = TITLE_DURATION.matcher(title);
         int sum = 0;
         int count = 0;
+        int leading = 0;
         while (matcher.find()) {
-            sum += matcher.group(1) != null
+            int seconds = matcher.group(1) != null
                     ? Integer.parseInt(matcher.group(1)) * 3600
                             + (matcher.group(2) != null ? Integer.parseInt(matcher.group(2)) * 60 : 0)
                     : Integer.parseInt(matcher.group(3)) * 60;
+            if (count == 0) {
+                leading = seconds;
+            }
+            sum += seconds;
             count++;
         }
-        if (count < 2 || Math.abs(sum - planned) <= 5 * 60) {
+        if (count < 2) {
             return Optional.empty();
+        }
+        boolean contained = TITLE_CONTAINS.matcher(title).find();
+        int announced = contained ? leading : sum;
+        if (Math.abs(announced - planned) <= TITLE_DURATION_TOLERANCE_SEC) {
+            return Optional.empty();
+        }
+        if (contained) {
+            return Optional.of("Title '" + title + "' on " + session.getDate() + " announces "
+                    + formatSeconds(announced) + " but the session is " + formatSeconds(planned)
+                    + " — fix the leading time or the session duration.");
         }
         return Optional.of("Title '" + title + "' on " + session.getDate() + " reads as "
                 + formatSeconds(sum) + " but the session is " + formatSeconds(planned)
