@@ -355,30 +355,32 @@ class RunningStatsServiceTest {
     }
 
     @Test
-    void criticalPace_fitsTheBestEffortCurve() {
-        Activity flat = run(TODAY.minusDays(5), 40, "10.0", 50, 150, 60, 1L); // road-like parent
-        when(activityRepository.findByUserId(USER)).thenReturn(List.of(flat));
-        when(objectiveRepository.findByUserId(USER)).thenReturn(List.of());
-        when(bestEffortRepository.findByUserId(USER)).thenReturn(List.of(
-                new ActivityBestEffort(flat, "1k", 1000, 200),
-                new ActivityBestEffort(flat, "5k", 5000, 1100),
-                new ActivityBestEffort(flat, "10k", 10000, 2400)));
-
-        var criticalPace = service().getStats(USER, TODAY).criticalPace();
-        assertThat(criticalPace).isNotNull();
-        assertThat(criticalPace.samples()).isEqualTo(3);
-        assertThat(criticalPace.criticalSpeedMps()).isBetween(3.5, 5.0);
-        assertThat(criticalPace.criticalPaceSecPerKm()).isBetween(200, 290);
-    }
-
-    @Test
-    void criticalPace_nullWithoutEnoughDistances() {
+    void criticalPace_isThePaceModelsCriticalSpeed() {
         Activity flat = run(TODAY.minusDays(5), 40, "10.0", 50, 150, 60, 1L);
         when(activityRepository.findByUserId(USER)).thenReturn(List.of(flat));
         when(objectiveRepository.findByUserId(USER)).thenReturn(List.of());
-        when(bestEffortRepository.findByUserId(USER)).thenReturn(List.of(
-                new ActivityBestEffort(flat, "1k", 1000, 200),
-                new ActivityBestEffort(flat, "5k", 5000, 1100)));
+        List<ActivityBestEffort> efforts = List.of(new ActivityBestEffort(flat, "5k", 5000, 1265));
+        when(bestEffortRepository.findByUserId(USER)).thenReturn(efforts);
+        when(paceModelService.criticalSpeed(efforts, TODAY)).thenReturn(
+                new PaceModelService.CriticalSpeed(1000.0 / 253, 210.4, 3, 0.98, true));
+
+        var criticalPace = service().getStats(USER, TODAY).criticalPace();
+
+        assertThat(criticalPace).isNotNull();
+        assertThat(criticalPace.criticalPaceSecPerKm()).isEqualTo(253);
+        assertThat(criticalPace.criticalSpeedMps()).isEqualTo(3.95);
+        assertThat(criticalPace.anaerobicCapacityM()).isEqualTo(210);
+        assertThat(criticalPace.samples()).isEqualTo(3);
+        assertThat(criticalPace.fitQuality()).isEqualTo(0.98);
+        assertThat(criticalPace.anchored()).isTrue();
+    }
+
+    @Test
+    void criticalPace_nullWhenTheModelHasNone() {
+        Activity flat = run(TODAY.minusDays(5), 40, "10.0", 50, 150, 60, 1L);
+        when(activityRepository.findByUserId(USER)).thenReturn(List.of(flat));
+        when(objectiveRepository.findByUserId(USER)).thenReturn(List.of());
+        when(bestEffortRepository.findByUserId(USER)).thenReturn(List.of());
 
         assertThat(service().getStats(USER, TODAY).criticalPace()).isNull();
     }

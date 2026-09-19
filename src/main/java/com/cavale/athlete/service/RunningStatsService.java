@@ -92,7 +92,6 @@ public class RunningStatsService {
     private static final double VO2MAX_MIN_INTENSITY = 0.5; // ignore easy recovery shuffles
     /** VO2 at rest (ml/kg/min) — the floor the VO2-reserve scaling builds from. */
     private static final double VO2_REST = 3.5;
-    private static final int CRITICAL_PACE_MIN_POINTS = 3;
     private static final int DURABILITY_MONTHS = 12;
     private static final int DURABILITY_MIN_MIN = 90;       // long runs only
 
@@ -211,7 +210,7 @@ public class RunningStatsService {
                 monotony(loads, today, windows.weeks()),
                 trainingStatus(form, acwr),
                 vo2maxTrend(runs, user, today, windows.months()),
-                criticalPace(efforts),
+                criticalPace(efforts, today),
                 durability(runs, today, windows.months()),
                 weeklyZones(runs, user, today, windows.weeks()),
                 weeklyAllures(runs, paceModelService.modelFor(userId), today, windows.weeks()),
@@ -476,53 +475,19 @@ public class RunningStatsService {
     }
 
     /**
-     * Critical speed from the best-effort curve. Fits distance = CS·t + D' by
-     * least squares over the fastest road-like effort at each distance: the
-     * slope is the critical speed (the highest sustainable pace), the intercept
-     * the anaerobic distance reserve D'. Needs at least
-     * {@value #CRITICAL_PACE_MIN_POINTS} distinct distances; null otherwise.
+     * The critical speed the pace model runs on — the same recent-window
+     * 2-40′ fit, overridden by a fresh designated max effort — so the stats
+     * page, the coach context and "Mes allures" never disagree on the
+     * highest sustainable pace.
      */
-    private static CriticalPace criticalPace(List<ActivityBestEffort> efforts) {
-        Map<Integer, Integer> bestByDistance = new HashMap<>();
-        for (ActivityBestEffort effort : efforts) {
-            if (AthleteStatsService.isRoadLike(effort)) {
-                bestByDistance.merge(effort.getDistanceM(), effort.getElapsedSec(), Math::min);
-            }
-        }
-        if (bestByDistance.size() < CRITICAL_PACE_MIN_POINTS) {
+    private CriticalPace criticalPace(List<ActivityBestEffort> efforts, LocalDate today) {
+        PaceModelService.CriticalSpeed cs = paceModelService.criticalSpeed(efforts, today);
+        if (cs == null) {
             return null;
         }
-        int n = bestByDistance.size();
-        double sumT = 0, sumD = 0, sumTT = 0, sumTD = 0;
-        for (Map.Entry<Integer, Integer> entry : bestByDistance.entrySet()) {
-            double t = entry.getValue();
-            double d = entry.getKey();
-            sumT += t;
-            sumD += d;
-            sumTT += t * t;
-            sumTD += t * d;
-        }
-        double denom = n * sumTT - sumT * sumT;
-        if (denom <= 0) {
-            return null;
-        }
-        double criticalSpeed = (n * sumTD - sumT * sumD) / denom; // slope, m/s
-        double dPrime = (sumD - criticalSpeed * sumT) / n;        // intercept, m
-        if (criticalSpeed <= 0) {
-            return null;
-        }
-        double meanD = sumD / n;
-        double ssTot = 0, ssRes = 0;
-        for (Map.Entry<Integer, Integer> entry : bestByDistance.entrySet()) {
-            double d = entry.getKey();
-            double predicted = criticalSpeed * entry.getValue() + dPrime;
-            ssTot += (d - meanD) * (d - meanD);
-            ssRes += (d - predicted) * (d - predicted);
-        }
-        double rSquared = ssTot > 0 ? 1 - ssRes / ssTot : 0;
-        return new CriticalPace((int) Math.round(1000 / criticalSpeed),
-                Math.round(criticalSpeed * 100) / 100.0, (int) Math.round(dPrime), n,
-                Math.round(rSquared * 100) / 100.0);
+        return new CriticalPace(cs.secPerKm(), Math.round(cs.speedMps() * 100) / 100.0,
+                cs.dPrimeM() != null ? (int) Math.round(cs.dPrimeM()) : null,
+                cs.samples(), cs.rSquared(), cs.anchored());
     }
 
     /* ── Aerobic durability / late-run fade (P6) ───────────────────────── */

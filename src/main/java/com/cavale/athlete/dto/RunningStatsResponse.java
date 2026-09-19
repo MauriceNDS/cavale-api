@@ -134,13 +134,15 @@ public record RunningStatsResponse(
     }
 
     /**
-     * The critical-speed fit from the best-effort curve (distance = CS·t + D'):
-     * the highest sustainable pace (sec/km), the critical speed (m/s), the
-     * anaerobic distance reserve D' (m), how many best-effort points fed the
-     * regression and its R² fit quality.
+     * The critical speed behind the pace model: the highest sustainable pace
+     * (sec/km), the critical speed (m/s), the anaerobic distance reserve D'
+     * (m, null when the fit had none credible), how many best-effort points
+     * fed the 2-40′ regression and its R² fit quality. {@code anchored} means
+     * a recent race or field test set the pace directly instead of the fit.
      */
     public record CriticalPace(int criticalPaceSecPerKm, double criticalSpeedMps,
-                               int anaerobicCapacityM, int samples, double fitQuality) {
+                               Integer anaerobicCapacityM, int samples, double fitQuality,
+                               boolean anchored) {
     }
 
     /**
