@@ -7,8 +7,10 @@ import java.util.Map;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Reduces raw Strava streams (~1 point/second) to ≤ MAX_POINTS evenly spaced
- * samples — plenty for charts, tiny in the database.
+ * Reduces raw Strava streams (~1 point/second) to about MAX_POINTS evenly
+ * spaced samples — plenty for charts, tiny in the database. The final sample
+ * is always kept: dropping it lost up to one stride of the run (30 m and
+ * 12 s on an hour's outing), so the last split and the total came up short.
  */
 final class StreamDownsampler {
 
@@ -82,9 +84,16 @@ final class StreamDownsampler {
         }
         List<Double> sampled = new ArrayList<>();
         for (int i = 0; i < data.size(); i += stride) {
-            Double v = data.get(i);
-            sampled.add(v == null ? null : Math.round(v * factor * 100.0) / 100.0);
+            sampled.add(round(data.get(i), factor));
+        }
+        int lastIndex = data.size() - 1;
+        if (lastIndex % stride != 0) {
+            sampled.add(round(data.get(lastIndex), factor));
         }
         return sampled;
+    }
+
+    private static Double round(Double value, double factor) {
+        return value == null ? null : Math.round(value * factor * 100.0) / 100.0;
     }
 }

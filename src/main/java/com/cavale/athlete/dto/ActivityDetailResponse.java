@@ -20,6 +20,8 @@ public record ActivityDetailResponse(
         LocalDate date,
         UUID sessionId,
         int durationMin,
+        /** Exact moving seconds — null when the source only gave minutes. */
+        Integer durationSec,
         BigDecimal distanceKm,
         Integer elevationM,
         Integer avgHr,
@@ -45,6 +47,7 @@ public record ActivityDetailResponse(
                 activity.getDate(),
                 activity.getSession() != null ? activity.getSession().getId() : null,
                 activity.getDurationMin(),
+                activity.getDurationSec(),
                 activity.getDistanceKm(),
                 activity.getElevationM(),
                 activity.getAvgHr(),

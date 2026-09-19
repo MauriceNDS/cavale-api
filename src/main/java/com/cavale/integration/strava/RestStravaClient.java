@@ -94,6 +94,16 @@ public class RestStravaClient implements StravaClient {
     }
 
     @Override
+    public List<StravaDtos.Lap> getLaps(String accessToken, long activityId) {
+        return apiClient.get()
+                .uri(uri -> uri.path("/activities/{id}/laps").build(activityId))
+                .header("Authorization", "Bearer " + accessToken)
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    @Override
     public StravaDtos.PushSubscription createPushSubscription(String callbackUrl, String verifyToken) {
         MultiValueMap<String, String> form = credentialForm();
         form.add("callback_url", callbackUrl);

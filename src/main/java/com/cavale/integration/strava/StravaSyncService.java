@@ -157,10 +157,12 @@ public class StravaSyncService {
                             ? (int) Math.round(detail.totalElevationGain()) : null,
                     toInt(detail.averageHeartrate()),
                     detail.name(), detail.id()));
+            activity.recordMovingSeconds(detail.movingTime());
             activity.markDiscipline(SPORT_DISCIPLINES.get(detail.sportType()));
         } else {
             activity.refreshFromSource(detail.name(),
                     Math.max(1, Math.round(detail.movingTime() / 60f)),
+                    detail.movingTime(),
                     BigDecimal.valueOf((detail.distance() != null ? detail.distance() : 0) / 1000.0)
                             .setScale(2, RoundingMode.HALF_UP),
                     detail.totalElevationGain() != null
@@ -267,6 +269,7 @@ public class StravaSyncService {
                 (int) Math.round(run.totalElevationGain()),
                 toInt(run.averageHeartrate()),
                 run.name(), run.id());
+        activity.recordMovingSeconds(run.movingTime());
         activity.markDiscipline(SPORT_DISCIPLINES.get(run.sportType()));
         activity.enrich(cadenceSpm(run.averageCadence()), toInt(run.sufferScore()), toInt(run.maxHeartrate()));
         activity.flagRace(run.workoutType());

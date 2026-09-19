@@ -73,6 +73,25 @@ class StreamDownsamplerTest {
     }
 
     @Test
+    void theFinalSampleIsAlwaysKept() {
+        // 4029 samples stride by 13 → the last stride-aligned index is 4017; the
+        // run's last 12 s (and metres) used to vanish with it.
+        JsonNode out = parse(oneHertz(4029, null));
+
+        assertThat(last(out.get("time"))).isEqualTo(4028);
+        assertThat(last(out.get("distance"))).isEqualTo(4028);
+        assertThat(out.get("time").size()).isEqualTo(out.get("distance").size());
+    }
+
+    @Test
+    void aStrideAlignedEndIsNotDuplicated() {
+        JsonNode out = parse(oneHertz(3001, null)); // stride 10, last index 3000
+
+        assertThat(out.get("time").size()).isEqualTo(301);
+        assertThat(last(out.get("time"))).isEqualTo(3000);
+    }
+
+    @Test
     void movingTimeIsEmptyWithoutTheMovingStream() {
         JsonNode out = parse(oneHertz(100, null));
 

@@ -1,5 +1,6 @@
 package com.cavale.integration.strava;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -106,6 +107,29 @@ public final class StravaDtos {
             @JsonProperty("suffer_score") Double sufferScore,
             @JsonProperty("workout_type") Integer workoutType,
             @JsonProperty("best_efforts") List<BestEffort> bestEfforts) {
+    }
+
+    /**
+     * One device lap — a workout step on a Garmin, a kilometre on auto-lap, a
+     * button press. Its moving time is the watch's own timer for that lap, so
+     * these are the numbers the athlete saw on the wrist.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Lap(
+            @JsonProperty("lap_index") Integer lapIndex,
+            @JsonProperty("start_date") Instant startDate,
+            /** seconds, pauses included */
+            @JsonProperty("elapsed_time") int elapsedTime,
+            /** seconds — the lap timer */
+            @JsonProperty("moving_time") int movingTime,
+            /** metres */
+            double distance,
+            @JsonProperty("average_heartrate") Double averageHeartrate,
+            @JsonProperty("max_heartrate") Double maxHeartrate,
+            /** strides per minute, ONE leg — double it for SPM */
+            @JsonProperty("average_cadence") Double averageCadence,
+            /** metres */
+            @JsonProperty("total_elevation_gain") Double totalElevationGain) {
     }
 
     /** A webhook push event — https://developers.strava.com/docs/webhooks/ */

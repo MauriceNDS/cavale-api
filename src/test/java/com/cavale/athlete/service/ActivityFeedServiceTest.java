@@ -75,4 +75,24 @@ class ActivityFeedServiceTest {
 
         assertThat(service().activityStreams(OWNER, activity.getId())).isEmpty();
     }
+
+    @Test
+    void activityStreams_graftsTheDeviceLapsOntoTheStreams() {
+        Activity activity = ownedRun();
+        activity.attachStreams("{\"time\":[0,13],\"distance\":[0,40.5]}");
+        activity.attachLaps("[{\"start\":0.0,\"moving\":1200}]");
+        when(activityRepository.findById(activity.getId())).thenReturn(Optional.of(activity));
+
+        assertThat(service().activityStreams(OWNER, activity.getId()))
+                .contains("{\"time\":[0,13],\"distance\":[0,40.5],\"laps\":[{\"start\":0.0,\"moving\":1200}]}");
+    }
+
+    @Test
+    void activityStreams_serveTheStreamsUntouchedWithoutLaps() {
+        Activity activity = ownedRun();
+        activity.attachStreams("{\"time\":[0,13]}");
+        when(activityRepository.findById(activity.getId())).thenReturn(Optional.of(activity));
+
+        assertThat(service().activityStreams(OWNER, activity.getId())).contains("{\"time\":[0,13]}");
+    }
 }

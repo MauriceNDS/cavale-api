@@ -230,7 +230,7 @@ public class PaceModelService {
             Activity a = easy.get(i);
             double km = a.getDistanceKm().doubleValue();
             climbPerKm[i] = (a.getElevationM() != null ? a.getElevationM() : 0) / km;
-            pace[i] = a.getDurationMin() * 60 / km;
+            pace[i] = a.movingSeconds() / km;
             climbMin = Math.min(climbMin, climbPerKm[i]);
             climbMax = Math.max(climbMax, climbPerKm[i]);
         }

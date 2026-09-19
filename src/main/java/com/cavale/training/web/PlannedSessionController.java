@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.cavale.integration.strava.StravaActivityService;
 import com.cavale.training.domain.Activity;
 import com.cavale.training.domain.PlannedSession;
+import com.cavale.training.dto.ActivityStreamsPayload;
 import com.cavale.training.dto.SessionProposalResponse;
 import com.cavale.training.dto.SessionResponse;
 import com.cavale.training.dto.UpdateSessionRequest;
@@ -105,10 +106,11 @@ public class PlannedSessionController {
         PlannedSession session = planService.getOwnedSession(userId, sessionId);
         Activity activity = planService.getActivitiesForSessions(java.util.List.of(session))
                 .get(session.getId());
-        if (activity == null || activity.getStreamsJson() == null) {
+        String payload = activity != null ? ActivityStreamsPayload.of(activity) : null;
+        if (payload == null) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(activity.getStreamsJson());
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(payload);
     }
 
     @GetMapping("/{sessionId}/proposal")

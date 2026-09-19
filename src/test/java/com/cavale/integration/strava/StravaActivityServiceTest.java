@@ -76,6 +76,11 @@ class StravaActivityServiceTest {
                 171.0, 82.5, 55.0, null);
     }
 
+    private static StravaDtos.Lap lap(int index, long startOffsetSec, int seconds, double metres) {
+        return new StravaDtos.Lap(index, java.time.Instant.parse("2026-09-19T04:59:24Z").plusSeconds(startOffsetSec),
+                seconds, seconds, metres, 145.0, 160.0, 93.0, 4.0);
+    }
+
     private static PlannedSession runSession(LocalDate date) {
         TrainingPlan plan = new TrainingPlan(USER, "Plan", null, date.minusDays(10), date.plusDays(60));
         PlanWeek week = new PlanWeek(plan, 1, date, null, WeekType.BUILD, null, null, null, null);
@@ -138,6 +143,28 @@ class StravaActivityServiceTest {
         assertThat(captor.getValue().getSource()).isEqualTo(ActivitySource.STRAVA);
         assertThat(captor.getValue().getExternalId()).isEqualTo(7L);
         assertThat(captor.getValue().getDurationMin()).isEqualTo(62);
+        assertThat(captor.getValue().getDurationSec()).isEqualTo(62 * 60);
+    }
+
+    @Test
+    void importToSession_adoptingAChartedHistoryRowStillFetchesItsLaps() {
+        LocalDate date = LocalDate.now().minusDays(1);
+        PlannedSession session = runSession(date);
+        Activity history = Activity.stravaHistory(USER, date, 62,
+                new BigDecimal("10.50"), 180, 149, "Sortie 7", 7L);
+        history.attachStreams("{\"time\":[0,1]}");
+        when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
+        when(activityRepository.findBySessionId(session.getId())).thenReturn(Optional.empty());
+        when(activityRepository.findByExternalId(7L)).thenReturn(Optional.of(history));
+        when(authService.freshConnection(USER)).thenReturn(connection());
+        when(stravaClient.getLaps(anyString(), org.mockito.ArgumentMatchers.eq(7L))).thenReturn(List.of(
+                lap(0, 0, 1200, 3300.0), lap(1, 1312, 20, 90.0)));
+
+        service().importToSession(USER, session.getId(), 7L, null, null, false, null);
+
+        // streams were already there — only the laps were fetched
+        org.mockito.Mockito.verify(stravaClient, org.mockito.Mockito.never()).getStreams(anyString(), any(Long.class));
+        assertThat(history.getLapsJson()).contains("\"moving\":1200").contains("\"start\":1312.0");
     }
 
     @Test

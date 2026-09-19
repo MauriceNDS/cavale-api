@@ -11,6 +11,8 @@ public record ActivitySummary(
         ActivitySource source,
         String name,
         int durationMin,
+        /** Exact moving seconds — null when the source only gave minutes. */
+        Integer durationSec,
         BigDecimal distanceKm,
         Integer elevationM,
         Integer avgHr,
@@ -24,7 +26,7 @@ public record ActivitySummary(
 
     public static ActivitySummary from(Activity activity) {
         return new ActivitySummary(activity.getSource(), activity.getName(), activity.getDurationMin(),
-                activity.getDistanceKm(), activity.getElevationM(), activity.getAvgHr(),
+                activity.getDurationSec(), activity.getDistanceKm(), activity.getElevationM(), activity.getAvgHr(),
                 activity.getAvgCadenceSpm(), activity.getPerceivedEffort(), activity.isPainFlag(),
                 activity.getComment(), activity.getStreamsJson() != null,
                 activity.getId(), activity.getShoeId());

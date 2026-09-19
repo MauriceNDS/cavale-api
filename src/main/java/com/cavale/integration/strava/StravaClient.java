@@ -19,6 +19,9 @@ public interface StravaClient {
 
     StravaDtos.StreamSet getStreams(String accessToken, long activityId);
 
+    /** The device laps, in order — empty when the recorder made none. */
+    List<StravaDtos.Lap> getLaps(String accessToken, long activityId);
+
     /* Push subscriptions — app-level (client id/secret), one per application. */
 
     StravaDtos.PushSubscription createPushSubscription(String callbackUrl, String verifyToken);

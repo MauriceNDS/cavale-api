@@ -27,6 +27,7 @@ import com.cavale.gym.domain.WorkoutStatus;
 import com.cavale.gym.repository.SetLogRepository;
 import com.cavale.gym.repository.WorkoutLogRepository;
 import com.cavale.training.domain.Activity;
+import com.cavale.training.dto.ActivityStreamsPayload;
 import com.cavale.training.repository.ActivityRepository;
 
 /**
@@ -64,10 +65,10 @@ public class ActivityFeedService {
         return ActivityDetailResponse.from(activity, decoupling);
     }
 
-    /** The activity's downsampled Strava streams JSON, or empty when it has none. */
+    /** The activity's downsampled Strava streams JSON (laps included), or empty when it has none. */
     @Transactional(readOnly = true)
     public Optional<String> activityStreams(UUID userId, UUID activityId) {
-        return Optional.ofNullable(ownedActivity(userId, activityId).getStreamsJson());
+        return Optional.ofNullable(ActivityStreamsPayload.of(ownedActivity(userId, activityId)));
     }
 
     private Activity ownedActivity(UUID userId, UUID activityId) {
@@ -115,7 +116,7 @@ public class ActivityFeedService {
     private static FeedItem runItem(Activity activity) {
         Integer pace = null;
         if (activity.getDistanceKm() != null && activity.getDistanceKm().signum() > 0) {
-            pace = (int) Math.round(activity.getDurationMin() * 60
+            pace = (int) Math.round(activity.movingSeconds()
                     / activity.getDistanceKm().doubleValue());
         }
         return new FeedItem(activity.getId(),

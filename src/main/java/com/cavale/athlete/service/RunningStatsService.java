@@ -1127,7 +1127,7 @@ public class RunningStatsService {
             return null;
         }
         List<Double> paces = trailRuns.stream()
-                .map(a -> a.getDurationMin() * 60.0
+                .map(a -> a.movingSeconds()
                         / (a.getDistanceKm().doubleValue() + a.getElevationM() / 100.0))
                 .sorted()
                 .toList();

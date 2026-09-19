@@ -56,6 +56,11 @@ public class Activity extends Auditable {
     @Column(name = "duration_min", nullable = false)
     private int durationMin;
 
+    /** Exact moving seconds from the source — null on manual entries and rows
+     *  imported before it was recorded; the minute figure then stands in. */
+    @Column(name = "duration_sec")
+    private Integer durationSec;
+
     @Column(name = "distance_km", precision = 6, scale = 2)
     private BigDecimal distanceKm;
 
@@ -83,6 +88,10 @@ public class Activity extends Auditable {
     /** Downsampled Strava streams (time/distance/hr/alt/vel) as JSON, for charts. */
     @Column(name = "streams_json", columnDefinition = "text")
     private String streamsJson;
+
+    /** Device laps (JSON, see LapCondenser) — the watch's own per-step figures. */
+    @Column(name = "laps_json", columnDefinition = "text")
+    private String lapsJson;
 
     /** Encoded-polyline GPS trace (~1500 pts), denser than the chart streams — feeds the map. */
     @Column(name = "map_polyline", columnDefinition = "text")
@@ -245,15 +254,30 @@ public class Activity extends Auditable {
         this.streamsJson = streamsJson;
     }
 
+    public void attachLaps(String lapsJson) {
+        this.lapsJson = lapsJson;
+    }
+
+    /** The source's exact moving time; the minute column keeps its rounded copy. */
+    public void recordMovingSeconds(Integer seconds) {
+        this.durationSec = seconds;
+    }
+
+    /** Seconds to derive a pace from: exact when the source gave them, else the minute figure. */
+    public int movingSeconds() {
+        return durationSec != null ? durationSec : durationMin * 60;
+    }
+
     public void attachMapPolyline(String mapPolyline) {
         this.mapPolyline = mapPolyline;
     }
 
     /** Refresh the source-of-truth measures from Strava; athlete feedback stays. */
-    public void refreshFromSource(String name, int durationMin, BigDecimal distanceKm,
+    public void refreshFromSource(String name, int durationMin, Integer durationSec, BigDecimal distanceKm,
                                   Integer elevationM, Integer avgHr) {
         this.name = name;
         this.durationMin = durationMin;
+        this.durationSec = durationSec;
         this.distanceKm = distanceKm;
         this.elevationM = elevationM;
         this.avgHr = avgHr;
@@ -296,6 +320,10 @@ public class Activity extends Auditable {
         return durationMin;
     }
 
+    public Integer getDurationSec() {
+        return durationSec;
+    }
+
     public BigDecimal getDistanceKm() {
         return distanceKm;
     }
@@ -326,6 +354,10 @@ public class Activity extends Auditable {
 
     public String getStreamsJson() {
         return streamsJson;
+    }
+
+    public String getLapsJson() {
+        return lapsJson;
     }
 
     public String getMapPolyline() {

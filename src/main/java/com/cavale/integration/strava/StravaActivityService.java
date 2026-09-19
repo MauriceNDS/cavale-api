@@ -124,6 +124,7 @@ public class StravaActivityService {
                 (int) Math.round(run.totalElevationGain()),
                 run.averageHeartrate() != null ? (int) Math.round(run.averageHeartrate()) : null,
                 run.name(), run.id());
+        activity.recordMovingSeconds(run.movingTime());
         activity.assignShoe(ownedShoe);
         activity.recordFeedback(perceivedEffort != null ? perceivedEffort : PerceivedEffort.COMME_PREVU,
                 comment, painFlag);
@@ -168,22 +169,41 @@ public class StravaActivityService {
         }
     }
 
-    /** Streams feed the report charts — a failure here must not block validation. */
+    /**
+     * Streams feed the report charts and the device laps its per-segment mode —
+     * a failure here must not block validation. Each is fetched only while
+     * missing, so adopting a history row that already has charts still picks
+     * up its laps.
+     */
     private void attachStreamsQuietly(UUID userId, Activity activity) {
-        if (activity.getStreamsJson() != null || activity.getExternalId() == null) {
+        if (activity.getExternalId() == null) {
+            return;
+        }
+        boolean needStreams = activity.getStreamsJson() == null;
+        boolean needLaps = activity.getLapsJson() == null;
+        if (!needStreams && !needLaps) {
             return;
         }
         try {
             StravaConnection connection = authService.freshConnection(userId);
-            StravaDtos.StreamSet streams = stravaClient.getStreams(connection.getAccessToken(),
-                    activity.getExternalId());
-            String json = StreamDownsampler.toJson(streams);
-            if (json != null) {
-                activity.attachStreams(json);
+            if (needStreams) {
+                StravaDtos.StreamSet streams = stravaClient.getStreams(connection.getAccessToken(),
+                        activity.getExternalId());
+                String json = StreamDownsampler.toJson(streams);
+                if (json != null) {
+                    activity.attachStreams(json);
+                }
+                String polyline = PolylineEncoder.encode(streams != null ? streams.latlng() : null);
+                if (polyline != null && activity.getMapPolyline() == null) {
+                    activity.attachMapPolyline(polyline);
+                }
             }
-            String polyline = PolylineEncoder.encode(streams != null ? streams.latlng() : null);
-            if (polyline != null && activity.getMapPolyline() == null) {
-                activity.attachMapPolyline(polyline);
+            if (needLaps) {
+                String laps = LapCondenser.toJson(stravaClient.getLaps(connection.getAccessToken(),
+                        activity.getExternalId()));
+                if (laps != null) {
+                    activity.attachLaps(laps);
+                }
             }
         } catch (Exception e) {
             // report simply won't have charts
